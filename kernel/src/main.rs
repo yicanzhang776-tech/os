@@ -27,7 +27,7 @@ fn lab1_success_marker() -> &'static str {
 }
 
 fn lab2_success_marker() -> &'static str {
-    "[Lab2] TODO: replace this placeholder with the success marker"
+    "[Lab2] PASS"
 }
 
 #[panic_handler]
