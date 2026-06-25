@@ -1,7 +1,7 @@
 KERNEL_ELF := target/riscv64gc-unknown-none-elf/debug/ai-os-kernel
 QEMU := qemu-system-riscv64
 
-.PHONY: check-env build run test-qemu test-lab1 fmt clean
+.PHONY: check-env build run test-qemu test-lab1 test-lab2 fmt clean
 
 check-env:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
@@ -17,6 +17,9 @@ test-qemu: build
 
 test-lab1:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
+
+test-lab2:
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
 
 fmt:
 	cargo fmt --all
