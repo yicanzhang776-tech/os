@@ -15,9 +15,7 @@ extern "C" fn kernel_main() -> ! {
 }
 
 fn lab1_success_marker() -> &'static str {
-    // TODO(student): after understanding the boot, SBI, and console path,
-    // replace this placeholder with the Lab1 success marker described by tests.
-    "[Lab1] TODO: replace this placeholder with the success marker"
+    "[Lab1] PASS"
 }
 
 #[panic_handler]
