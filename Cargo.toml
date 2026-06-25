@@ -1,0 +1,16 @@
+[workspace]
+members = ["kernel"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
