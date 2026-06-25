@@ -20,15 +20,23 @@ P0 工程运行基线。
 
 ## 涉及模块
 
-P0 已具备最小启动、SBI 输出和 QEMU 测试。正式模块边界待 P0 架构确定后补充。
+当前 `lab1-starter` 分支已经将 P0 中的最小逻辑拆分为教学模块：
+
+- `boot`：启动栈设置和跳转到内核入口。
+- `sbi`：SBI 控制台输出和系统关机。
+- `console`：面向内核的行输出接口。
+- `main`：Lab1 的教学入口和成功标志边界。
 
 ## 学生需要完成的任务
 
-待 P0 架构确定后补充具体函数和 TODO 标记。
+- 阅读 `boot`、`sbi`、`console` 到 `main` 的调用路径。
+- 确认内核日志不是 OpenSBI 自带输出。
+- 将 Lab1 占位成功标志替换为精确的 `[Lab1] PASS`。
+- 保持 QEMU 能通过 SBI system reset 正常退出。
 
 ## Starter Code 边界
 
-Starter code 应保留可编译、可启动的最小内核。具体目录和函数待 P0 架构确定后补充。
+Starter code 保持可编译、可启动，并输出明确 TODO 日志。它不会输出 `[Lab1] PASS`，因此 `scripts/test-lab1.ps1` 会失败，直到学生补全成功标志。
 
 ## 参考实现边界
 
@@ -36,11 +44,31 @@ Starter code 应保留可编译、可启动的最小内核。具体目录和函�
 
 ## 自动测试设计
 
-规划中：构建内核、启动 QEMU、匹配 Lab1 稳定日志 token、确认 QEMU 能退出。
+执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
+```
+
+测试会构建内核、启动 QEMU、捕获串口输出，并只匹配 `[Lab1] PASS`。它不复用 P0 的 `[P0] PASS`。
 
 ## QEMU 预期输出
 
-规划中，建议包含 `[lab1] start` 和 `[lab1] PASS`。
+Starter 预期输出：
+
+```text
+[Lab1] start
+[Lab1] console is available
+[Lab1] TODO: replace this placeholder with the success marker
+```
+
+Solution 预期输出：
+
+```text
+[Lab1] start
+[Lab1] console is available
+[Lab1] PASS
+```
 
 ## 验收标准
 
