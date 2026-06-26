@@ -26,6 +26,9 @@ extern "C" fn kernel_main() -> ! {
     } else {
         console::print_line("[Lab3] FAIL: physical frame allocator check failed");
     }
+    console::print_line("[Lab4] start");
+    let _lab4_interfaces_ready = memory::run_lab4_starter_checks();
+    console::print_line("[Lab4] TODO: implement Sv39 page table mapping");
     sbi::shutdown()
 }
 

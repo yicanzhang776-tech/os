@@ -1,5 +1,7 @@
 mod address;
 mod frame_allocator;
+pub mod page_table;
+pub mod virtual_address;
 
 pub use address::{PhysAddr, PhysPageNum, PAGE_SIZE};
 pub use frame_allocator::{FrameAllocator, FrameAllocatorError, StackFrameAllocator};
@@ -68,4 +70,9 @@ pub fn run_lab3_checks() -> bool {
         && releases_second
         && rejects_double_free
         && reuses_second
+}
+
+/// Run the Lab4 starter checks.
+pub fn run_lab4_starter_checks() -> bool {
+    page_table::starter_interfaces_are_present()
 }
