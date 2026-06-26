@@ -1,3 +1,7 @@
+param(
+    [switch]$ExpectIncomplete
+)
+
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -63,8 +67,20 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[Lab2\] PASS") {
-    throw "Expected Lab2 success marker [Lab2] PASS was not found in QEMU output."
-}
+$markerPattern = "\[Lab2\] PASS"
 
-Write-Output "Lab2 QEMU smoke test passed."
+if ($ExpectIncomplete) {
+    if ($output -match $markerPattern) {
+        throw "Unexpected Lab2 success marker [Lab2] PASS was found in starter output."
+    }
+    if ($output -notmatch "\[Lab2\] TODO") {
+        throw "Expected Lab2 starter TODO output was not found in QEMU output."
+    }
+    Write-Output "Lab2 QEMU starter incomplete test passed."
+}
+else {
+    if ($output -notmatch $markerPattern) {
+        throw "Expected Lab2 success marker [Lab2] PASS was not found in QEMU output."
+    }
+    Write-Output "Lab2 QEMU smoke test passed."
+}
