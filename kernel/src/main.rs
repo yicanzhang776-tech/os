@@ -3,6 +3,7 @@
 
 mod boot;
 mod console;
+mod memory;
 mod sbi;
 mod trap;
 
@@ -19,6 +20,9 @@ extern "C" fn kernel_main() -> ! {
     } else {
         console::print_line("[Lab2] TODO: configure stvec and handle the demo trap");
     }
+    console::print_line("[Lab3] start");
+    let _starter_complete = memory::starter_is_complete();
+    console::print_line("[Lab3] TODO: implement physical frame allocator");
     sbi::shutdown()
 }
 

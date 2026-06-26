@@ -28,6 +28,9 @@ SECTIONS
         ebss = .;
     }
 
+    . = ALIGN(4K);
+    ekernel = .;
+
     /DISCARD/ : {
         *(.eh_frame)
     }
