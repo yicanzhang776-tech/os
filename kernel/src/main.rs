@@ -21,8 +21,11 @@ extern "C" fn kernel_main() -> ! {
         console::print_line("[Lab2] TODO: configure stvec and handle the demo trap");
     }
     console::print_line("[Lab3] start");
-    let _starter_complete = memory::starter_is_complete();
-    console::print_line("[Lab3] TODO: implement physical frame allocator");
+    if memory::run_lab3_checks() {
+        console::print_line("[Lab3] PASS");
+    } else {
+        console::print_line("[Lab3] FAIL: physical frame allocator check failed");
+    }
     sbi::shutdown()
 }
 
