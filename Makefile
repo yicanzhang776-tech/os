@@ -34,7 +34,7 @@ test-lab4:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
 
 test-lab5:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1 -ExpectIncomplete
+	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
 
 fmt:
 	cargo fmt --all

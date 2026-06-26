@@ -65,9 +65,12 @@ impl TaskContext {
     }
 
     /// Build the initial context for a task entry and stack top.
-    pub fn goto(_entry: TaskEntry, _stack_top: usize) -> Self {
-        // TODO(student): set `ra` to the task entry and align `sp` to 16 bytes.
-        Self::zero()
+    pub fn goto(entry: TaskEntry, stack_top: usize) -> Self {
+        Self {
+            ra: entry as *const () as usize,
+            sp: stack_top & !(STACK_ALIGN - 1),
+            s: [0; 12],
+        }
     }
 }
 
@@ -132,6 +135,7 @@ pub struct TaskManager {
     tasks: [Option<TaskControlBlock>; MAX_TASKS],
     current: Option<TaskId>,
     next_scan: usize,
+    scheduler_context: TaskContext,
 }
 
 impl TaskManager {
@@ -141,6 +145,7 @@ impl TaskManager {
             tasks: [None; MAX_TASKS],
             current: None,
             next_scan: 0,
+            scheduler_context: TaskContext::zero(),
         }
     }
 
@@ -158,21 +163,102 @@ impl TaskManager {
     }
 
     /// Add a task into the fixed task table.
-    pub fn add_task(&mut self, _task: TaskControlBlock) -> Result<(), TaskError> {
-        // TODO(student): reject duplicate ids and insert the task into a free slot.
-        Err(TaskError::Unimplemented)
+    pub fn add_task(&mut self, task: TaskControlBlock) -> Result<(), TaskError> {
+        let index = task.id().value();
+        if index >= MAX_TASKS {
+            return Err(TaskError::InvalidTaskId);
+        }
+        if self.tasks[index].is_some() {
+            return Err(TaskError::TaskTableFull);
+        }
+        self.tasks[index] = Some(task);
+        Ok(())
     }
 
     /// Fetch the next ready task id using round-robin order.
     pub fn fetch_next(&mut self) -> Result<TaskId, TaskError> {
-        // TODO(student): scan from `next_scan` and return the next Ready task.
-        Err(TaskError::Unimplemented)
+        let mut checked = 0;
+        while checked < MAX_TASKS {
+            let index = (self.next_scan + checked) % MAX_TASKS;
+            if let Some(task) = self.tasks[index].as_ref() {
+                if task.status == TaskStatus::Ready {
+                    self.next_scan = (index + 1) % MAX_TASKS;
+                    return Ok(task.id());
+                }
+            }
+            checked += 1;
+        }
+        Err(TaskError::NoReadyTask)
     }
 
     /// Run the next ready task.
     pub fn run_next(&mut self) -> Result<(), TaskError> {
-        // TODO(student): update task states and call `schedule`.
-        Err(TaskError::Unimplemented)
+        if let Some(current) = self.current {
+            let task = self.task_mut(current)?;
+            if task.status == TaskStatus::Running {
+                task.status = TaskStatus::Ready;
+            }
+        }
+
+        let next = self.fetch_next()?;
+        self.task_mut(next)?.status = TaskStatus::Running;
+        self.current = Some(next);
+        Ok(())
+    }
+
+    /// Return true when all inserted tasks have exited.
+    pub fn all_tasks_exited(&self) -> bool {
+        let mut saw_task = false;
+        let mut index = 0;
+        while index < MAX_TASKS {
+            if let Some(task) = self.tasks[index].as_ref() {
+                saw_task = true;
+                if task.status != TaskStatus::Exited {
+                    return false;
+                }
+            }
+            index += 1;
+        }
+        saw_task
+    }
+
+    fn task_mut(&mut self, id: TaskId) -> Result<&mut TaskControlBlock, TaskError> {
+        let index = id.value();
+        if index >= MAX_TASKS {
+            return Err(TaskError::InvalidTaskId);
+        }
+        match self.tasks[index].as_mut() {
+            Some(task) => Ok(task),
+            None => Err(TaskError::InvalidTaskId),
+        }
+    }
+
+    fn context_mut_ptr(&mut self, id: TaskId) -> Result<*mut TaskContext, TaskError> {
+        Ok(core::ptr::addr_of_mut!(self.task_mut(id)?.context))
+    }
+
+    fn scheduler_context_mut_ptr(&mut self) -> *mut TaskContext {
+        core::ptr::addr_of_mut!(self.scheduler_context)
+    }
+
+    fn mark_current_ready(&mut self) -> Result<TaskId, TaskError> {
+        let current = match self.current {
+            Some(current) => current,
+            None => return Err(TaskError::NoReadyTask),
+        };
+        self.task_mut(current)?.status = TaskStatus::Ready;
+        self.current = None;
+        Ok(current)
+    }
+
+    fn mark_current_exited(&mut self) -> Result<TaskId, TaskError> {
+        let current = match self.current {
+            Some(current) => current,
+            None => return Err(TaskError::NoReadyTask),
+        };
+        self.task_mut(current)?.status = TaskStatus::Exited;
+        self.current = None;
+        Ok(current)
     }
 }
 
@@ -202,6 +288,7 @@ impl KernelStack {
 }
 
 static mut TASK_STACKS: [KernelStack; MAX_TASKS] = [KernelStack::new(); MAX_TASKS];
+static mut TASK_MANAGER: TaskManager = TaskManager::new();
 
 /// Return the top address of one fixed teaching task stack.
 pub fn task_stack_top(id: TaskId) -> Result<usize, TaskError> {
@@ -219,25 +306,137 @@ pub fn task_stack_top(id: TaskId) -> Result<usize, TaskError> {
 
 /// Planned cooperative yield entry.
 pub fn yield_now() -> Result<(), TaskError> {
-    // TODO(student): mark the current task Ready and enter the scheduler.
-    Err(TaskError::Unimplemented)
+    let (current_context, scheduler_context) = unsafe {
+        let manager = global_manager_mut();
+        let current = manager.mark_current_ready()?;
+        (
+            manager.context_mut_ptr(current)?,
+            manager.scheduler_context_mut_ptr().cast_const(),
+        )
+    };
+
+    // SAFETY: Lab5 is single-hart and cooperative. The current task has a
+    // valid saved context slot, the scheduler context was created by
+    // `run_ready_tasks`, and no interrupt path can concurrently mutate them.
+    unsafe {
+        switch_context(current_context, scheduler_context);
+    }
+    Ok(())
 }
 
 /// Planned scheduler entry.
-pub fn schedule(_manager: &mut TaskManager) -> Result<(), TaskError> {
-    // TODO(student): switch from the current task context to the next task.
-    Err(TaskError::Unimplemented)
+pub fn schedule(manager: &mut TaskManager) -> Result<(), TaskError> {
+    manager.run_next()
 }
 
+/// Reset the global teaching scheduler.
+pub fn reset_global_manager() {
+    // SAFETY: Lab5 uses one hart and performs all task setup before scheduling
+    // starts, so replacing the global manager cannot race with a running task.
+    unsafe {
+        *core::ptr::addr_of_mut!(TASK_MANAGER) = TaskManager::new();
+    }
+}
+
+/// Insert one fixed kernel task into the global scheduler.
+pub fn spawn_kernel_task(id: TaskId, entry: TaskEntry) -> Result<(), TaskError> {
+    let stack_top = task_stack_top(id)?;
+    let task = TaskControlBlock::new(id, entry, stack_top);
+    // SAFETY: Lab5 task setup is single-threaded and happens before the
+    // scheduler starts.
+    unsafe { global_manager_mut().add_task(task) }
+}
+
+/// Run ready tasks until every inserted task exits.
+pub fn run_ready_tasks() -> Result<(), TaskError> {
+    loop {
+        let (scheduler_context, next_context) = unsafe {
+            let manager = global_manager_mut();
+            match manager.run_next() {
+                Ok(()) => {
+                    let current = match manager.current {
+                        Some(current) => current,
+                        None => return Err(TaskError::NoReadyTask),
+                    };
+                    (
+                        manager.scheduler_context_mut_ptr(),
+                        manager.context_mut_ptr(current)?.cast_const(),
+                    )
+                }
+                Err(TaskError::NoReadyTask) if manager.all_tasks_exited() => return Ok(()),
+                Err(error) => return Err(error),
+            }
+        };
+
+        // SAFETY: The selected task context points to one TCB owned by the
+        // global manager. The scheduler context belongs to the same manager and
+        // is kept alive for the whole scheduling run.
+        unsafe {
+            switch_context(scheduler_context, next_context);
+        }
+    }
+}
+
+/// Mark the current task as exited and switch back to the scheduler.
+pub fn exit_current() -> ! {
+    let contexts = unsafe {
+        let manager = global_manager_mut();
+        match manager.mark_current_exited() {
+            Ok(current) => match manager.context_mut_ptr(current) {
+                Ok(current_context) => Ok((
+                    current_context,
+                    manager.scheduler_context_mut_ptr().cast_const(),
+                )),
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        }
+    };
+
+    let (current_context, scheduler_context) = match contexts {
+        Ok(contexts) => contexts,
+        Err(_) => loop {
+            core::hint::spin_loop();
+        },
+    };
+
+    // SAFETY: The exiting task owns `current_context`, and the scheduler
+    // context remains valid for the whole `run_ready_tasks` call.
+    unsafe {
+        switch_context(current_context, scheduler_context);
+    }
+
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+unsafe fn global_manager_mut() -> &'static mut TaskManager {
+    &mut *core::ptr::addr_of_mut!(TASK_MANAGER)
+}
+
+#[cfg(target_arch = "riscv64")]
 unsafe extern "C" {
     /// Switch from `current` to `next`.
     ///
-    /// Lab5 starter only links the symbol. The full save/restore sequence is a
-    /// student task for the solution branch.
+    /// Saves and restores `ra`, `sp` and `s0..s11`.
     pub fn __switch(current: *mut TaskContext, next: *const TaskContext);
 }
 
-/// Check that the Lab5 starter interfaces are wired without completing Lab5.
+unsafe fn switch_context(current: *mut TaskContext, next: *const TaskContext) {
+    #[cfg(target_arch = "riscv64")]
+    {
+        __switch(current, next);
+    }
+
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        let _ = current;
+        let _ = next;
+    }
+}
+
+/// Check that the Lab5 scheduler interfaces are wired.
 pub fn starter_interfaces_are_present() -> bool {
     let task_id = TaskId::new(0);
     let stack_top = match task_stack_top(task_id) {
@@ -250,15 +449,125 @@ pub fn starter_interfaces_are_present() -> bool {
     task.status() == TaskStatus::Ready
         && task.stack_top().is_multiple_of(STACK_ALIGN)
         && manager.task_count() == 0
-        && manager.add_task(task) == Err(TaskError::Unimplemented)
-        && manager.fetch_next() == Err(TaskError::Unimplemented)
-        && manager.run_next() == Err(TaskError::Unimplemented)
-        && schedule(&mut manager) == Err(TaskError::Unimplemented)
-        && yield_now() == Err(TaskError::Unimplemented)
+        && manager.add_task(task).is_ok()
+        && manager.fetch_next() == Ok(task_id)
 }
 
 extern "C" fn demo_task_entry() -> ! {
     loop {
         core::hint::spin_loop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    extern "C" fn test_task_a() -> ! {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+
+    extern "C" fn test_task_b() -> ! {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+
+    extern "C" fn test_task_c() -> ! {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+
+    fn test_task(id: usize, entry: TaskEntry) -> TaskControlBlock {
+        TaskControlBlock::new(TaskId::new(id), entry, 0x8020_8008 + id * TASK_STACK_SIZE)
+    }
+
+    #[test]
+    fn task_context_goto_sets_entry_and_aligned_stack() {
+        let context = TaskContext::goto(test_task_a, 0x8020_800f);
+
+        assert_eq!(context.ra, test_task_a as *const () as usize);
+        assert_eq!(context.sp, 0x8020_8000);
+        assert_eq!(context.s, [0; 12]);
+    }
+
+    #[test]
+    fn manager_adds_tasks_and_rejects_duplicate_id() {
+        let mut manager = TaskManager::new();
+
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.task_count(), 1);
+        assert!(manager.add_task(test_task(0, test_task_b)).is_err());
+        assert_eq!(manager.task_count(), 1);
+    }
+
+    #[test]
+    fn fetch_next_uses_round_robin_ready_order() {
+        let mut manager = TaskManager::new();
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.add_task(test_task(1, test_task_b)), Ok(()));
+        assert_eq!(manager.add_task(test_task(2, test_task_c)), Ok(()));
+
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(0)));
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(1)));
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(2)));
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(0)));
+    }
+
+    #[test]
+    fn fetch_next_skips_exited_tasks() {
+        let mut manager = TaskManager::new();
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.add_task(test_task(1, test_task_b)), Ok(()));
+
+        manager.tasks[0].as_mut().unwrap().status = TaskStatus::Exited;
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(1)));
+        manager.tasks[1].as_mut().unwrap().status = TaskStatus::Exited;
+        assert_eq!(manager.fetch_next(), Err(TaskError::NoReadyTask));
+    }
+
+    #[test]
+    fn run_next_marks_selected_task_running() {
+        let mut manager = TaskManager::new();
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.add_task(test_task(1, test_task_b)), Ok(()));
+
+        assert_eq!(manager.run_next(), Ok(()));
+        assert_eq!(manager.current, Some(TaskId::new(0)));
+        assert_eq!(
+            manager.tasks[0].as_ref().unwrap().status,
+            TaskStatus::Running
+        );
+        assert_eq!(manager.tasks[1].as_ref().unwrap().status, TaskStatus::Ready);
+    }
+
+    #[test]
+    fn mark_current_ready_models_cooperative_yield() {
+        let mut manager = TaskManager::new();
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.run_next(), Ok(()));
+
+        assert_eq!(manager.mark_current_ready(), Ok(TaskId::new(0)));
+        assert_eq!(manager.current, None);
+        assert_eq!(manager.tasks[0].as_ref().unwrap().status, TaskStatus::Ready);
+    }
+
+    #[test]
+    fn exited_task_is_not_scheduled_again() {
+        let mut manager = TaskManager::new();
+        assert_eq!(manager.add_task(test_task(0, test_task_a)), Ok(()));
+        assert_eq!(manager.add_task(test_task(1, test_task_b)), Ok(()));
+        assert_eq!(manager.run_next(), Ok(()));
+
+        assert_eq!(manager.mark_current_exited(), Ok(TaskId::new(0)));
+        assert_eq!(manager.current, None);
+        assert_eq!(
+            manager.tasks[0].as_ref().unwrap().status,
+            TaskStatus::Exited
+        );
+        assert_eq!(manager.fetch_next(), Ok(TaskId::new(1)));
     }
 }
