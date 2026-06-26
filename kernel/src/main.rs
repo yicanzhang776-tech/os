@@ -5,6 +5,7 @@ mod boot;
 mod console;
 mod memory;
 mod sbi;
+mod task;
 mod trap;
 
 use core::panic::PanicInfo;
@@ -29,6 +30,7 @@ extern "C" fn kernel_main() -> ! {
         console::print_line("[Lab3] FAIL: physical frame allocator check failed");
     }
     run_lab4();
+    run_lab5();
     sbi::shutdown()
 }
 
@@ -120,6 +122,16 @@ fn run_lab4() {
     } else {
         console::print_line("[Lab4] FAIL: map/translate test failed");
     }
+}
+
+fn run_lab5() {
+    console::print_line("[Lab5] start");
+    if task::starter_interfaces_are_present() {
+        console::print_line("[Lab5] scheduler initialized");
+    } else {
+        console::print_line("[Lab5] FAIL: scheduler skeleton check failed");
+    }
+    console::print_line("[Lab5] TODO: implement cooperative scheduler");
 }
 
 fn lab1_success_marker() -> &'static str {
