@@ -86,5 +86,15 @@ else {
     if ($output -notmatch $markerPattern) {
         throw "Expected Lab4 success marker [Lab4] PASS was not found in QEMU output."
     }
+    foreach ($marker in @(
+        "\[Lab4\] page table built",
+        "\[Lab4\] satp activated",
+        "\[Lab4\] paging is active",
+        "\[Lab4\] map/translate test passed"
+    )) {
+        if ($output -notmatch $marker) {
+            throw "Expected Lab4 marker $marker was not found in QEMU output."
+        }
+    }
     Write-Output "Lab4 QEMU smoke test passed."
 }

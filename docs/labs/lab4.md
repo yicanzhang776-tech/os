@@ -2,117 +2,117 @@
 
 ## 实验背景
 
-Lab4 在 Lab3 物理页分配器的基础上，引入 RISC-V Sv39 虚拟内存。学生将理解虚拟地址如何经过三级页表翻译到物理地址，并为后续任务管理、用户态和系统调用打基础。
+Lab4 在 Lab3 物理页分配器的基础上引入 RISC-V Sv39 虚拟内存。学生需要理解虚拟地址如何经过三级页表翻译到物理地址，并为后续任务管理、用户态和系统调用打基础。
 
-本分支是 `lab4-starter`，只提供教学骨架和 TODO，不启用完整分页，不输出 `[Lab4] PASS`。
+`lab4-starter` 只提供教学骨架和 TODO，不输出 `[Lab4] PASS`。`lab4-solution` 补全参考实现，采用第一版恒等映射策略，启用 `satp` 后继续运行并输出 `[Lab4] PASS`。
 
 ## 学习目标
 
-- 理解 Sv39 虚拟地址结构。
-- 理解 VPN、PPN 和页内偏移。
-- 理解三级页表和页表项格式。
-- 理解 PTE 权限位。
-- 理解 `satp` 和 `sfence.vma` 的作用。
-- 能解释为什么内核启用分页后仍需要继续执行。
+- 理解 Sv39 虚拟地址结构、VPN、PPN 和页内偏移。
+- 理解三级页表 walk 和 PTE 格式。
+- 掌握 `V/R/W/X/U/G/A/D` 权限位的基本含义。
+- 能够使用 Lab3 的物理页分配器分配页表页。
+- 理解 `satp` 与 `sfence.vma` 的作用。
+- 理解为什么启用分页前必须建立当前内核的必要映射。
 
 ## 前置实验
 
 - Lab1：启动、SBI 和控制台。
 - Lab2：trap 与异常处理。
-- Lab3：物理页分配和释放。
+- Lab3：物理页分配与释放。
 
 ## Sv39 地址结构
 
-Sv39 使用 39 位有效虚拟地址。4 KiB 页大小下，低 12 位是页内偏移，其余部分分成 3 个 9 位 VPN 索引：
+Sv39 使用 39 位有效虚拟地址。4 KiB 页大小下，低 12 位是页内偏移，其余部分拆成 3 个 9 位 VPN 索引。
 
 ```text
 | VPN[2] | VPN[1] | VPN[0] | page offset |
 |  9bit  |  9bit  |  9bit  |    12bit    |
 ```
 
-starter 中提供：
-
-- `VirtAddr`
-- `VirtPageNum`
-- `VirtAddr::floor`
-- `VirtAddr::ceil`
-- `VirtPageNum::indexes`
-
-这些函数在 starter 中保留 TODO，solution 阶段再补全。
-
-## 三级页表
-
-Sv39 页表有三级，每一级页表页包含 512 个页表项。地址翻译时依次使用：
-
-1. `VPN[2]` 查根页表。
-2. `VPN[1]` 查第二级页表。
-3. `VPN[0]` 查第三级页表。
-4. 叶子 PTE 给出物理页号 PPN，再加页内偏移得到物理地址。
+代码中 `VirtPageNum::indexes()` 返回 `[VPN0, VPN1, VPN2]`，页表 walk 时按 `VPN2 -> VPN1 -> VPN0` 使用。
 
 ```mermaid
 flowchart TD
-    va["VirtAddr"] --> split["split into VPN2, VPN1, VPN0, offset"]
-    split --> root["root page table"]
-    root --> l1["level-1 page table"]
-    l1 --> l0["level-0 page table"]
-    l0 --> pte["leaf PageTableEntry"]
-    pte --> pa["PhysAddr = PPN + offset"]
+    va["VirtAddr"] --> split["split: VPN2, VPN1, VPN0, offset"]
+    split --> root["root page table: VPN2"]
+    root --> l1["level-1 page table: VPN1"]
+    l1 --> l0["level-0 page table: VPN0"]
+    l0 --> pte["leaf PTE"]
+    pte --> pa["PhysAddr = PPN * 4096 + offset"]
 ```
 
-## 页表项格式
+## 页表项和权限
 
-Lab4 starter 提供 `PageTableEntry` 和 `PTEFlags`。关键标志包括：
+Lab4 使用 `PageTableEntry` 和 `PTEFlags` 描述 Sv39 PTE。
 
 - `V`：有效。
 - `R`：可读。
 - `W`：可写。
 - `X`：可执行。
-- `U`：用户可访问。
-- `G`：全局映射。
-- `A`：已访问。
-- `D`：已修改。
+- `U`：用户可访问，本实验暂不使用。
+- `G`：全局映射，本实验暂不使用。
+- `A`：已访问。为避免教学内核处理访问位异常，solution 会预先设置。
+- `D`：已修改。可写页会预先设置。
 
-starter 中 `PageTableEntry::ppn`、`PageTable::map`、`PageTable::unmap` 和 `PageTable::translate` 保留 TODO。
+非叶子 PTE 只设置 `V` 并指向下一级页表页。叶子 PTE 设置 `R/W/X` 中至少一个权限位并指向数据页。
 
-## satp 寄存器
+## 内核恒等映射策略
 
-Sv39 下 `satp` 由以下字段组成：
+第一版 Lab4 使用恒等映射：虚拟地址等于物理地址。这样写入 `satp` 后，当前代码、只读数据、全局数据、BSS 和启动栈仍然能以原地址继续访问，便于本科生先聚焦页表机制本身。
 
-- MODE：Sv39 为 8。
-- ASID：starter 暂不使用，保持 0。
-- PPN：根页表物理页号。
+权限按链接脚本符号划分，不把全部内存统一映射为 RWX：
 
-starter 提供 `make_satp` 辅助函数，但不会写入 `satp`。
+| 区域 | 地址来源 | 权限 |
+| --- | --- | --- |
+| `.text` | `stext..etext` | `V | R | X | A` |
+| `.rodata` | `srodata..erodata` | `V | R | A` |
+| `.data` | `sdata..edata` | `V | R | W | A | D` |
+| `.bss` 和启动栈 | `sbss..ekernel` | `V | R | W | A | D` |
+| Lab4 测试页 | Lab3 分配器返回的测试物理页 | `V | R | W | A | D` |
 
-## sfence.vma
+当前控制台输出继续通过 SBI，不直接访问 UART MMIO，因此 Lab4 第一版不额外映射设备 MMIO 区域。
 
-未来 solution 在切换地址空间或更新页表后，需要执行 `sfence.vma` 刷新地址翻译缓存。starter 不执行该指令，避免在未建立完整恒等映射前破坏当前执行环境。
+## 页表页所有权
 
-## 内核映射策略
+`PageTable` 使用固定容量页表页池记录根页表页和中间页表页的所有权，容量为 `MAX_PAGE_TABLE_FRAMES = 8`。容量耗尽时返回明确错误，不会静默覆盖已有页表页。
 
-未来 solution 优先使用恒等映射，即虚拟地址等于物理地址。这样在启用分页后，当前代码、栈、SBI 调用路径和串口输出仍能继续访问。
+设计要点：
 
-starter 只保留设计边界：
+- 根页表页和中间页表页都来自 Lab3 `StackFrameAllocator`。
+- 新页表页在加入页表前清零。
+- 页表对象保存所有页表页 PPN，活跃地址空间期间不把这些页重新交给普通数据页分配。
+- 叶子映射的数据页和页表页分开管理。
+- 第一版不实现 `Drop` 自动回收，后续可扩展显式释放或动态结构。
 
-- 不真实分配根页表页。
-- 不创建中间级页表。
-- 不写 `satp`。
-- 不启用分页。
+为避免提前引入堆分配器，RISC-V 内核路径使用 `.bss` 中的固定静态页表池保存教学页表数组；主机测试路径使用安全的模拟页表后端，不会把 RISC-V PPN 当作宿主机指针解引用。
+
+## satp 和 sfence.vma
+
+`satp` 构造方式：
+
+```text
+satp = (8 << 60) | root_ppn
+```
+
+其中 mode `8` 表示 Sv39，ASID 暂时为 0。写入 `satp` 后执行 `sfence.vma`，刷新旧的地址翻译缓存。
 
 ## Starter 和 Solution 区别
 
 `lab4-starter`：
 
-- 提供 `VirtAddr`、`VirtPageNum`、`PageTableEntry`、`PTEFlags`、`PageTable`、`MemorySet` 骨架。
+- 提供 `VirtAddr`、`VirtPageNum`、`PTEFlags`、`PageTableEntry`、`PageTable`、`MemorySet` 骨架。
+- 保留学生 TODO。
 - QEMU 输出 `[Lab4] TODO: implement Sv39 page table mapping`。
 - 不输出 `[Lab4] PASS`。
 
-未来 `lab4-solution`：
+`lab4-solution`：
 
-- 补全三级索引、页表项解析、map、unmap、translate。
+- 补全地址取整、页内偏移、三级索引、PTE 解析。
+- 实现 `map`、`unmap`、`translate` 和中间页表按需创建。
 - 建立内核必要恒等映射。
 - 写入 `satp` 并执行 `sfence.vma`。
-- 启用分页后继续输出 `[Lab4] PASS`。
+- 启用分页后继续输出并完成测试页读写验证。
 
 ## 学生任务
 
@@ -129,27 +129,23 @@ starter 只保留设计边界：
 - `PageTable::translate`
 - `MemorySet::activate`
 
-## 禁止修改的基础设施
-
-学生不应为了完成 Lab4 修改：
-
-- QEMU 启动参数。
-- OpenSBI 调用接口。
-- Lab1 控制台路径。
-- Lab2 trap 入口。
-- Lab3 物理页分配器接口。
-- `scripts/test-lab4.ps1` 的 PASS 判定。
-- `kernel/linker.ld` 中的内核加载基址。
+具体代码路径以当前分支实现为准。不要为了通过测试修改 QEMU 启动参数、SBI 接口、Lab2 trap 入口或 Lab3 分配器接口。
 
 ## 构建和测试命令
 
-构建：
+主机单元测试：
 
 ```powershell
-cargo build -p ai-os-kernel
+cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
 ```
 
-starter 验收：
+Lab4 solution 验收：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
+```
+
+Lab4 starter 验收：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -ExpectIncomplete
@@ -163,87 +159,75 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
 ```
 
-## Starter 预期结果
-
-starter 应输出：
-
-```text
-[Lab3] PASS
-[Lab4] start
-[Lab4] TODO: implement Sv39 page table mapping
-```
-
-starter 不应输出：
-
-```text
-[Lab4] PASS
-```
-
 ## Solution 预期输出
 
-未来 solution 完成后，QEMU 输出应包含：
+QEMU 输出应包含：
 
 ```text
-[Lab4] start
+[Lab4] page table built
+[Lab4] satp activated
+[Lab4] paging is active
+[Lab4] map/translate test passed
 [Lab4] PASS
 ```
 
-## 未来测试设计
+## 测试覆盖
 
-主机单元测试应覆盖：
+主机单元测试覆盖：
 
-- 虚拟地址 `floor` 和 `ceil`。
-- 虚拟地址与虚拟页号转换。
-- Sv39 三级索引。
+- `VirtAddr::floor`、`ceil` 和 `page_offset`。
+- `VirtAddr` 与 `VirtPageNum` 转换。
+- Sv39 三级 VPN 索引。
 - PTE flags 设置与读取。
-- 无效 PTE、叶子 PTE。
-- 只读、可写、可执行权限组合。
+- 有效、无效和叶子 PTE 判断。
 - `map` 后 `translate`。
 - 重复 `map`。
+- 取消不存在的映射。
 - `unmap` 后 `translate` 失败。
-- 未映射地址查询。
+- 权限组合保留。
 
-QEMU 集成测试应覆盖：
+QEMU 集成测试覆盖：
 
-- 分配根页表。
-- 建立内核必要映射。
+- 使用真实链接脚本符号建立内核映射。
+- 分配根页表和中间页表页。
 - 激活 `satp`。
 - 执行 `sfence.vma`。
 - 启用分页后继续输出。
 - 映射测试页并读写验证。
-- 权限位验证。
-- 最终输出 `[Lab4] PASS`。
 
 ## 常见错误
 
 - VPN 索引顺序写反。
-- PTE 忘记设置 `V` 位。
-- 将非叶子 PTE 当成叶子映射。
-- 写 `satp` 前没有建立当前代码和栈的恒等映射。
-- 写 `satp` 后忘记执行 `sfence.vma`。
-- 把 Lab4 扩展成任务、系统调用或文件系统实验。
+- 忘记设置 PTE `V` 位。
+- 把非叶子 PTE 当成叶子 PTE。
+- 在启用分页前漏掉当前代码、只读数据、BSS 或启动栈映射。
+- 把全部内存映射为统一 RWX。
+- 将页表页和普通数据页混用。
+- 写入 `satp` 后忘记执行 `sfence.vma`。
 
-## 调试方法
+## 调试建议
 
-- 先在主机测试中验证地址拆分和 PTE flags。
-- 手动画出 3 级页表路径。
-- 启用分页前确认代码段、只读段、数据段、BSS、栈和 MMIO 都有映射。
-- QEMU 输出只匹配稳定 marker，不依赖完整 OpenSBI banner。
+- 先运行主机单元测试验证地址拆分和纯页表算法。
+- 再运行 QEMU，观察是否停在 `page table built`、`satp activated` 或 `paging is active`。
+- 如果 `satp` 后无法继续输出，优先检查 `.text`、`.rodata`、`.bss` 和启动栈映射。
+- 如果测试页读写失败，检查测试页是否被映射为 `R | W | A | D`。
+
+## unsafe 和汇编安全前提
+
+- 读取链接脚本符号时只把符号地址当作整数边界，不调用这些符号。
+- RISC-V 路径访问静态页表池时，假设单 hart、单地址空间构建过程，没有并发别名。
+- 同步页表页到物理页时，页表页来自 Lab3 分配器，位于 `ekernel` 之后，不覆盖内核镜像和启动栈。
+- 写入 `satp` 前已经建立当前执行代码、只读数据、数据段、BSS 和启动栈的恒等映射。
+- 测试页读写只访问由 Lab3 分配器返回并已映射为可读写的数据页。
 
 ## 思考题
 
-1. 为什么 Sv39 每一级索引都是 9 位？
-2. 为什么启用分页前必须映射当前正在执行的代码？
-3. 只读页和可执行页的权限位应该如何组合？
-4. `satp` 切换后为什么需要 `sfence.vma`？
-5. Lab4 的页表页为什么依赖 Lab3 的物理页分配器？
+1. 为什么 Sv39 每一级 VPN 索引都是 9 位？
+2. 为什么启用分页前必须映射当前正在执行的代码和栈？
+3. 为什么不能把全部内存都映射成 RWX？
+4. 页表页为什么需要所有权记录？
+5. 高地址内核映射相比恒等映射会带来哪些链接和跳转问题？
 
 ## 教师验收方法
 
-在 `lab4-starter` 上运行：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -ExpectIncomplete
-```
-
-该命令通过说明 starter 可构建、可启动，Lab3 基线仍正常，并且没有提前输出 `[Lab4] PASS`。
+教师可先在 `lab4-starter` 运行 `-ExpectIncomplete`，确认 starter 可构建、可启动且未泄露 `[Lab4] PASS`。再在 `lab4-solution` 运行默认 `scripts/test-lab4.ps1`，确认 QEMU 输出包含分页激活后的关键 marker 和 `[Lab4] PASS`。
