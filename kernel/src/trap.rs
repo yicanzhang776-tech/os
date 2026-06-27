@@ -4,7 +4,7 @@ use core::{
 };
 
 use crate::{
-    console, sbi,
+    console, fs, sbi,
     syscall::{self, SyscallError, SyscallOutcome, SyscallRequest},
 };
 
@@ -284,6 +284,12 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             let _ = code;
             console::print_line("[Lab6] syscall exit handled");
             console::print_line("[Lab6] PASS");
+            console::print_line("[Lab7] start");
+            if fs::starter_interfaces_are_present() {
+                console::print_line(fs::LAB7_TODO_MARKER);
+            } else {
+                console::print_line("[Lab7] FAIL: file-system skeleton check failed");
+            }
             sbi::shutdown();
         }
         Err(SyscallError::UnknownSyscall) => {

@@ -3,6 +3,8 @@
 
 mod boot;
 mod console;
+mod drivers;
+mod fs;
 mod memory;
 mod sbi;
 mod syscall;

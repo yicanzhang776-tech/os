@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod drivers;
+pub mod fs;
 pub mod memory;
 pub mod syscall;
 pub mod task;
@@ -60,5 +62,16 @@ mod lab6_contract_tests {
         assert!(layout.text_start.value() < layout.text_end.value());
         assert!(layout.stack_start.value() < layout.stack_end.value());
         assert!(layout.text_end.value() <= layout.stack_start.value());
+    }
+}
+
+#[cfg(test)]
+mod lab7_starter_contract_tests {
+    use super::{drivers, fs};
+
+    #[test]
+    fn lab7_starter_interfaces_are_present_without_claiming_success() {
+        assert!(drivers::starter_interfaces_are_present());
+        assert!(fs::starter_interfaces_are_present());
     }
 }
