@@ -5,8 +5,10 @@ mod boot;
 mod console;
 mod memory;
 mod sbi;
+mod syscall;
 mod task;
 mod trap;
+mod user;
 
 use core::panic::PanicInfo;
 
@@ -31,6 +33,7 @@ extern "C" fn kernel_main() -> ! {
     }
     run_lab4();
     run_lab5();
+    run_lab6();
     sbi::shutdown()
 }
 
@@ -172,6 +175,16 @@ fn lab5_yield_or_exit() {
     if task::yield_now().is_err() {
         console::print_line("[Lab5] FAIL: yield failed");
         task::exit_current();
+    }
+}
+
+fn run_lab6() {
+    console::print_line("[Lab6] start");
+    if user::starter_interfaces_are_present() && syscall::starter_interfaces_are_present() {
+        console::print_line("[Lab6] user runtime initialized");
+        console::print_line("[Lab6] TODO: implement user mode and syscalls");
+    } else {
+        console::print_line("[Lab6] FAIL: user runtime skeleton check failed");
     }
 }
 
