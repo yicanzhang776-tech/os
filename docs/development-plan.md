@@ -1,6 +1,6 @@
 # 开发计划与当前进度
 
-本文档记录 P0-Lab7 的阶段目标、完成状态和推送前剩余工作。
+本文档记录 P0-Lab7 的阶段目标、完成状态和后续可选扩展。
 
 ## 阶段完成情况
 
@@ -21,15 +21,14 @@
 - `labN-starter`：第 N 个实验的学生起点，保留清晰 TODO，不输出本实验 PASS。
 - `labN-solution`：第 N 个实验的教师参考实现，输出对应 `[LabN] PASS`。
 
-Lab3-Lab7 的 starter/solution 分支均已在本地建立。远端推送需要人工确认后再执行。
+P0 与 Lab1-Lab7 的 starter/solution 分支均已推送到官方 GitLab。`lab7-solution` 是当前最终成果分支，`main` 已作为 GitLab 默认展示入口同步到最终成果。
 
-## 推送前剩余任务
+## 当前完成状态与可选后续
 
-1. 同步根 README、需求、架构、测试和 AI 协作记录。
-2. 补齐 GitLab CI 到 Lab7。
-3. 审计所有本地分支的提交、upstream 和推送适配情况。
-4. 在 `lab7-solution` 执行全量本地验收。
-5. 获得人工授权后再执行 `git push`。
+1. P0 与 Lab1-Lab7 已形成构建、运行、主机测试和 QEMU 系统测试闭环。
+2. `docs/final-report.md`、`docs/submission-checklist.md` 和 `docs/demo-script.md` 已作为最终材料草稿加入仓库。
+3. 后续可根据比赛提交格式制作演示视频、答辩 PPT 和最终版报告 PDF。
+4. 若希望所有历史 starter/solution 分支都单独运行最新 CI，可将最终 CI 配置同步到对应分支；当前最终展示入口为 `main`/`lab7-solution`。
 
 ## 最终验收建议
 
@@ -50,5 +49,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 ## 风险与后续材料
 
 - GitLab runner 可能缺少 QEMU 或 Rust target，需要根据 CI 日志补安装命令。
-- 由于 `.gitlab-ci.yml` 只在包含该文件的分支生效，若希望旧 starter/solution 分支也自动跑最新 CI，需要后续将 CI 收尾提交同步到对应分支或先合并到最终提交分支。
-- 比赛最终材料仍需要设计报告、演示视频、答辩 PPT 和 AI 使用说明。
+- 由于 `.gitlab-ci.yml` 只在包含该文件的分支生效，若希望旧 starter/solution 分支也自动跑最新 CI，需要将最终 CI 配置同步到对应分支。
+- 仓库内已提供最终报告草稿、提交清单、演示脚本和 AI 协作记录；比赛视频和答辩 PPT 仍需按现场提交要求制作。

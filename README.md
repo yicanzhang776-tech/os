@@ -6,7 +6,7 @@
 
 ## 当前项目状态
 
-当前本地仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
+当前仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
 
 - P0：Rust 裸机内核可交叉编译，并能在 QEMU `virt` + OpenSBI 下启动。
 - Lab1：启动与 SBI 控制台。
@@ -19,12 +19,13 @@
 
 所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
 
-当前限制：
+当前成果已经包含最终技术报告草稿、提交检查清单和演示讲解脚本，位于 `docs/` 目录。
+
+教学版边界：
 
 - Lab7 使用固定容量内存文件系统，不接入 virtio-block 或真实磁盘。
 - Lab6 使用内置用户程序，不实现 ELF 加载、多进程或复杂用户指针校验。
 - Lab5 只实现单核、内核态、协作式调度，不实现抢占、多核或优先级调度。
-- 当前尚未执行远端推送；推送需要人工明确授权。
 
 ## P0 与 Lab1-Lab7 的区别
 
@@ -233,11 +234,11 @@ winget install --id SoftwareFreedomConservancy.QEMU -e
 
 当前仓库包含可执行内核 crate，且比赛验收需要可重复构建。因此建议提交 `Cargo.lock`，用于锁定依赖版本并提升复现性。若后续拆出单独发布到 crates.io 的纯库 crate，可再按 Rust 库发布惯例单独评估。
 
-## 尚未实现或作为扩展的内容
+## 教学版边界与扩展方向
 
 - 统一的 `scripts/test-lab.ps1 all` 测试入口。
 - 高地址内核映射。
 - 抢占式调度、多核调度和优先级调度。
 - ELF 加载、多用户程序、多进程地址空间。
 - virtio-block、真实磁盘文件系统和复杂路径解析。
-- 最终设计报告、演示视频和答辩材料。
+- 更完整的演示视频和答辩 PPT 可基于 `docs/demo-script.md` 与 `docs/final-report.md` 继续制作。
