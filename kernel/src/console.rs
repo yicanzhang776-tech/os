@@ -1,14 +1,27 @@
 use crate::sbi;
 
 pub fn print_line(message: &str) {
-    for byte in message.bytes() {
-        putchar(byte);
-    }
-    putchar(b'\n');
+    console_write(message);
+    console_putchar(b'\n');
 }
 
-fn putchar(byte: u8) {
-    // TODO(student): trace how this function reaches the SBI console call.
-    // Lab1 keeps this helper small so students can inspect the full path.
+pub fn console_putchar(byte: u8) {
+    sbi::console_putchar(byte);
+}
+
+pub fn console_write(message: &str) {
+    for byte in message.bytes() {
+        console_putchar(byte);
+    }
+}
+
+pub fn raw_print_line(message: &str) {
+    for byte in message.bytes() {
+        raw_putchar(byte);
+    }
+    raw_putchar(b'\n');
+}
+
+fn raw_putchar(byte: u8) {
     sbi::console_putchar(byte);
 }
