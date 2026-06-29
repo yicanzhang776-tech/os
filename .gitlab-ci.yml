@@ -5,12 +5,27 @@ default:
   image: rust:latest
   before_script:
     - rustup target add riscv64gc-unknown-none-elf
+    - rustup component add rustfmt clippy
     - apt-get update
     - apt-get install -y --no-install-recommends qemu-system-misc
     - chmod +x scripts/*.sh
 
-verify:p0:
+.verify-common: &verify_common
   stage: verify
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+
+.verify-solution: &verify_solution
+  <<: *verify_common
+
+.verify-starter: &verify_starter
+  <<: *verify_common
+
+verify:p0:
+  <<: *verify_solution
   rules:
     - if: '$CI_COMMIT_BRANCH == "codex/p0-minimal-qemu-baseline"'
   script:
@@ -21,7 +36,7 @@ verify:p0:
     - scripts/test-qemu.sh --name P0 --marker "[P0] PASS" --log target/qemu-p0.log
 
 verify:lab1-starter:
-  stage: verify
+  <<: *verify_starter
   rules:
     - if: '$CI_COMMIT_BRANCH == "lab1-starter"'
   script:
@@ -32,7 +47,7 @@ verify:lab1-starter:
     - scripts/test-qemu.sh --name Lab1 --marker "[Lab1] PASS" --mode expect-incomplete --require "[Lab1] TODO" --log target/qemu-lab1.log
 
 verify:lab1-solution:
-  stage: verify
+  <<: *verify_solution
   rules:
     - if: '$CI_COMMIT_BRANCH == "lab1-solution"'
   script:
@@ -43,7 +58,7 @@ verify:lab1-solution:
     - scripts/test-qemu.sh --name Lab1 --marker "[Lab1] PASS" --log target/qemu-lab1.log
 
 verify:lab2-starter:
-  stage: verify
+  <<: *verify_starter
   rules:
     - if: '$CI_COMMIT_BRANCH == "lab2-starter"'
   script:
@@ -54,7 +69,7 @@ verify:lab2-starter:
     - scripts/test-qemu.sh --name Lab2 --marker "[Lab2] PASS" --mode expect-incomplete --require "[Lab2] TODO" --log target/qemu-lab2.log
 
 verify:lab2-solution:
-  stage: verify
+  <<: *verify_solution
   rules:
     - if: '$CI_COMMIT_BRANCH == "lab2-solution"'
   script:
@@ -63,3 +78,118 @@ verify:lab2-solution:
     - cargo build -p ai-os-kernel
     - cargo clippy -p ai-os-kernel -- -D warnings
     - scripts/test-qemu.sh --name Lab2 --marker "[Lab2] PASS" --log target/qemu-lab2.log
+
+verify:lab3-starter:
+  <<: *verify_starter
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab3-starter"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - scripts/test-qemu.sh --name Lab3 --marker "[Lab3] PASS" --mode expect-incomplete --require "[Lab3] TODO" --log target/qemu-lab3.log
+
+verify:lab3-solution:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab3-solution"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab3 --marker "[Lab3] PASS" --log target/qemu-lab3.log
+
+verify:lab4-starter:
+  <<: *verify_starter
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab4-starter"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - scripts/test-qemu.sh --name Lab4 --marker "[Lab4] PASS" --mode expect-incomplete --require "[Lab4] TODO" --log target/qemu-lab4.log
+
+verify:lab4-solution:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab4-solution"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab4 --marker "[Lab4] PASS" --log target/qemu-lab4.log
+
+verify:lab5-starter:
+  <<: *verify_starter
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab5-starter"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - scripts/test-qemu.sh --name Lab5 --marker "[Lab5] PASS" --mode expect-incomplete --require "[Lab5] TODO: implement cooperative scheduler" --log target/qemu-lab5.log
+
+verify:lab5-solution:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab5-solution"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab5 --marker "[Lab5] PASS" --log target/qemu-lab5.log
+
+verify:lab6-starter:
+  <<: *verify_starter
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab6-starter"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - scripts/test-qemu.sh --name Lab6 --marker "[Lab6] PASS" --mode expect-incomplete --require "[Lab6] TODO: implement user mode and syscalls" --log target/qemu-lab6.log
+
+verify:lab6-solution:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab6-solution"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab6 --marker "[Lab6] PASS" --log target/qemu-lab6.log
+
+verify:lab7-starter:
+  <<: *verify_starter
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab7-starter"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS" --mode expect-incomplete --require "[Lab7] TODO: implement memory file system" --log target/qemu-lab7.log
+
+verify:lab7-solution:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "lab7-solution"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS" --log target/qemu-lab7.log

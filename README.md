@@ -2,20 +2,29 @@
 
 本项目参加 2026 年全国大学生计算机系统能力大赛，赛项为操作系统设计赛，题目为 OS 功能挑战赛道第 20 题：AI 合作的操作系统教学实验环境。
 
-项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果应适合本科生学习、教师教学和比赛验收。
+项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
 
 ## 当前项目状态
 
-当前处于 P0 工程运行基线阶段：
+当前本地仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
 
-- 已建立 Rust workspace。
-- 已建立最小 `kernel` crate。
-- 已配置目标架构 `riscv64gc-unknown-none-elf`。
-- 已能在 QEMU `virt` 机器上通过 OpenSBI 进入 S-mode 内核。
-- 已能输出最小启动日志和稳定成功标识 `[P0] PASS`。
-- 已提供可重复执行的构建、运行、环境检查和 QEMU 冒烟测试命令。
+- P0：Rust 裸机内核可交叉编译，并能在 QEMU `virt` + OpenSBI 下启动。
+- Lab1：启动与 SBI 控制台。
+- Lab2：Trap 与异常处理。
+- Lab3：物理内存管理。
+- Lab4：RISC-V Sv39 虚拟内存。
+- Lab5：单核内核态协作式调度。
+- Lab6：最小用户态与系统调用。
+- Lab7：设备抽象与教学版内存文件系统。
 
-Lab1 到 Lab7 仍处于规划和文档骨架阶段，尚未实现正式教学实验功能。
+所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
+
+当前限制：
+
+- Lab7 使用固定容量内存文件系统，不接入 virtio-block 或真实磁盘。
+- Lab6 使用内置用户程序，不实现 ELF 加载、多进程或复杂用户指针校验。
+- Lab5 只实现单核、内核态、协作式调度，不实现抢占、多核或优先级调度。
+- 当前尚未执行远端推送；推送需要人工明确授权。
 
 ## P0 与 Lab1-Lab7 的区别
 
@@ -28,40 +37,25 @@ P0 是工程运行基线，不计入正式教学实验。P0 只负责：
 - 内核能够输出最小启动信息。
 - 提供可重复执行的构建、运行和测试命令。
 
-Lab1 到 Lab7 是面向学生的正式教学实验：
-
-1. Lab1：启动与 SBI 控制台。
-2. Lab2：Trap 与异常处理。
-3. Lab3：物理内存管理。
-4. Lab4：Sv39 虚拟内存。
-5. Lab5：任务管理与协作式调度。
-6. Lab6：用户态与系统调用。
-7. Lab7：设备与简化文件系统。
+Lab1 到 Lab7 是面向学生的正式教学实验，每个实验约 3 个循序渐进的小任务，整体难度控制在普通本科生可完成的中等水平。
 
 ## 当前仓库目录结构
 
 ```text
 .
-├── .cargo/
-│   └── config.toml
-├── docs/
-│   ├── README.md
-│   ├── requirements.md
-│   ├── architecture.md
-│   ├── development-plan.md
-│   ├── testing.md
-│   ├── ai-collaboration.md
-│   └── labs/
-├── kernel/
-│   ├── Cargo.toml
+├── .cargo/                 # Rust 目标配置
+├── docs/                   # 需求、架构、测试、AI协作和实验文档
+├── kernel/                 # RISC-V 教学内核 crate
 │   ├── linker.ld
 │   └── src/
-│       └── main.rs
-├── scripts/
-│   ├── check-env.ps1
-│   ├── check-env.sh
-│   ├── run-qemu.ps1
-│   └── test-qemu.ps1
+│       ├── drivers/        # Lab7 内存设备抽象
+│       ├── fs/             # Lab7 简化文件系统
+│       ├── memory/         # Lab3/Lab4 内存管理
+│       ├── task/           # Lab5 协作式调度
+│       ├── syscall.rs      # Lab6/Lab7 系统调用分发
+│       ├── trap.rs         # Lab2 及后续 trap/syscall 路径
+│       └── user.rs         # Lab6/Lab7 内置用户程序
+├── scripts/                # 环境检查、QEMU运行和实验测试脚本
 ├── AGENTS.md
 ├── Cargo.toml
 ├── Cargo.lock
@@ -122,29 +116,17 @@ sh scripts/check-env.sh
 
 不同发行版中 QEMU 包名可能不同。若 `qemu-system-riscv64` 不存在，请检查发行版对应的 RISC-V QEMU system emulator 包。
 
-## 构建命令
+## 构建与运行
 
 ```powershell
 cargo build -p ai-os-kernel
-```
-
-或：
-
-```powershell
-make build
-```
-
-## QEMU 运行命令
-
-Windows PowerShell：
-
-```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
 ```
 
-Makefile：
+或使用 Makefile：
 
 ```powershell
+make build
 make run
 ```
 
@@ -154,42 +136,60 @@ make run
 qemu-system-riscv64 -machine virt -nographic -bios default -kernel target/riscv64gc-unknown-none-elf/debug/ai-os-kernel
 ```
 
-## P0 自动测试命令
+## 自动测试命令
 
-Windows PowerShell：
+P0：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1
 ```
 
-Makefile：
+Lab1 到 Lab7：
 
 ```powershell
-make test-qemu
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 ```
 
-P0 测试会执行：
+starter 分支可使用 `-ExpectIncomplete` 验证“能启动但未泄露答案”：
 
-1. 构建 `ai-os-kernel`。
-2. 启动 QEMU `virt` 机器。
-3. 捕获 QEMU 串口输出。
-4. 检查稳定成功标识 `[P0] PASS`。
-5. 设置超时，避免 QEMU 无限挂起。
-6. QEMU 异常退出或缺少成功标识时返回失败。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
+```
 
-## P0 成功时的真实预期输出
+主机单元测试：
 
-QEMU 会先输出 OpenSBI banner。内核自身输出应包含：
+```powershell
+cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
+```
+
+## 成功输出示例
+
+最终 `lab7-solution` 的 QEMU 输出会包含：
 
 ```text
-[ai-os] P0 minimal RISC-V kernel baseline
-[ai-os] booted on QEMU virt through OpenSBI
-[P0] PASS
-[ai-os] shutting down through SBI system reset
-QEMU P0 smoke test passed.
+[Lab1] PASS
+[Lab2] PASS
+[Lab3] PASS
+[Lab4] PASS
+[Lab5] PASS
+[Lab6] PASS
+[Lab7] PASS
 ```
 
-其中 `[P0] PASS` 是 P0 自动验收的稳定成功标识。
+Lab7 关键输出：
+
+```text
+[Lab7] start
+[Lab7] file opened
+[Lab7] write/read verified
+[Lab7] PASS
+```
 
 ## 常见错误和排查方法
 
@@ -221,27 +221,23 @@ winget install --id SoftwareFreedomConservancy.QEMU -e
 
 安装后重新打开终端，或确认 QEMU 安装目录已加入 `PATH`。
 
-### QEMU 启动后没有 `[P0] PASS`
+### QEMU 启动后没有对应 `[LabN] PASS`
 
-说明内核没有执行到 P0 成功路径。请检查：
-
-- `kernel/src/main.rs` 中是否仍输出 `[P0] PASS`。
-- `kernel/linker.ld` 中入口地址是否仍为 `0x80200000`。
-- QEMU 是否使用 `-bios default` 和 `-kernel` 加载当前构建产物。
+请先确认当前分支是否为对应的 solution 分支。starter 分支不会输出本实验的 PASS 标志，应使用 `-ExpectIncomplete` 进行教师侧验证。
 
 ### QEMU 测试超时
 
-测试脚本会在超时后终止 QEMU。若发生超时，请检查内核是否卡在死循环、panic 或未执行 SBI system reset。
+测试脚本会在超时后终止 QEMU。若发生超时，请检查内核是否卡在死循环、panic、异常重复触发或未执行 SBI system reset。
 
 ## Cargo.lock 提交策略
 
 当前仓库包含可执行内核 crate，且比赛验收需要可重复构建。因此建议提交 `Cargo.lock`，用于锁定依赖版本并提升复现性。若后续拆出单独发布到 crates.io 的纯库 crate，可再按 Rust 库发布惯例单独评估。
 
-## 当前尚未实现的内容
+## 尚未实现或作为扩展的内容
 
-- Lab1-Lab7 的具体代码。
-- `scripts/test-lab.ps1` 统一实验测试入口。
-- 用户态程序和系统调用。
-- trap、内存管理、任务管理、文件系统和设备驱动。
-- GitLab CI。
-- 完整设计报告、AI 协作阶段记录、演示材料。
+- 统一的 `scripts/test-lab.ps1 all` 测试入口。
+- 高地址内核映射。
+- 抢占式调度、多核调度和优先级调度。
+- ELF 加载、多用户程序、多进程地址空间。
+- virtio-block、真实磁盘文件系统和复杂路径解析。
+- 最终设计报告、演示视频和答辩材料。

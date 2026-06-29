@@ -1,62 +1,62 @@
 # 项目文档总览
 
-本目录保存“AI 合作的操作系统教学实验环境”的需求、架构、计划、测试和实验设计文档。
+本目录保存“AI 合作的操作系统教学实验环境”的需求、架构、计划、测试、AI 协作和实验设计文档。
 
 ## P0 与正式教学实验的区别
 
-P0 是工程运行基线，不计入正式教学实验。P0 只负责：
+P0 是工程运行基线，不计入正式教学实验。P0 只负责 Rust 裸机工程、RISC-V 64 目标、QEMU/OpenSBI 启动和可重复测试。
 
-- Rust 裸机工程能够编译。
-- 目标架构为 `riscv64gc-unknown-none-elf`。
-- 能够在 QEMU `virt` 机器上运行。
-- 使用 OpenSBI 进入 S-mode 内核。
-- 内核能够输出最小启动信息。
-- 提供可重复执行的构建、运行和测试命令。
-
-Lab1 到 Lab7 是面向学生的正式教学实验，必须围绕操作系统核心概念逐步展开，并配套 starter code、学生任务和自动测试。
+Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概念逐步展开，并配套 starter code、学生任务、参考实现和自动测试。
 
 ## 文档索引
 
 - [赛题要求映射](requirements.md)
-- [规划架构](architecture.md)
-- [开发计划](development-plan.md)
+- [系统架构](architecture.md)
+- [开发计划与当前进度](development-plan.md)
 - [测试设计](testing.md)
+- [AI 协作记录](ai-collaboration.md)
 - [教学实验路线](labs/README.md)
+- [官方资料整理](references/problem-statement.md)
 
-## 推荐 Rust Workspace 目录结构
+## 当前分支组织
 
-本次只规划目录，不创建大量空 Crate。后续建议逐步演进为：
+```text
+codex/p0-minimal-qemu-baseline
+lab1-starter      lab1-solution
+lab2-starter      lab2-solution
+lab3-starter      lab3-solution
+lab4-starter      lab4-solution
+lab5-starter      lab5-solution
+lab6-starter      lab6-solution
+lab7-starter      lab7-solution
+```
+
+## 推荐 Rust Workspace 演进方向
+
+当前仓库已用 `kernel` crate 承载所有基础教学实验。后续若继续扩展，可逐步拆出：
 
 ```text
 .
 ├── Cargo.toml
 ├── kernel/                 # 主线教学内核 crate
 ├── crates/
-│   ├── os-common/          # 规划中：地址、错误码、共享常量等
-│   ├── os-test-support/    # 规划中：测试日志、QEMU 断言辅助
-│   └── os-user-lib/        # 规划中：用户态系统调用封装
-├── user/                   # 规划中：用户程序 workspace 成员
-├── scripts/                # 构建、运行、测试脚本
-├── docs/                   # 设计、实验、测试和验收文档
+│   ├── os-common/          # 可选：地址、错误码、共享常量
+│   ├── os-test-support/    # 可选：测试日志、QEMU 断言辅助
+│   └── os-user-lib/        # 可选：用户态系统调用封装
+├── user/                   # 可选：独立用户程序 workspace 成员
+├── scripts/
+├── docs/
 └── target/                 # 构建产物，不提交
 ```
 
-当前仓库已经具备 P0 的最小 `kernel` crate。`crates/` 和 `user/` 目录将在后续阶段按真实需求创建。
+本阶段没有为了形式创建大量空 crate；所有新增模块都服务于已完成的 Lab1-Lab7 教学目标。
 
-## 实验组织方案比较
+## 实验组织方案
 
-| 方案 | 教学优点 | 教学缺点 | 维护影响 | 测试影响 | 比赛提交影响 |
-|---|---|---|---|---|---|
-| 每个实验使用独立 Git 分支 | 每个实验状态干净，学生可以看到完整历史 | 学生需要频繁切分支，容易在本地混乱 | 分支数量多，修复公共问题要多处分发 | CI 需要逐分支配置或人工切换 | 官方评审查看完整成果不够集中 |
-| 统一主线代码、实验 Starter 分支和参考答案分支 | 主线保持最终成果，starter 和答案边界清晰 | 需要严格维护分支命名和同步策略 | 公共基础设施在主线维护，分支只承载教学差异 | 主线 CI 稳定，starter/answer 可按需测试 | 提交到官方仓库时主线成果完整，分支可作为补充材料 |
+当前采用“starter/solution 独立分支”：
 
-## 推荐方案
+- `labN-starter`：学生起点，保留清晰 TODO，能构建和启动，但不输出本实验 PASS。
+- `labN-solution`：教师参考实现，补全学生任务并输出对应 `[LabN] PASS`。
+- `lab7-solution`：当前最终成果分支，包含 P0-Lab7 的完整本地实现。
 
-推荐使用“统一主线代码、实验 Starter 分支和参考答案分支”：
-
-- `main` 或比赛要求的主分支保存完整最终成果。
-- `labN-starter` 分支保存学生起点。
-- `labN-solution` 分支保存教师参考实现。
-- 文档和测试脚本在主线维护，实验分支同步必要的稳定基础设施。
-
-本方案更适合比赛提交和教师维护。短期内先在当前开发分支建立文档和 P0 基线，后续在需要发布教学材料时再创建 starter/solution 分支。
+这种组织方式便于教师展示 diff、学生从清晰起点开始，也便于比赛评审查看每个实验的边界。
