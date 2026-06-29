@@ -126,6 +126,19 @@ fn run_lab4() {
 
 fn run_lab5() {
     console::print_line("[Lab5] start");
+    if task::task_table_stage_is_complete() {
+        console::print_line("[Lab5-T1] task table ready");
+        console::print_line("[Lab5-T1] PASS");
+    } else {
+        console::print_line("[Lab5-T1] TODO: implement task context and task table");
+    }
+    if task::round_robin_stage_is_complete() {
+        console::print_line("[Lab5-T2] round robin ready");
+        console::print_line("[Lab5-T2] PASS");
+    } else {
+        console::print_line("[Lab5-T2] TODO: implement cooperative round-robin scheduler");
+    }
+
     if task::starter_interfaces_are_present() {
         console::print_line("[Lab5] scheduler initialized");
     } else {

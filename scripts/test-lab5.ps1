@@ -1,8 +1,17 @@
 param(
+    [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Stage -lt 1 -or $Stage -gt 3) {
+    throw "Stage must be 1, 2, or 3."
+}
+
+if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
+    throw "Use either -ExpectIncomplete or -Stage, not both."
+}
 
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
@@ -67,39 +76,85 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[Lab4\] PASS") {
-    throw "Expected Lab4 success marker [Lab4] PASS was not found in QEMU output."
+function Assert-Contains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+    if ($Text -notmatch $Pattern) {
+        throw $Message
+    }
 }
+
+function Assert-Ordered {
+    param(
+        [string]$Text,
+        [string[]]$Markers
+    )
+    $position = -1
+    foreach ($marker in $Markers) {
+        $next = $Text.IndexOf($marker, [Math]::Max($position + 1, 0), [StringComparison]::Ordinal)
+        if ($next -lt 0) {
+            throw "Expected marker '$marker' after previous Lab5 marker."
+        }
+        $position = $next
+    }
+}
+
+Assert-Contains $output "\[Lab4\] PASS" "Expected Lab4 success marker [Lab4] PASS was not found in QEMU output."
+Assert-Contains $output "\[Lab5\] start" "Expected Lab5 start marker was not found in QEMU output."
 
 if ($ExpectIncomplete) {
     if ($output -match "\[Lab5\] PASS") {
         throw "Unexpected Lab5 success marker [Lab5] PASS was found in starter output."
     }
     foreach ($marker in @(
-        "\[Lab5\] start",
+        "\[Lab5-T1\] TODO: implement task context and task table",
+        "\[Lab5-T2\] TODO: implement cooperative round-robin scheduler",
         "\[Lab5\] scheduler initialized",
         "\[Lab5\] TODO: implement cooperative scheduler"
     )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab5 starter marker $marker was not found in QEMU output."
-        }
+        Assert-Contains $output $marker "Expected Lab5 starter marker $marker was not found in QEMU output."
     }
     Write-Output "Lab5 QEMU starter incomplete test passed."
 }
 else {
-    foreach ($marker in @(
-        "\[Lab5\] task A step 1",
-        "\[Lab5\] task B step 1",
-        "\[Lab5\] task C step 1",
-        "\[Lab5\] task A step 2",
-        "\[Lab5\] task B step 2",
-        "\[Lab5\] task C step 2",
-        "\[Lab5\] scheduler finished",
-        "\[Lab5\] PASS"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab5 solution marker $marker was not found in QEMU output."
+    $stage1Markers = @("[Lab5-T1] task table ready", "[Lab5-T1] PASS")
+    $stage2Markers = $stage1Markers + @("[Lab5-T2] round robin ready", "[Lab5-T2] PASS")
+    $stage3Markers = $stage2Markers + @(
+        "[Lab5] task A step 1",
+        "[Lab5] task B step 1",
+        "[Lab5] task C step 1",
+        "[Lab5] task A step 2",
+        "[Lab5] task B step 2",
+        "[Lab5] task C step 2",
+        "[Lab5] scheduler finished",
+        "[Lab5] PASS"
+    )
+
+    if ($Stage -eq 1) {
+        foreach ($marker in $stage1Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 1 marker '$marker' was not found."
         }
+        Assert-Ordered $output $stage1Markers
+        Write-Output "Lab5 Stage 1 test passed."
     }
-    Write-Output "Lab5 QEMU smoke test passed."
+    elseif ($Stage -eq 2) {
+        foreach ($marker in $stage2Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 2 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage2Markers
+        Write-Output "Lab5 Stage 2 test passed."
+    }
+    else {
+        foreach ($marker in $stage3Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 3 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage3Markers
+        if ($output -match "\[Lab5.*TODO") {
+            throw "Lab5 final output still contains a TODO marker."
+        }
+        Write-Output "Lab5 Stage 3 test passed."
+    }
 }
