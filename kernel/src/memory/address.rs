@@ -18,21 +18,21 @@ impl PhysAddr {
 
     /// Return the page number containing this address.
     pub fn floor(self) -> PhysPageNum {
-        // TODO(student): divide by PAGE_SIZE after reasoning about page layout.
+        // TODO(LAB3-T1): divide by PAGE_SIZE after reasoning about page layout.
         let _ = self;
         PhysPageNum::new(0)
     }
 
     /// Return the first page number whose page starts at or after this address.
     pub fn ceil(self) -> PhysPageNum {
-        // TODO(student): handle aligned and unaligned addresses separately.
+        // TODO(LAB3-T1): handle aligned and unaligned addresses separately.
         let _ = self;
         PhysPageNum::new(0)
     }
 
     /// Return this address's offset inside its 4 KiB page.
     pub fn page_offset(self) -> usize {
-        // TODO(student): keep only the low bits within one page.
+        // TODO(LAB3-T1): keep only the low bits within one page.
         let _ = self;
         0
     }
@@ -55,7 +55,7 @@ impl PhysPageNum {
 
     /// Return the start address of this physical page.
     pub fn start_address(self) -> PhysAddr {
-        // TODO(student): multiply the page number by PAGE_SIZE.
+        // TODO(LAB3-T1): multiply the page number by PAGE_SIZE.
         let _ = self;
         PhysAddr::new(0)
     }

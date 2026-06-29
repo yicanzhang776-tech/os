@@ -21,8 +21,26 @@ extern "C" fn kernel_main() -> ! {
         console::print_line("[Lab2] TODO: configure stvec and handle the demo trap");
     }
     console::print_line("[Lab3] start");
-    let _starter_complete = memory::starter_is_complete();
-    console::print_line("[Lab3] TODO: implement physical frame allocator");
+    if memory::address_stage_is_complete() {
+        console::print_line("[Lab3-T1] address types ready");
+        console::print_line("[Lab3-T1] PASS");
+    } else {
+        console::print_line("[Lab3-T1] TODO: implement physical address conversions");
+    }
+
+    if memory::allocation_stage_is_complete() {
+        console::print_line("[Lab3-T2] allocator can allocate");
+        console::print_line("[Lab3-T2] PASS");
+    } else {
+        console::print_line("[Lab3-T2] TODO: initialize allocator and allocate frames");
+    }
+
+    if memory::starter_is_complete() {
+        console::print_line("[Lab3] frame allocator ready");
+        console::print_line("[Lab3] PASS");
+    } else {
+        console::print_line("[Lab3] TODO: implement physical frame allocator");
+    }
     sbi::shutdown()
 }
 

@@ -64,7 +64,7 @@ impl Default for StackFrameAllocator {
 
 impl FrameAllocator for StackFrameAllocator {
     fn init(&mut self, start: PhysPageNum, end: PhysPageNum) {
-        // TODO(student): validate the range and prepare allocation metadata.
+        // TODO(LAB3-T2): validate the range and prepare allocation metadata.
         self.start = start;
         self.end = end;
         self.next = start;
@@ -72,13 +72,13 @@ impl FrameAllocator for StackFrameAllocator {
     }
 
     fn alloc(&mut self) -> Option<PhysPageNum> {
-        // TODO(student): return the next free page and advance allocator state.
+        // TODO(LAB3-T2): return the next free page and advance allocator state.
         let _ = self.next;
         None
     }
 
     fn dealloc(&mut self, ppn: PhysPageNum) -> Result<(), FrameAllocatorError> {
-        // TODO(student): reject out-of-range, never-allocated, and double-free pages.
+        // TODO(LAB3-T3): reject out-of-range, never-allocated, and double-free pages.
         let _ = ppn;
         Err(FrameAllocatorError::Unimplemented)
     }
