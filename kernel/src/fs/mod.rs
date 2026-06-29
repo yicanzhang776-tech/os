@@ -44,21 +44,25 @@ impl SimpleFs {
 
     /// Open the single teaching file.
     pub fn open(&mut self) -> Result<usize, FsError> {
+        // TODO(LAB7-T2): allocate a file descriptor for the single RAM file.
         Err(FsError::Unimplemented)
     }
 
     /// Read from an open file descriptor.
     pub fn read(&mut self, _fd: usize, _buf: &mut [u8]) -> Result<usize, FsError> {
+        // TODO(LAB7-T2): read from the current file offset and advance it.
         Err(FsError::Unimplemented)
     }
 
     /// Write to an open file descriptor.
     pub fn write(&mut self, _fd: usize, _buf: &[u8]) -> Result<usize, FsError> {
+        // TODO(LAB7-T2): write at the current file offset and advance it.
         Err(FsError::Unimplemented)
     }
 
     /// Close an open file descriptor.
     pub fn close(&mut self, _fd: usize) -> Result<(), FsError> {
+        // TODO(LAB7-T2): mark the descriptor slot as closed.
         Err(FsError::Unimplemented)
     }
 }
@@ -80,6 +84,24 @@ pub fn starter_interfaces_are_present() -> bool {
         && fs.write(FIRST_FILE_DESCRIPTOR, &[1]) == Err(FsError::Unimplemented)
         && fs.read(FIRST_FILE_DESCRIPTOR, &mut one_byte) == Err(FsError::Unimplemented)
         && fs.close(FIRST_FILE_DESCRIPTOR) == Err(FsError::Unimplemented)
+}
+
+/// Return whether task 2 has a working simplified file-system implementation.
+pub fn simple_fs_stage_is_complete() -> bool {
+    let mut fs = SimpleFs::new();
+    let fd = match fs.open() {
+        Ok(fd) => fd,
+        Err(_) => return false,
+    };
+    let mut buf = [0u8; 2];
+
+    fs.write(fd, b"hi").is_ok()
+        && fs.close(fd).is_ok()
+        && fs.close(fd) == Err(FsError::InvalidFileDescriptor)
+        && fs.open() == Ok(fd)
+        && fs.read(fd, &mut buf).is_ok()
+        && buf == *b"hi"
+        && fs.read(fd + MAX_OPEN_FILES + 1, &mut buf) == Err(FsError::InvalidFileDescriptor)
 }
 
 #[cfg(test)]
