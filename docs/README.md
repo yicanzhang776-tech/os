@@ -24,7 +24,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 ## 当前分支组织
 
 ```text
-codex/p0-minimal-qemu-baseline
+p0-minimal-qemu-baseline
 lab1-starter      lab1-solution
 lab2-starter      lab2-solution
 lab3-starter      lab3-solution

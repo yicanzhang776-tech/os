@@ -44,7 +44,7 @@ flowchart TD
 
 | 阶段 | 实验名称 | 教学重点 | 分支 |
 |---|---|---|---|
-| P0 | 最小可运行内核 | 工程基线，不计入正式实验 | `codex/p0-minimal-qemu-baseline` |
+| P0 | 最小可运行内核 | 工程基线，不计入正式实验 | `p0-minimal-qemu-baseline` |
 | Lab1 | 启动与 SBI 控制台 | OpenSBI、S-mode 入口、控制台输出 | `lab1-starter` / `lab1-solution` |
 | Lab2 | Trap 与异常处理 | `stvec`、`scause`、`sepc`、breakpoint | `lab2-starter` / `lab2-solution` |
 | Lab3 | 物理内存管理 | 物理地址、页号、frame allocator | `lab3-starter` / `lab3-solution` |

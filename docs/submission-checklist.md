@@ -5,7 +5,7 @@
 ## Git 分支
 
 - [ ] 当前不在 `main/master` 上进行开发修改。
-- [ ] `codex/p0-minimal-qemu-baseline` 已推送。
+- [ ] `p0-minimal-qemu-baseline` 已推送。
 - [ ] `lab1-starter` 和 `lab1-solution` 已推送。
 - [ ] `lab2-starter` 和 `lab2-solution` 已推送。
 - [ ] `lab3-starter` 和 `lab3-solution` 已推送。

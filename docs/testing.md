@@ -89,7 +89,7 @@ scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS"
 
 `.gitlab-ci.yml` 按分支名称选择验收方式：
 
-- `codex/p0-minimal-qemu-baseline`：运行 P0 正向验收。
+- `p0-minimal-qemu-baseline`：运行 P0 正向验收。
 - `labN-starter`：运行 incomplete 验收，防止 starter 泄露答案。
 - `labN-solution`：运行 solution 正向验收，必须看到 `[LabN] PASS`。
 

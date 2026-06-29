@@ -13,7 +13,7 @@
 
 | 分支 | 最新提交 | upstream | 推送建议 |
 |---|---|---|---|
-| `codex/p0-minimal-qemu-baseline` | `b3b1fe8` | `origin/codex/p0-minimal-qemu-baseline` | 已有远端，可按需更新 |
+| `p0-minimal-qemu-baseline` | `b3b1fe8` | `origin/p0-minimal-qemu-baseline` | 已有远端，可按需更新 |
 | `lab1-starter` | `c8cf917` | `origin/lab1-starter` | 已有远端，可按需更新 |
 | `lab1-solution` | `77e2a94` | `origin/lab1-solution` | 已有远端，可按需更新 |
 | `lab2-starter` | `56437b5` | `origin/lab2-starter` | 已有远端，可按需更新 |
@@ -100,7 +100,7 @@ Lab7 QEMU starter incomplete test passed.
 未经人工授权不得执行推送。获得授权后建议按以下顺序推送：
 
 ```powershell
-git push -u origin codex/p0-minimal-qemu-baseline
+git push -u origin p0-minimal-qemu-baseline
 git push -u origin lab1-starter lab1-solution
 git push -u origin lab2-starter lab2-solution
 git push -u origin lab3-starter lab3-solution

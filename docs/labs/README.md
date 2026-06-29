@@ -6,13 +6,13 @@ P0 是工程运行基线，不计入正式教学实验。Lab1 到 Lab7 是面向
 
 - `labN-starter`: 学生起点，保留清晰 TODO，要求可编译、可启动，但不输出该实验成功标志。
 - `labN-solution`: 教师参考答案，补全 starter 中的任务，并通过该实验自动测试。
-- `codex/p0-minimal-qemu-baseline`: P0 最小可运行基线。
+- `p0-minimal-qemu-baseline`: P0 最小可运行基线。
 
 ## 实验状态
 
 | 实验 | 名称 | 当前状态 | 分支 |
 |---|---|---|---|
-| P0 | 最小可运行内核 | 已建立工程基线 | `codex/p0-minimal-qemu-baseline` |
+| P0 | 最小可运行内核 | 已建立工程基线 | `p0-minimal-qemu-baseline` |
 | Lab1 | 启动与 SBI 控制台 | 已建立 starter/solution | `lab1-starter`, `lab1-solution` |
 | Lab2 | Trap 与异常处理 | 已建立 starter/solution | `lab2-starter`, `lab2-solution` |
 | Lab3 | 物理内存管理 | 已建立 starter/solution | `lab3-starter`, `lab3-solution` |

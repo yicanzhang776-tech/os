@@ -17,7 +17,7 @@
 
 ## 当前分支组织
 
-- `codex/p0-minimal-qemu-baseline`：P0 稳定基线。
+- `p0-minimal-qemu-baseline`：P0 稳定基线。
 - `labN-starter`：第 N 个实验的学生起点，保留清晰 TODO，不输出本实验 PASS。
 - `labN-solution`：第 N 个实验的教师参考实现，输出对应 `[LabN] PASS`。
 
