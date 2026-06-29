@@ -76,3 +76,13 @@ pub fn run_lab3_checks() -> bool {
 pub fn run_lab4_starter_checks() -> bool {
     page_table::starter_interfaces_are_present()
 }
+
+/// Return whether Lab4 address, VPN index, and PTE helpers are implemented.
+pub fn lab4_address_pte_stage_is_complete() -> bool {
+    page_table::address_pte_stage_is_complete()
+}
+
+/// Return whether Lab4 page table map/unmap/translate basics are implemented.
+pub fn lab4_page_table_stage_is_complete() -> bool {
+    page_table::page_table_stage_is_complete()
+}

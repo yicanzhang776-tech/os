@@ -26,21 +26,21 @@ impl VirtAddr {
 
     /// Return the virtual page number containing this address.
     pub fn floor(self) -> VirtPageNum {
-        // TODO(student): divide the virtual address by PAGE_SIZE.
+        // TODO(LAB4-T1): divide the virtual address by PAGE_SIZE.
         let _ = self;
         VirtPageNum::new(0)
     }
 
     /// Return the first virtual page number whose page starts at or after this address.
     pub fn ceil(self) -> VirtPageNum {
-        // TODO(student): handle aligned and unaligned virtual addresses.
+        // TODO(LAB4-T1): handle aligned and unaligned virtual addresses.
         let _ = self;
         VirtPageNum::new(0)
     }
 
     /// Return this address's offset inside its 4 KiB page.
     pub fn page_offset(self) -> usize {
-        // TODO(student): keep only the low 12 bits within one page.
+        // TODO(LAB4-T1): keep only the low 12 bits within one page.
         let _ = self;
         0
     }
@@ -63,7 +63,7 @@ impl VirtPageNum {
 
     /// Return Sv39 indexes in [level-0, level-1, level-2] order.
     pub fn indexes(self) -> [usize; SV39_LEVELS] {
-        // TODO(student): split the VPN into three 9-bit indexes.
+        // TODO(LAB4-T1): split the VPN into three 9-bit indexes.
         let _ = self;
         [0; SV39_LEVELS]
     }

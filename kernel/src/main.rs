@@ -27,8 +27,25 @@ extern "C" fn kernel_main() -> ! {
         console::print_line("[Lab3] FAIL: physical frame allocator check failed");
     }
     console::print_line("[Lab4] start");
-    let _lab4_interfaces_ready = memory::run_lab4_starter_checks();
-    console::print_line("[Lab4] TODO: implement Sv39 page table mapping");
+    if memory::lab4_address_pte_stage_is_complete() {
+        console::print_line("[Lab4-T1] address and PTE ready");
+        console::print_line("[Lab4-T1] PASS");
+    } else {
+        console::print_line("[Lab4-T1] TODO: implement Sv39 address and PTE helpers");
+    }
+
+    if memory::lab4_page_table_stage_is_complete() {
+        console::print_line("[Lab4-T2] page table maps");
+        console::print_line("[Lab4-T2] PASS");
+    } else {
+        console::print_line("[Lab4-T2] TODO: implement page table map and translate");
+    }
+
+    if memory::run_lab4_starter_checks() {
+        console::print_line("[Lab4] TODO: implement Sv39 page table mapping");
+    } else {
+        console::print_line("[Lab4] TODO: complete Sv39 page table interfaces");
+    }
     sbi::shutdown()
 }
 

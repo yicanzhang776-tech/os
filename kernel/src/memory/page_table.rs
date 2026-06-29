@@ -99,7 +99,7 @@ impl PageTableEntry {
 
     /// Extract the physical page number encoded in this PTE.
     pub fn ppn(self) -> PhysPageNum {
-        // TODO(student): decode PTE bits 10..53 as the physical page number.
+        // TODO(LAB4-T1): decode PTE bits 10..53 as the physical page number.
         let _ = self;
         PhysPageNum::new(0)
     }
@@ -143,7 +143,7 @@ impl PageTable {
 
     /// Find a page table entry, creating intermediate tables when needed.
     pub fn find_pte_create(&mut self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
-        // TODO(student): walk Sv39 levels and allocate missing intermediate tables.
+        // TODO(LAB4-T2): walk Sv39 levels and allocate missing intermediate tables.
         let _ = vpn;
         None
     }
@@ -155,21 +155,21 @@ impl PageTable {
         ppn: PhysPageNum,
         flags: PTEFlags,
     ) -> Result<(), PageTableError> {
-        // TODO(student): install a valid leaf PTE and reject duplicate mappings.
+        // TODO(LAB4-T2): install a valid leaf PTE and reject duplicate mappings.
         let _ = (vpn, ppn, flags);
         Err(PageTableError::Unimplemented)
     }
 
     /// Remove one virtual page mapping.
     pub fn unmap(&mut self, vpn: VirtPageNum) -> Result<(), PageTableError> {
-        // TODO(student): invalidate the mapped PTE and reject unmapped VPNs.
+        // TODO(LAB4-T2): invalidate the mapped PTE and reject unmapped VPNs.
         let _ = vpn;
         Err(PageTableError::Unimplemented)
     }
 
     /// Translate a virtual address to a physical address.
     pub fn translate(&self, va: VirtAddr) -> Option<PhysAddr> {
-        // TODO(student): walk the page table and combine PPN with page offset.
+        // TODO(LAB4-T2): walk the page table and combine PPN with page offset.
         let _ = va;
         None
     }
@@ -205,7 +205,7 @@ impl MemorySet {
 
     /// Activate this address space.
     pub fn activate(&self) -> bool {
-        // TODO(student): write satp, execute sfence.vma, and preserve execution.
+        // TODO(LAB4-T3): write satp, execute sfence.vma, and preserve execution.
         false
     }
 }
@@ -243,4 +243,50 @@ pub fn starter_interfaces_are_present() -> bool {
     let _memory_satp = memory_set.page_table().satp();
 
     PAGE_SIZE == 4096 && !memory_set.activate()
+}
+
+/// Return whether Lab4 stage 1 helpers behave as expected.
+pub fn address_pte_stage_is_complete() -> bool {
+    let aligned = VirtAddr::new(PAGE_SIZE * 3);
+    let unaligned = VirtAddr::new(PAGE_SIZE * 3 + 0x123);
+    let vpn = VirtPageNum::new(0x54321);
+    let pte = PageTableEntry::new(
+        PhysPageNum::new(0x80200),
+        PTEFlags::V.union(PTEFlags::R).union(PTEFlags::A),
+    );
+
+    aligned.floor().value() == 3
+        && aligned.ceil().value() == 3
+        && unaligned.floor().value() == 3
+        && unaligned.ceil().value() == 4
+        && unaligned.page_offset() == 0x123
+        && vpn.indexes()
+            == [
+                0x54321 & 0x1ff,
+                (0x54321 >> 9) & 0x1ff,
+                (0x54321 >> 18) & 0x1ff,
+            ]
+        && pte.is_valid()
+        && pte.is_leaf()
+        && pte.ppn() == PhysPageNum::new(0x80200)
+}
+
+/// Return whether Lab4 stage 2 page table operations are implemented.
+pub fn page_table_stage_is_complete() -> bool {
+    let va = VirtAddr::new(0x8020_0123);
+    let vpn = va.floor();
+    let ppn = PhysPageNum::new(0x80200);
+    let flags = PTEFlags::V
+        .union(PTEFlags::R)
+        .union(PTEFlags::W)
+        .union(PTEFlags::A)
+        .union(PTEFlags::D);
+    let mut page_table = PageTable::new(PhysPageNum::new(0));
+
+    page_table.map(vpn, ppn, flags).is_ok()
+        && page_table.map(vpn, ppn, flags) == Err(PageTableError::AlreadyMapped)
+        && page_table.translate(va) == Some(PhysAddr::new(0x8020_0123))
+        && page_table.unmap(vpn).is_ok()
+        && page_table.translate(va).is_none()
+        && page_table.unmap(vpn) == Err(PageTableError::NotMapped)
 }
