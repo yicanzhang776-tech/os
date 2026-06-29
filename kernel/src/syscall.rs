@@ -43,6 +43,7 @@ pub enum SyscallError {
 /// Dispatch one system call request.
 pub fn dispatch(request: SyscallRequest) -> Result<usize, SyscallError> {
     match request.id() {
+        // TODO(LAB6-T2): return successful outcomes for write, yield, and exit.
         SYS_WRITE | SYS_YIELD | SYS_EXIT => Err(SyscallError::Unimplemented),
         _ => Err(SyscallError::UnknownSyscall),
     }
@@ -59,6 +60,20 @@ pub fn starter_interfaces_are_present() -> bool {
         && dispatch(write) == Err(SyscallError::Unimplemented)
         && dispatch(yield_now) == Err(SyscallError::Unimplemented)
         && dispatch(exit) == Err(SyscallError::Unimplemented)
+        && dispatch(unknown) == Err(SyscallError::UnknownSyscall)
+}
+
+/// Return whether Lab6 task 2 syscall ABI work is complete.
+pub fn syscall_abi_stage_is_complete() -> bool {
+    let write = SyscallRequest::new(SYS_WRITE, [1, 0x1000, 4, 0, 0, 0]);
+    let yield_now = SyscallRequest::new(SYS_YIELD, [0; 6]);
+    let exit = SyscallRequest::new(SYS_EXIT, [0, 0, 0, 0, 0, 0]);
+    let unknown = SyscallRequest::new(usize::MAX, [0; 6]);
+
+    write.args()[0] == 1
+        && dispatch(write).is_ok()
+        && dispatch(yield_now).is_ok()
+        && dispatch(exit).is_ok()
         && dispatch(unknown) == Err(SyscallError::UnknownSyscall)
 }
 

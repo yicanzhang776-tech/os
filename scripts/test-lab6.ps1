@@ -1,8 +1,17 @@
 param(
+    [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($Stage -lt 1 -or $Stage -gt 3) {
+    throw "Stage must be 1, 2, or 3."
+}
+
+if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
+    throw "Use either -ExpectIncomplete or -Stage, not both."
+}
 
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
@@ -67,35 +76,81 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[Lab5\] PASS") {
-    throw "Expected Lab5 success marker [Lab5] PASS was not found in QEMU output."
+function Assert-Contains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+    if ($Text -notmatch $Pattern) {
+        throw $Message
+    }
 }
+
+function Assert-Ordered {
+    param(
+        [string]$Text,
+        [string[]]$Markers
+    )
+    $position = -1
+    foreach ($marker in $Markers) {
+        $next = $Text.IndexOf($marker, [Math]::Max($position + 1, 0), [StringComparison]::Ordinal)
+        if ($next -lt 0) {
+            throw "Expected marker '$marker' after previous Lab6 marker."
+        }
+        $position = $next
+    }
+}
+
+Assert-Contains $output "\[Lab5\] PASS" "Expected Lab5 success marker [Lab5] PASS was not found in QEMU output."
+Assert-Contains $output "\[Lab6\] start" "Expected Lab6 start marker was not found in QEMU output."
 
 if ($ExpectIncomplete) {
     if ($output -match "\[Lab6\] PASS") {
         throw "Unexpected Lab6 success marker [Lab6] PASS was found in starter output."
     }
     foreach ($marker in @(
-        "\[Lab6\] start",
+        "\[Lab6-T1\] TODO: implement user context boundary",
+        "\[Lab6-T2\] TODO: implement syscall ABI dispatch",
         "\[Lab6\] user runtime initialized",
         "\[Lab6\] TODO: implement user mode and syscalls"
     )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab6 starter marker $marker was not found in QEMU output."
-        }
+        Assert-Contains $output $marker "Expected Lab6 starter marker $marker was not found in QEMU output."
     }
     Write-Output "Lab6 QEMU starter incomplete test passed."
 }
 else {
-    foreach ($marker in @(
-        "\[Lab6\] user program: hello",
-        "\[Lab6\] syscall write handled",
-        "\[Lab6\] syscall exit handled",
-        "\[Lab6\] PASS"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab6 solution marker $marker was not found in QEMU output."
+    $stage1Markers = @("[Lab6-T1] user context ready", "[Lab6-T1] PASS")
+    $stage2Markers = $stage1Markers + @("[Lab6-T2] syscall ABI ready", "[Lab6-T2] PASS")
+    $stage3Markers = $stage2Markers + @(
+        "[Lab6] user program: hello",
+        "[Lab6] syscall write handled",
+        "[Lab6] syscall exit handled",
+        "[Lab6] PASS"
+    )
+
+    if ($Stage -eq 1) {
+        foreach ($marker in $stage1Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 1 marker '$marker' was not found."
         }
+        Assert-Ordered $output $stage1Markers
+        Write-Output "Lab6 Stage 1 test passed."
     }
-    Write-Output "Lab6 QEMU smoke test passed."
+    elseif ($Stage -eq 2) {
+        foreach ($marker in $stage2Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 2 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage2Markers
+        Write-Output "Lab6 Stage 2 test passed."
+    }
+    else {
+        foreach ($marker in $stage3Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 3 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage3Markers
+        if ($output -match "\[Lab6.*TODO") {
+            throw "Lab6 final output still contains a TODO marker."
+        }
+        Write-Output "Lab6 Stage 3 test passed."
+    }
 }

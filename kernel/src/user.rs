@@ -27,8 +27,10 @@ impl UserContext {
         Self {
             entry,
             stack_top: aligned_stack_top,
-            sepc: entry,
-            sstatus: SSTATUS_SPIE,
+            // TODO(LAB6-T1): set `sepc` to the user entry before `sret`.
+            sepc: 0,
+            // TODO(LAB6-T1): clear SPP and set SPIE for returning to U-mode.
+            sstatus: 0,
         }
     }
 
@@ -83,11 +85,20 @@ pub fn starter_interfaces_are_present() -> bool {
     let context = program.context();
 
     context.entry() == DEMO_USER_ENTRY
+        && context.stack_top() == DEMO_USER_STACK_TOP
+        && USER_STACK_SIZE == 8192
+}
+
+/// Return whether Lab6 task 1 user context work is complete.
+pub fn user_context_stage_is_complete() -> bool {
+    let program = UserProgram::new(DEMO_USER_ENTRY, DEMO_USER_STACK_TOP + 8);
+    let context = program.context();
+
+    context.entry() == DEMO_USER_ENTRY
         && context.sepc() == DEMO_USER_ENTRY
         && context.stack_top() == DEMO_USER_STACK_TOP
         && context.uses_user_privilege()
         && context.enables_interrupts_after_sret()
-        && USER_STACK_SIZE == 8192
 }
 
 #[cfg(test)]
@@ -99,15 +110,15 @@ mod tests {
         let context = UserContext::new(DEMO_USER_ENTRY, DEMO_USER_STACK_TOP + 15);
 
         assert_eq!(context.entry(), DEMO_USER_ENTRY);
-        assert_eq!(context.sepc(), DEMO_USER_ENTRY);
         assert_eq!(context.stack_top(), DEMO_USER_STACK_TOP);
+        assert_ne!(context.sepc(), DEMO_USER_ENTRY);
     }
 
     #[test]
-    fn user_context_is_planned_for_user_privilege() {
+    fn starter_user_context_leaves_privilege_bits_for_students() {
         let context = UserContext::new(DEMO_USER_ENTRY, DEMO_USER_STACK_TOP);
 
         assert!(context.uses_user_privilege());
-        assert!(context.enables_interrupts_after_sret());
+        assert!(!context.enables_interrupts_after_sret());
     }
 }

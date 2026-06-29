@@ -180,6 +180,19 @@ fn lab5_yield_or_exit() {
 
 fn run_lab6() {
     console::print_line("[Lab6] start");
+    if user::user_context_stage_is_complete() {
+        console::print_line("[Lab6-T1] user context ready");
+        console::print_line("[Lab6-T1] PASS");
+    } else {
+        console::print_line("[Lab6-T1] TODO: implement user context boundary");
+    }
+    if syscall::syscall_abi_stage_is_complete() {
+        console::print_line("[Lab6-T2] syscall ABI ready");
+        console::print_line("[Lab6-T2] PASS");
+    } else {
+        console::print_line("[Lab6-T2] TODO: implement syscall ABI dispatch");
+    }
+
     if user::starter_interfaces_are_present() && syscall::starter_interfaces_are_present() {
         console::print_line("[Lab6] user runtime initialized");
         console::print_line("[Lab6] TODO: implement user mode and syscalls");
