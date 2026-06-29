@@ -83,6 +83,17 @@ pub fn starter_interfaces_are_present() -> bool {
         && one_byte[0] == 1
 }
 
+/// Return whether task 1 has a working RAM byte device implementation.
+pub fn ram_device_stage_is_complete() -> bool {
+    let mut device = RamDevice::new();
+    let mut buf = [0u8; 3];
+
+    device.write_at(2, b"os!").is_ok()
+        && device.read_at(2, &mut buf).is_ok()
+        && buf == *b"os!"
+        && device.write_at(RAM_DEVICE_CAPACITY - 1, b"too long") == Err(DeviceError::OutOfBounds)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{starter_interfaces_are_present, ByteDevice, DeviceError, RamDevice};

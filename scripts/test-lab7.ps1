@@ -1,4 +1,6 @@
 param(
+    [ValidateSet(1, 2, 3)]
+    [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
@@ -10,6 +12,16 @@ $qemu = "qemu-system-riscv64"
 $log = Join-Path $repo "target/qemu-lab7.log"
 $errLog = Join-Path $repo "target/qemu-lab7.err.log"
 $timeoutSeconds = 20
+
+function Assert-Marker {
+    param(
+        [string]$Output,
+        [string]$Marker
+    )
+    if ($Output -notmatch [regex]::Escape($Marker)) {
+        throw "Expected marker '$Marker' was not found in QEMU output."
+    }
+}
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
 Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
@@ -67,33 +79,32 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[Lab6\] PASS") {
-    throw "Expected Lab6 success marker [Lab6] PASS was not found in QEMU output."
-}
+Assert-Marker $output "[Lab6] PASS"
+Assert-Marker $output "[Lab7] start"
 
 if ($ExpectIncomplete) {
     if ($output -match "\[Lab7\] PASS") {
         throw "Unexpected Lab7 success marker [Lab7] PASS was found in starter output."
     }
-    foreach ($marker in @(
-        "\[Lab7\] start",
-        "\[Lab7\] TODO: implement memory file system"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab7 starter marker $marker was not found in QEMU output."
-        }
-    }
-    Write-Output "Lab7 QEMU starter incomplete test passed."
+    Assert-Marker $output "[Lab7-T1] TODO: implement RAM byte device"
+    Assert-Marker $output "[Lab7-T2] TODO: implement simple file system"
+    Assert-Marker $output "[Lab7] TODO: implement memory file system"
+    Write-Output "Lab7 starter incomplete test passed."
+    exit 0
 }
-else {
-    foreach ($marker in @(
-        "\[Lab7\] file opened",
-        "\[Lab7\] write/read verified",
-        "\[Lab7\] PASS"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab7 solution marker $marker was not found in QEMU output."
-        }
-    }
-    Write-Output "Lab7 QEMU smoke test passed."
+
+if ($Stage -ge 1) {
+    Assert-Marker $output "[Lab7-T1] ram device ready"
+    Assert-Marker $output "[Lab7-T1] PASS"
 }
+if ($Stage -ge 2) {
+    Assert-Marker $output "[Lab7-T2] simple fs ready"
+    Assert-Marker $output "[Lab7-T2] PASS"
+}
+if ($Stage -ge 3) {
+    Assert-Marker $output "[Lab7] file opened"
+    Assert-Marker $output "[Lab7] write/read verified"
+    Assert-Marker $output "[Lab7] PASS"
+}
+
+Write-Output "Lab7 Stage $Stage test passed."

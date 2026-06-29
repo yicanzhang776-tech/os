@@ -150,6 +150,24 @@ pub fn starter_interfaces_are_present() -> bool {
         && one_byte[0] == 1
 }
 
+/// Return whether task 2 has a working simplified file-system implementation.
+pub fn simple_fs_stage_is_complete() -> bool {
+    let mut fs = SimpleFs::new();
+    let fd = match fs.open() {
+        Ok(fd) => fd,
+        Err(_) => return false,
+    };
+    let mut buf = [0u8; 2];
+
+    fs.write(fd, b"hi").is_ok()
+        && fs.close(fd).is_ok()
+        && fs.close(fd) == Err(FsError::InvalidFileDescriptor)
+        && fs.open() == Ok(fd)
+        && fs.read(fd, &mut buf).is_ok()
+        && buf == *b"hi"
+        && fs.read(fd + MAX_OPEN_FILES + 1, &mut buf) == Err(FsError::InvalidFileDescriptor)
+}
+
 fn map_device_error(error: DeviceError) -> FsError {
     match error {
         DeviceError::OutOfBounds => FsError::NoSpace,
