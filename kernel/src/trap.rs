@@ -10,6 +10,8 @@ const SCAUSE_CODE_MASK: usize = !SCAUSE_INTERRUPT_BIT;
 const SCAUSE_BREAKPOINT: usize = 3;
 
 static DEMO_TRAP_HANDLED: AtomicBool = AtomicBool::new(false);
+static DEMO_TRAP_DECODED: AtomicBool = AtomicBool::new(false);
+static TRAP_ENTRY_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 global_asm!(
     r#"
@@ -97,6 +99,8 @@ unsafe extern "C" {
 /// Install the direct-mode S-mode trap entry.
 pub fn init() {
     DEMO_TRAP_HANDLED.store(false, Ordering::Relaxed);
+    DEMO_TRAP_DECODED.store(false, Ordering::Relaxed);
+    TRAP_ENTRY_INSTALLED.store(false, Ordering::Relaxed);
     // SAFETY: __trap_entry is an aligned assembly routine in this kernel image.
     // Writing stvec with its address installs direct-mode S-mode trap handling.
     unsafe {
@@ -106,7 +110,12 @@ pub fn init() {
             options(nostack)
         );
     }
+    TRAP_ENTRY_INSTALLED.store(true, Ordering::Relaxed);
     console::print_line("[Lab2] trap entry installed");
+}
+
+pub fn is_trap_entry_installed() -> bool {
+    TRAP_ENTRY_INSTALLED.load(Ordering::Relaxed)
 }
 
 /// Trigger one controlled breakpoint exception for the Lab2 smoke test.
@@ -124,12 +133,17 @@ pub fn was_demo_handled() -> bool {
     DEMO_TRAP_HANDLED.load(Ordering::Relaxed)
 }
 
+pub fn was_demo_decoded() -> bool {
+    DEMO_TRAP_DECODED.load(Ordering::Relaxed)
+}
+
 extern "C" fn rust_trap_handler(scause: usize, sepc: usize, _stval: usize) {
     let is_interrupt = (scause & SCAUSE_INTERRUPT_BIT) != 0;
     let cause_code = scause & SCAUSE_CODE_MASK;
 
     if !is_interrupt && cause_code == SCAUSE_BREAKPOINT {
         console::print_line("[Lab2] trap: breakpoint exception");
+        DEMO_TRAP_DECODED.store(true, Ordering::Relaxed);
         DEMO_TRAP_HANDLED.store(true, Ordering::Relaxed);
         write_sepc(sepc + 4);
         return;
