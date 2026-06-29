@@ -257,6 +257,17 @@ pub fn starter_interfaces_are_present() -> bool {
         && USER_STACK_SIZE == 8192
 }
 
+/// Return whether Lab6 task 1 user context work is complete.
+pub fn user_context_stage_is_complete() -> bool {
+    let program = demo_user_program();
+    let context = program.context();
+
+    context.entry() == context.sepc()
+        && context.stack_top().is_multiple_of(STACK_ALIGN)
+        && context.uses_user_privilege()
+        && context.enables_interrupts_after_sret()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{UserContext, DEMO_USER_ENTRY, DEMO_USER_STACK_TOP};
