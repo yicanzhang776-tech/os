@@ -4,9 +4,23 @@
 
 项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
 
+## 如何阅读当前分支
+
+本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitLab 页面显示哪个阶段，取决于左上角当前选择的分支。
+
+| 分支 | 含义 | 验收方式 |
+|---|---|---|
+| `main` | 默认展示入口，已同步到最终成果 | 查看完整项目、文档和最终材料 |
+| `p0-minimal-qemu-baseline` | P0 工程运行基线，不计入正式教学实验 | `scripts/test-qemu.ps1` 输出 `[P0] PASS` |
+| `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
+| `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
+| `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+
+如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整最终代码请查看 `main` 或 `lab7-solution`。
+
 ## 当前项目状态
 
-当前仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
+仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
 
 - P0：Rust 裸机内核可交叉编译，并能在 QEMU `virt` + OpenSBI 下启动。
 - Lab1：启动与 SBI 控制台。
@@ -19,13 +33,27 @@
 
 所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
 
-当前成果已经包含最终技术报告草稿、提交检查清单和演示讲解脚本，位于 `docs/` 目录。
+当前成果还包含：
 
-教学版边界：
+- `docs/final-report.md`：最终技术报告草稿。
+- `docs/submission-checklist.md`：提交前检查清单。
+- `docs/demo-script.md`：演示视频与答辩讲解脚本。
+- `docs/ai-collaboration.md`：AI 协作记录。
 
-- Lab7 使用固定容量内存文件系统，不接入 virtio-block 或真实磁盘。
-- Lab6 使用内置用户程序，不实现 ELF 加载、多进程或复杂用户指针校验。
-- Lab5 只实现单核、内核态、协作式调度，不实现抢占、多核或优先级调度。
+## 实验路线
+
+```mermaid
+flowchart LR
+    P0["P0 最小运行基线"] --> L1["Lab1 启动与SBI控制台"]
+    L1 --> L2["Lab2 Trap与异常处理"]
+    L2 --> L3["Lab3 物理内存管理"]
+    L3 --> L4["Lab4 Sv39虚拟内存"]
+    L4 --> L5["Lab5 协作式调度"]
+    L5 --> L6["Lab6 用户态与系统调用"]
+    L6 --> L7["Lab7 设备与简化文件系统"]
+```
+
+从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
 
 ## P0 与 Lab1-Lab7 的区别
 
@@ -38,9 +66,11 @@ P0 是工程运行基线，不计入正式教学实验。P0 只负责：
 - 内核能够输出最小启动信息。
 - 提供可重复执行的构建、运行和测试命令。
 
-Lab1 到 Lab7 是面向学生的正式教学实验，每个实验约 3 个循序渐进的小任务，整体难度控制在普通本科生可完成的中等水平。
+Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 分支、solution 分支、实验文档和自动测试脚本。
 
-## 当前仓库目录结构
+## 目录结构
+
+不同阶段分支的文件树会随实验进度逐步增加。最终成果分支 `main` / `lab7-solution` 的主要结构如下：
 
 ```text
 .
@@ -75,47 +105,17 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验约 3 个循序
 - QEMU RISC-V 64：`qemu-system-riscv64`。
 - OpenSBI：当前通过 QEMU `-bios default` 使用 QEMU 自带 OpenSBI 固件。
 
-可选依赖：
-
-- `make`：用于执行 `Makefile` 中的快捷命令。没有 `make` 时，可直接使用 PowerShell 脚本。
-
-## Windows PowerShell 环境说明
-
-建议在 Windows PowerShell 中执行：
+Windows PowerShell 环境检查：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
 ```
 
-如果缺少依赖，可参考：
-
-```powershell
-winget install --id Rustlang.Rustup -e
-winget install --id SoftwareFreedomConservancy.QEMU -e
-rustup target add riscv64gc-unknown-none-elf
-rustup component add rust-src llvm-tools-preview
-```
-
-本项目不会在检查脚本中自动安装系统软件。
-
-## WSL2 或 Ubuntu 环境说明
-
-在 WSL2/Ubuntu 中建议安装：
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add riscv64gc-unknown-none-elf
-sudo apt update
-sudo apt install qemu-system-misc make
-```
-
-检查环境：
+WSL2/Ubuntu 环境检查：
 
 ```sh
 sh scripts/check-env.sh
 ```
-
-不同发行版中 QEMU 包名可能不同。若 `qemu-system-riscv64` 不存在，请检查发行版对应的 RISC-V QEMU system emulator 包。
 
 ## 构建与运行
 
@@ -129,12 +129,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
 ```powershell
 make build
 make run
-```
-
-底层 QEMU 参数为：
-
-```text
-qemu-system-riscv64 -machine virt -nographic -bios default -kernel target/riscv64gc-unknown-none-elf/debug/ai-os-kernel
 ```
 
 ## 自动测试命令
