@@ -33,7 +33,7 @@
 
 所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
 
-当前成果还包含：
+在 `main` / `lab7-solution` 中还包含：
 
 - `docs/final-report.md`：最终技术报告草稿。
 - `docs/submission-checklist.md`：提交前检查清单。
@@ -132,6 +132,8 @@ make run
 ```
 
 ## 自动测试命令
+
+早期分支可能尚未包含后续实验脚本。若当前分支没有某个 `scripts/test-labN.ps1`，请切换到对应的 `labN-starter`、`labN-solution` 或最终成果分支。
 
 P0：
 
