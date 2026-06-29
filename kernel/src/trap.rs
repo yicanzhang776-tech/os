@@ -6,6 +6,7 @@ use core::{
 use crate::{
     console, fs, sbi,
     syscall::{self, SyscallError, SyscallOutcome, SyscallRequest},
+    user,
 };
 
 const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS - 1);
@@ -23,6 +24,7 @@ const SCAUSE_ECALL_FROM_S: usize = 9;
 const SCAUSE_INSTRUCTION_PAGE_FAULT: usize = 12;
 const SCAUSE_LOAD_PAGE_FAULT: usize = 13;
 const SCAUSE_STORE_PAGE_FAULT: usize = 15;
+const SSTATUS_SUM: usize = 1 << 18;
 
 static DEMO_TRAP_HANDLED: AtomicBool = AtomicBool::new(false);
 
@@ -271,11 +273,79 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
     frame.sepc += 4;
 
     match syscall::dispatch(request) {
-        Ok(SyscallOutcome::Write { bytes }) => {
-            console::print_line("[Lab6] user program: hello");
-            console::print_line("[Lab6] syscall write handled");
-            frame.a0 = bytes;
+        Ok(SyscallOutcome::Write { fd, buffer, len }) => {
+            if fd == 1 {
+                console::print_line("[Lab6] user program: hello");
+                console::print_line("[Lab6] syscall write handled");
+                frame.a0 = len;
+                return;
+            }
+
+            let Some(result) = with_user_buffer(buffer, len, |buf| {
+                fs::with_global_fs(|fs| fs.write(fd, buf))
+            }) else {
+                console::print_line("[Lab7] FAIL: invalid user write buffer");
+                sbi::shutdown();
+            };
+
+            match result {
+                Ok(bytes) => frame.a0 = bytes,
+                Err(_) => {
+                    console::print_line("[Lab7] FAIL: file write failed");
+                    sbi::shutdown();
+                }
+            }
         }
+        Ok(SyscallOutcome::Read { fd, buffer, len }) => {
+            let Some(result) =
+                with_user_buffer_mut(buffer, len, |buf| fs::with_global_fs(|fs| fs.read(fd, buf)))
+            else {
+                console::print_line("[Lab7] FAIL: invalid user read buffer");
+                sbi::shutdown();
+            };
+
+            match result {
+                Ok(bytes) => {
+                    frame.a0 = bytes;
+                    let Some(verified) =
+                        with_user_buffer(buffer, bytes, |buf| buf == fs::LAB7_TEST_BYTES)
+                    else {
+                        console::print_line("[Lab7] FAIL: invalid verification buffer");
+                        sbi::shutdown();
+                    };
+                    if verified {
+                        console::print_line("[Lab7] write/read verified");
+                        fs::mark_verified();
+                    }
+                }
+                Err(_) => {
+                    console::print_line("[Lab7] FAIL: file read failed");
+                    sbi::shutdown();
+                }
+            }
+        }
+        Ok(SyscallOutcome::Open) => {
+            if fs::take_start_marker() {
+                console::print_line("[Lab7] start");
+            }
+            match fs::with_global_fs(|fs| fs.open()) {
+                Ok(fd) => {
+                    console::print_line("[Lab7] file opened");
+                    frame.a0 = fd;
+                }
+                Err(_) => {
+                    console::print_line("[Lab7] FAIL: file open failed");
+                    sbi::shutdown();
+                }
+            }
+        }
+        Ok(SyscallOutcome::Close { fd }) => match fs::with_global_fs(|fs| fs.close(fd)) {
+            Ok(()) => frame.a0 = 0,
+            Err(_) => {
+                console::print_line("[Lab7] FAIL: file close failed");
+                sbi::shutdown();
+            }
+        },
         Ok(SyscallOutcome::Yield) => {
             console::print_line("[Lab6] syscall yield handled");
             frame.a0 = 0;
@@ -284,11 +354,10 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             let _ = code;
             console::print_line("[Lab6] syscall exit handled");
             console::print_line("[Lab6] PASS");
-            console::print_line("[Lab7] start");
-            if fs::starter_interfaces_are_present() {
-                console::print_line(fs::LAB7_TODO_MARKER);
+            if fs::was_verified() {
+                console::print_line("[Lab7] PASS");
             } else {
-                console::print_line("[Lab7] FAIL: file-system skeleton check failed");
+                console::print_line("[Lab7] FAIL: file I/O was not verified");
             }
             sbi::shutdown();
         }
@@ -302,6 +371,70 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             sbi::shutdown();
         }
     }
+}
+
+fn user_buffer_is_allowed(address: usize, len: usize) -> bool {
+    let Some(end) = address.checked_add(len) else {
+        return false;
+    };
+    let layout = user::demo_user_layout();
+
+    address >= layout.stack_start.value() && end <= layout.stack_end.value()
+}
+
+fn with_user_buffer<R>(address: usize, len: usize, f: impl FnOnce(&[u8]) -> R) -> Option<R> {
+    if !user_buffer_is_allowed(address, len) {
+        return None;
+    }
+
+    // SAFETY: The address range was checked against the fixed Lab7 user stack
+    // mapping. SUM is enabled only while S-mode copies bytes from that range.
+    Some(unsafe {
+        with_sum_enabled(|| {
+            let slice = core::slice::from_raw_parts(address as *const u8, len);
+            f(slice)
+        })
+    })
+}
+
+fn with_user_buffer_mut<R>(
+    address: usize,
+    len: usize,
+    f: impl FnOnce(&mut [u8]) -> R,
+) -> Option<R> {
+    if !user_buffer_is_allowed(address, len) {
+        return None;
+    }
+
+    // SAFETY: The address range was checked against the fixed Lab7 user stack
+    // mapping. SUM is enabled only while S-mode copies bytes into that range.
+    Some(unsafe {
+        with_sum_enabled(|| {
+            let slice = core::slice::from_raw_parts_mut(address as *mut u8, len);
+            f(slice)
+        })
+    })
+}
+
+unsafe fn with_sum_enabled<R>(f: impl FnOnce() -> R) -> R {
+    let previous: usize;
+    // SAFETY: This helper runs in S-mode while handling one user syscall. It
+    // saves and restores sstatus so SUM is scoped to the user-buffer copy.
+    unsafe {
+        asm!(
+            "csrr {previous}, sstatus",
+            "csrs sstatus, {sum}",
+            previous = out(reg) previous,
+            sum = in(reg) SSTATUS_SUM,
+            options(nostack)
+        );
+    }
+    let result = f();
+    // SAFETY: Restores the exact sstatus value captured before enabling SUM.
+    unsafe {
+        asm!("csrw sstatus, {previous}", previous = in(reg) previous, options(nostack));
+    }
+    result
 }
 
 fn unexpected_cause_label(cause_code: usize) -> &'static str {
