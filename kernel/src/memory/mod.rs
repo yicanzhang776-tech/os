@@ -113,6 +113,16 @@ pub fn run_lab4_starter_checks() -> bool {
     page_table::starter_interfaces_are_present()
 }
 
+/// Return whether Lab4 task 1 address and PTE helpers are complete.
+pub fn lab4_address_pte_stage_is_complete() -> bool {
+    page_table::address_pte_stage_is_complete()
+}
+
+/// Return whether Lab4 task 2 page table operations are complete.
+pub fn lab4_page_table_stage_is_complete() -> bool {
+    page_table::page_table_stage_is_complete()
+}
+
 /// Runtime state for the Lab4 QEMU integration check.
 pub struct Lab4Runtime {
     memory_set: MemorySet,

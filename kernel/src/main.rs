@@ -34,6 +34,19 @@ extern "C" fn kernel_main() -> ! {
 
 fn run_lab4() {
     console::print_line("[Lab4] start");
+    if memory::lab4_address_pte_stage_is_complete() {
+        console::print_line("[Lab4-T1] address and PTE ready");
+        console::print_line("[Lab4-T1] PASS");
+    } else {
+        console::print_line("[Lab4-T1] TODO: implement Sv39 address and PTE helpers");
+    }
+    if memory::lab4_page_table_stage_is_complete() {
+        console::print_line("[Lab4-T2] page table maps");
+        console::print_line("[Lab4-T2] PASS");
+    } else {
+        console::print_line("[Lab4-T2] TODO: implement page table map and translate");
+    }
+
     let mut allocator = memory::StackFrameAllocator::new();
     allocator.init(memory::kernel_end().ceil(), memory::PHYS_MEMORY_END.floor());
     console::print_line("[Lab4] allocator ready");

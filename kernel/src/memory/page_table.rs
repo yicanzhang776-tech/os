@@ -584,6 +584,54 @@ pub fn starter_interfaces_are_present() -> bool {
         && PAGE_SIZE == 4096
 }
 
+/// Check Lab4 task 1 without depending on hardware paging.
+pub fn address_pte_stage_is_complete() -> bool {
+    let aligned = VirtAddr::new(PAGE_SIZE * 3);
+    let unaligned = VirtAddr::new(PAGE_SIZE * 3 + 0x123);
+    let vpn = VirtPageNum::new(0x54321);
+    let pte = PageTableEntry::new(
+        PhysPageNum::new(0x80200),
+        PTEFlags::V | PTEFlags::R | PTEFlags::A,
+    );
+
+    aligned.floor().value() == 3
+        && aligned.ceil().value() == 3
+        && unaligned.floor().value() == 3
+        && unaligned.ceil().value() == 4
+        && unaligned.page_offset() == 0x123
+        && vpn.indexes()
+            == [
+                0x54321 & 0x1ff,
+                (0x54321 >> 9) & 0x1ff,
+                (0x54321 >> 18) & 0x1ff,
+            ]
+        && pte.is_valid()
+        && pte.is_leaf()
+        && pte.ppn() == PhysPageNum::new(0x80200)
+}
+
+/// Check Lab4 task 2 map, unmap, and translate behavior.
+pub fn page_table_stage_is_complete() -> bool {
+    let mut allocator = StackFrameAllocator::new();
+    allocator.init(PhysPageNum::new(0x1000), PhysPageNum::new(0x1100));
+    let mut memory_set = match MemorySet::new(allocator) {
+        Ok(memory_set) => memory_set,
+        Err(_) => return false,
+    };
+
+    let va = VirtAddr::new(0x4000_0123);
+    let vpn = va.floor();
+    let ppn = PhysPageNum::new(0x2000);
+    let flags = PTEFlags::R | PTEFlags::W | PTEFlags::A | PTEFlags::D;
+
+    memory_set.map(vpn, ppn, flags).is_ok()
+        && memory_set.map(vpn, ppn, flags) == Err(PageTableError::AlreadyMapped)
+        && memory_set.translate(va) == Some(PhysAddr::new(0x0200_0123))
+        && memory_set.unmap(vpn).is_ok()
+        && memory_set.translate(va).is_none()
+        && memory_set.unmap(vpn) == Err(PageTableError::NotMapped)
+}
+
 unsafe fn write_satp_and_sfence(satp: usize) {
     #[cfg(target_arch = "riscv64")]
     {

@@ -1,240 +1,64 @@
-# AI 合作的操作系统教学实验环境
+# Lab4 Solution：RISC-V Sv39 虚拟内存
 
-本项目参加 2026 年全国大学生计算机系统能力大赛，赛项为操作系统设计赛，题目为 OS 功能挑战赛道第 20 题：AI 合作的操作系统教学实验环境。
+当前分支：`lab4-solution`
 
-项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
+当前实验：Lab4 RISC-V Sv39 虚拟内存参考实现与教师验收材料。
 
-## 如何阅读当前分支
+适合对象：教师、助教和完成 `lab4-starter` 后需要对照参考实现的学生。
 
-本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitLab 页面显示哪个阶段，取决于左上角当前选择的分支。
+> 注意：本分支包含完整参考答案，不建议直接作为学生起始分支发布给学生。学生应从 `lab4-starter` 开始。
 
-| 分支 | 含义 | 验收方式 |
+## 本分支包含什么
+
+- Lab4 三个教学任务的完整参考实现。
+- 与 `lab4-starter` 相同的任务书、提示和测试说明。
+- 额外的参考答案说明：`docs/labs/lab4/SOLUTION.md`。
+- 教师验收和授课建议：`docs/labs/lab4/TEACHER_GUIDE.md`。
+- 分阶段测试脚本：`scripts/test-lab4.ps1 -Stage 1/2/3`。
+
+## Lab4 三个递进任务
+
+| 阶段 | 任务 | 关键输出 |
 |---|---|---|
-| `main` | 默认展示入口，已同步到最终成果 | 查看完整项目、文档和最终材料 |
-| `p0-minimal-qemu-baseline` | P0 工程运行基线，不计入正式教学实验 | `scripts/test-qemu.ps1` 输出 `[P0] PASS` |
-| `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
-| `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
-| `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+| Stage 1 | Sv39 地址、VPN 索引、PTE flags 和 `PageTableEntry::ppn` | `[Lab4-T1] address and PTE ready`，`[Lab4-T1] PASS` |
+| Stage 2 | `find_pte_create`、`map`、`unmap`、`translate` | `[Lab4-T2] page table maps`，`[Lab4-T2] PASS` |
+| Stage 3 | 内核恒等映射、`satp`、`sfence.vma` 和启用分页后继续执行 | `[Lab4] page table built`，`[Lab4] satp activated`，`[Lab4] paging is active`，`[Lab4] PASS` |
 
-如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整最终代码请查看 `main` 或 `lab7-solution`。
-
-## 当前项目状态
-
-仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
-
-- P0：Rust 裸机内核可交叉编译，并能在 QEMU `virt` + OpenSBI 下启动。
-- Lab1：启动与 SBI 控制台。
-- Lab2：Trap 与异常处理。
-- Lab3：物理内存管理。
-- Lab4：RISC-V Sv39 虚拟内存。
-- Lab5：单核内核态协作式调度。
-- Lab6：最小用户态与系统调用。
-- Lab7：设备抽象与教学版内存文件系统。
-
-所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
-
-在 `main` / `lab7-solution` 中还包含：
-
-- `docs/final-report.md`：最终技术报告草稿。
-- `docs/submission-checklist.md`：提交前检查清单。
-- `docs/demo-script.md`：演示视频与答辩讲解脚本。
-- `docs/ai-collaboration.md`：AI 协作记录。
-
-## 实验路线
-
-```mermaid
-flowchart LR
-    P0["P0 最小运行基线"] --> L1["Lab1 启动与SBI控制台"]
-    L1 --> L2["Lab2 Trap与异常处理"]
-    L2 --> L3["Lab3 物理内存管理"]
-    L3 --> L4["Lab4 Sv39虚拟内存"]
-    L4 --> L5["Lab5 协作式调度"]
-    L5 --> L6["Lab6 用户态与系统调用"]
-    L6 --> L7["Lab7 设备与简化文件系统"]
-```
-
-从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
-
-## P0 与 Lab1-Lab7 的区别
-
-P0 是工程运行基线，不计入正式教学实验。P0 只负责：
-
-- Rust 裸机工程能够编译。
-- 目标架构为 `riscv64gc-unknown-none-elf`。
-- 能够在 QEMU `virt` 机器上运行。
-- 使用 OpenSBI 进入 S-mode 内核。
-- 内核能够输出最小启动信息。
-- 提供可重复执行的构建、运行和测试命令。
-
-Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 分支、solution 分支、实验文档和自动测试脚本。
-
-## 目录结构
-
-不同阶段分支的文件树会随实验进度逐步增加。最终成果分支 `main` / `lab7-solution` 的主要结构如下：
-
-```text
-.
-├── .cargo/                 # Rust 目标配置
-├── docs/                   # 需求、架构、测试、AI协作和实验文档
-├── kernel/                 # RISC-V 教学内核 crate
-│   ├── linker.ld
-│   └── src/
-│       ├── drivers/        # Lab7 内存设备抽象
-│       ├── fs/             # Lab7 简化文件系统
-│       ├── memory/         # Lab3/Lab4 内存管理
-│       ├── task/           # Lab5 协作式调度
-│       ├── syscall.rs      # Lab6/Lab7 系统调用分发
-│       ├── trap.rs         # Lab2 及后续 trap/syscall 路径
-│       └── user.rs         # Lab6/Lab7 内置用户程序
-├── scripts/                # 环境检查、QEMU运行和实验测试脚本
-├── AGENTS.md
-├── Cargo.toml
-├── Cargo.lock
-├── Makefile
-└── README.md
-```
-
-## 环境依赖
-
-必需依赖：
-
-- Rust 编译器 `rustc`。
-- Cargo 构建工具。
-- rustup 工具链管理器。
-- Rust target：`riscv64gc-unknown-none-elf`。
-- QEMU RISC-V 64：`qemu-system-riscv64`。
-- OpenSBI：当前通过 QEMU `-bios default` 使用 QEMU 自带 OpenSBI 固件。
-
-Windows PowerShell 环境检查：
+## 快速验收
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
-```
-
-WSL2/Ubuntu 环境检查：
-
-```sh
-sh scripts/check-env.sh
-```
-
-## 构建与运行
-
-```powershell
 cargo build -p ai-os-kernel
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 3
 ```
 
-或使用 Makefile：
+默认测试等价于 Stage 3：
 
 ```powershell
-make build
-make run
-```
-
-## 自动测试命令
-
-早期分支可能尚未包含后续实验脚本。若当前分支没有某个 `scripts/test-labN.ps1`，请切换到对应的 `labN-starter`、`labN-solution` 或最终成果分支。
-
-P0：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1
-```
-
-Lab1 到 Lab7：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 ```
 
-starter 分支可使用 `-ExpectIncomplete` 验证“能启动但未泄露答案”：
+## 文档入口
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
-```
+- [Lab4 总览](docs/labs/lab4/README.md)
+- [任务书](docs/labs/lab4/TASKS.md)
+- [分级提示](docs/labs/lab4/HINTS.md)
+- [测试说明](docs/labs/lab4/TESTING.md)
+- [参考答案说明](docs/labs/lab4/SOLUTION.md)
+- [教师指南](docs/labs/lab4/TEACHER_GUIDE.md)
 
-主机单元测试：
+## 参考实现边界
 
-```powershell
-cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
-```
+本分支实现的是教学版 Sv39：
 
-## 成功输出示例
+- 采用内核恒等映射，不引入高地址内核映射。
+- 区分 `.text`、`.rodata`、`.data`、`.bss` 的权限。
+- 页表页使用固定容量所有权数组，不提前引入堆分配器。
+- QEMU 中真实写入 `satp` 并执行 `sfence.vma`。
+- 不实现 Lab5 任务调度、用户态、系统调用或文件系统。
 
-最终 `lab7-solution` 的 QEMU 输出会包含：
+## 建议使用方式
 
-```text
-[Lab1] PASS
-[Lab2] PASS
-[Lab3] PASS
-[Lab4] PASS
-[Lab5] PASS
-[Lab6] PASS
-[Lab7] PASS
-```
-
-Lab7 关键输出：
-
-```text
-[Lab7] start
-[Lab7] file opened
-[Lab7] write/read verified
-[Lab7] PASS
-```
-
-## 常见错误和排查方法
-
-### `rustc`、`cargo` 或 `rustup` 不存在
-
-运行：
-
-```powershell
-winget install --id Rustlang.Rustup -e
-```
-
-重新打开终端后再执行环境检查。
-
-### 缺少 `riscv64gc-unknown-none-elf`
-
-运行：
-
-```powershell
-rustup target add riscv64gc-unknown-none-elf
-```
-
-### `qemu-system-riscv64` 不存在
-
-Windows 可运行：
-
-```powershell
-winget install --id SoftwareFreedomConservancy.QEMU -e
-```
-
-安装后重新打开终端，或确认 QEMU 安装目录已加入 `PATH`。
-
-### QEMU 启动后没有对应 `[LabN] PASS`
-
-请先确认当前分支是否为对应的 solution 分支。starter 分支不会输出本实验的 PASS 标志，应使用 `-ExpectIncomplete` 进行教师侧验证。
-
-### QEMU 测试超时
-
-测试脚本会在超时后终止 QEMU。若发生超时，请检查内核是否卡在死循环、panic、异常重复触发或未执行 SBI system reset。
-
-## Cargo.lock 提交策略
-
-当前仓库包含可执行内核 crate，且比赛验收需要可重复构建。因此建议提交 `Cargo.lock`，用于锁定依赖版本并提升复现性。若后续拆出单独发布到 crates.io 的纯库 crate，可再按 Rust 库发布惯例单独评估。
-
-## 教学版边界与扩展方向
-
-- 统一的 `scripts/test-lab.ps1 all` 测试入口。
-- 高地址内核映射。
-- 抢占式调度、多核调度和优先级调度。
-- ELF 加载、多用户程序、多进程地址空间。
-- virtio-block、真实磁盘文件系统和复杂路径解析。
-- 更完整的演示视频和答辩 PPT 可基于 `docs/demo-script.md` 与 `docs/final-report.md` 继续制作。
+教师可先向学生发布 `lab4-starter`，课堂讲解 `TASKS.md` 和 `HINTS.md`。验收或讲评时再切换到本分支，对照 `SOLUTION.md` 和 `TEACHER_GUIDE.md` 说明关键实现。
