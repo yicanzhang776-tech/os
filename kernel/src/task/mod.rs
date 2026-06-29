@@ -453,6 +453,51 @@ pub fn starter_interfaces_are_present() -> bool {
         && manager.fetch_next() == Ok(task_id)
 }
 
+/// Return whether Lab5 task 1 task-table work is complete.
+pub fn task_table_stage_is_complete() -> bool {
+    let task_id = TaskId::new(0);
+    let stack_top = match task_stack_top(task_id) {
+        Ok(stack_top) => stack_top,
+        Err(_) => return false,
+    };
+    let task = TaskControlBlock::new(task_id, demo_task_entry, stack_top);
+    let mut manager = TaskManager::new();
+
+    task.status() == TaskStatus::Ready
+        && task.context().ra == demo_task_entry as *const () as usize
+        && task.context().sp == stack_top
+        && task.stack_top().is_multiple_of(STACK_ALIGN)
+        && manager.add_task(task).is_ok()
+        && manager.task_count() == 1
+        && manager.add_task(task).is_err()
+}
+
+/// Return whether Lab5 task 2 round-robin work is complete.
+pub fn round_robin_stage_is_complete() -> bool {
+    let mut manager = TaskManager::new();
+
+    let mut id_value = 0;
+    while id_value < 3 {
+        let id = TaskId::new(id_value);
+        let stack_top = match task_stack_top(id) {
+            Ok(stack_top) => stack_top,
+            Err(_) => return false,
+        };
+        if manager
+            .add_task(TaskControlBlock::new(id, demo_task_entry, stack_top))
+            .is_err()
+        {
+            return false;
+        }
+        id_value += 1;
+    }
+
+    manager.fetch_next() == Ok(TaskId::new(0))
+        && manager.fetch_next() == Ok(TaskId::new(1))
+        && manager.fetch_next() == Ok(TaskId::new(2))
+        && manager.fetch_next() == Ok(TaskId::new(0))
+}
+
 extern "C" fn demo_task_entry() -> ! {
     loop {
         core::hint::spin_loop();
