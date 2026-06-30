@@ -7,6 +7,7 @@
 ## 提交文档入口
 
 - **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
+- **答辩汇报 PPT**：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
 - 演示视频与答辩讲解脚本：[docs/demo-script.md](docs/demo-script.md)
