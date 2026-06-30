@@ -42,6 +42,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
 
 ## 文档入口
 
+- 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
 - [Lab5 总览](docs/labs/lab5/README.md)
 - [任务书](docs/labs/lab5/TASKS.md)
 - [分级提示](docs/labs/lab5/HINTS.md)
