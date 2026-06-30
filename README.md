@@ -24,6 +24,7 @@
 
 ## 文档入口
 
+- 比赛最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
 - 学生任务：[docs/labs/lab7/TASKS.md](docs/labs/lab7/TASKS.md)
 - 分级提示：[docs/labs/lab7/HINTS.md](docs/labs/lab7/HINTS.md)
 - 测试说明：[docs/labs/lab7/TESTING.md](docs/labs/lab7/TESTING.md)

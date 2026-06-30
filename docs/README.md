@@ -17,7 +17,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 - [AI 协作记录](ai-collaboration.md)
 - [教学实验路线](labs/README.md)
 - [官方资料整理](references/problem-statement.md)
-- [最终技术报告草稿](final-report.md)
+- [最终设计方案与开发文档](final-report.md)
 - [比赛提交检查清单](submission-checklist.md)
 - [演示视频与答辩讲解脚本](demo-script.md)
 
