@@ -27,13 +27,25 @@ default:
 verify:p0:
   <<: *verify_solution
   rules:
-    - if: '$CI_COMMIT_BRANCH == "codex/p0-minimal-qemu-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "p0-minimal-qemu-baseline"'
   script:
     - scripts/check-env.sh
     - cargo fmt --all -- --check
     - cargo build -p ai-os-kernel
     - cargo clippy -p ai-os-kernel -- -D warnings
     - scripts/test-qemu.sh --name P0 --marker "[P0] PASS" --log target/qemu-p0.log
+
+verify:main:
+  <<: *verify_solution
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - scripts/check-env.sh
+    - cargo fmt --all -- --check
+    - cargo build -p ai-os-kernel
+    - cargo clippy -p ai-os-kernel -- -D warnings
+    - cargo test -p ai-os-kernel --lib --target x86_64-unknown-linux-gnu
+    - scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS" --log target/qemu-main.log
 
 verify:lab1-starter:
   <<: *verify_starter
@@ -134,7 +146,7 @@ verify:lab5-starter:
     - cargo fmt --all -- --check
     - cargo build -p ai-os-kernel
     - cargo clippy -p ai-os-kernel -- -D warnings
-    - scripts/test-qemu.sh --name Lab5 --marker "[Lab5] PASS" --mode expect-incomplete --require "[Lab5] TODO: implement cooperative scheduler" --log target/qemu-lab5.log
+    - 'scripts/test-qemu.sh --name Lab5 --marker "[Lab5] PASS" --mode expect-incomplete --require "[Lab5] TODO: implement cooperative scheduler" --log target/qemu-lab5.log'
 
 verify:lab5-solution:
   <<: *verify_solution
@@ -157,7 +169,7 @@ verify:lab6-starter:
     - cargo fmt --all -- --check
     - cargo build -p ai-os-kernel
     - cargo clippy -p ai-os-kernel -- -D warnings
-    - scripts/test-qemu.sh --name Lab6 --marker "[Lab6] PASS" --mode expect-incomplete --require "[Lab6] TODO: implement user mode and syscalls" --log target/qemu-lab6.log
+    - 'scripts/test-qemu.sh --name Lab6 --marker "[Lab6] PASS" --mode expect-incomplete --require "[Lab6] TODO: implement user mode and syscalls" --log target/qemu-lab6.log'
 
 verify:lab6-solution:
   <<: *verify_solution
@@ -180,7 +192,7 @@ verify:lab7-starter:
     - cargo fmt --all -- --check
     - cargo build -p ai-os-kernel
     - cargo clippy -p ai-os-kernel -- -D warnings
-    - scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS" --mode expect-incomplete --require "[Lab7] TODO: implement memory file system" --log target/qemu-lab7.log
+    - 'scripts/test-qemu.sh --name Lab7 --marker "[Lab7] PASS" --mode expect-incomplete --require "[Lab7] TODO: implement memory file system" --log target/qemu-lab7.log'
 
 verify:lab7-solution:
   <<: *verify_solution
