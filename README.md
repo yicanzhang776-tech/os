@@ -50,6 +50,7 @@
 
 ## 文档入口
 
+- 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
 - [实验总览](docs/labs/lab2/README.md)
 - [任务书](docs/labs/lab2/TASKS.md)
 - [分级提示](docs/labs/lab2/HINTS.md)
