@@ -1,4 +1,4 @@
-# 赛题要求映射
+﻿# 赛题要求映射
 
 本文档用“赛题要求 - 项目实现 - 验收方式”映射当前状态。已实现内容基于本地分支和真实测试记录；仍未覆盖的内容明确标记为“扩展”或“后续材料”。
 
@@ -14,16 +14,16 @@
 | Markdown 文档 | 已建立并持续更新需求、架构、计划、测试、AI协作和实验文档 | 检查 `docs/` 和根 `README.md` |
 | Mermaid 图 | 已在实验路线和部分实验文档中使用 Mermaid | Markdown 渲染检查 |
 | 创新性 | 已体现：AI 协作记录、starter/solution 分支、自动化 QEMU 验收、三段式本科教学任务设计 | 查看 `docs/ai-collaboration.md` 和 `docs/labs/` |
-| 完整性 | 已完成 P0 和 Lab1-Lab7 闭环；最终报告草稿、提交检查清单和演示脚本已加入仓库 | 全量验收命令和最终材料审查 |
+| 完整性 | 已完成 P0 和 Lab1-Lab7 闭环；最终设计方案与开发文档、提交检查清单和演示脚本已加入仓库 | 全量验收命令和最终材料审查 |
 | 代码质量 | 已执行格式化、Clippy、主机单测和 QEMU 回归；unsafe 边界在实验文档中说明 | `cargo fmt --all -- --check`；`cargo clippy -p ai-os-kernel -- -D warnings` |
-| 文档完整性 | 已覆盖实验目标、任务边界、测试方法、常见错误、教师验收和最终报告草稿 | 检查 `docs/labs/*.md`、`docs/testing.md`、`docs/final-report.md` |
+| 文档完整性 | 已覆盖实验目标、任务边界、测试方法、常见错误、教师验收和最终设计方案与开发文档 | 检查 `docs/labs/*.md`、`docs/testing.md`、`docs/final-report.md` |
 
 ## 评分维度对齐
 
 - 创新性：通过 AI 协作过程记录、递进式教学分支和自动反馈脚本体现。
-- 完整性：P0 与 Lab1-Lab7 已形成构建、运行、测试闭环；仓库已补充最终报告草稿、提交检查清单和演示脚本。
+- 完整性：P0 与 Lab1-Lab7 已形成构建、运行、测试闭环；仓库已补充最终设计方案与开发文档、提交检查清单和演示脚本。
 - 代码质量：当前要求持续通过 fmt、build、Clippy、主机单元测试和 QEMU 系统测试。
-- 文档完整性：实验文档已经覆盖 starter/solution、学生任务、测试和教师验收；最终报告草稿已整理到 `docs/final-report.md`。
+- 文档完整性：实验文档已经覆盖 starter/solution、学生任务、测试和教师验收；最终设计方案与开发文档已整理到 `docs/final-report.md`。
 
 ## 当前明确限制
 

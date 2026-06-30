@@ -1,4 +1,4 @@
-# 比赛提交检查清单
+﻿# 比赛提交检查清单
 
 本文档用于提交官方 GitLab 仓库前的最终检查。
 
@@ -68,7 +68,7 @@ git diff --check
 - [ ] `docs/labs/README.md` 覆盖 7 个实验路线。
 - [ ] `docs/labs/lab1.md` 到 `docs/labs/lab7.md` 覆盖实验目标、任务边界、测试和教师验收。
 - [ ] `docs/ai-collaboration.md` 记录 AI 协作过程。
-- [ ] `docs/final-report.md` 可作为技术报告草稿。
+- [ ] `docs/final-report.md` 可作为设计方案与开发文档。
 - [ ] `docs/demo-script.md` 可作为演示视频或答辩讲稿。
 
 ## 提交说明
