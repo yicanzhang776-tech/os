@@ -4,6 +4,14 @@
 
 项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
 
+## 提交文档入口
+
+- **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
+- 同步备份位置：[docs/final-report.md](docs/final-report.md)
+- 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
+- 演示视频与答辩讲解脚本：[docs/demo-script.md](docs/demo-script.md)
+- AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
+
 ## 如何阅读当前分支
 
 本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitLab 页面显示哪个阶段，取决于左上角当前选择的分支。
@@ -35,7 +43,8 @@
 
 在 `main` / `lab7-solution` 中还包含：
 
-- `docs/final-report.md`：最终技术报告草稿。
+- `DESIGN.md`：设计方案与开发文档，便于在 GitLab 根目录直接查看。
+- `docs/final-report.md`：设计方案与开发文档的 docs 目录备份。
 - `docs/submission-checklist.md`：提交前检查清单。
 - `docs/demo-script.md`：演示视频与答辩讲解脚本。
 - `docs/ai-collaboration.md`：AI 协作记录。
