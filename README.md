@@ -54,6 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage
 
 ## 文档入口
 
+- 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
 - 实验总览：[docs/labs/lab7/README.md](docs/labs/lab7/README.md)
 - 任务书：[docs/labs/lab7/TASKS.md](docs/labs/lab7/TASKS.md)
 - 分级提示：[docs/labs/lab7/HINTS.md](docs/labs/lab7/HINTS.md)
