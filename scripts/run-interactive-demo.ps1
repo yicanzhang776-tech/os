@@ -2,7 +2,8 @@
 param(
     [ValidateRange(1, 65535)]
     [int]$Port = 4173,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$ServeOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,13 +20,32 @@ if (-not (Test-Path $server)) {
 }
 
 $url = "http://127.0.0.1:$Port"
+$branch = (& git -C $repo rev-parse --abbrev-ref HEAD 2>$null)
+if ([string]::IsNullOrWhiteSpace($branch)) {
+    $branch = "unknown"
+}
+
+Write-Host "OS learning map: $url"
+Write-Host "Tracking Git branch: $branch"
+if ($ServeOnly) {
+    Write-Host "The bridge will stay active while you switch branches. Run the current branch from the page."
+}
+else {
+    Write-Host "The current branch will be built and launched immediately."
+}
+
 if (-not $NoBrowser) {
     Start-Process $url
 }
 
+$serverArgs = @($server, "--port", [string]$Port)
+if (-not $ServeOnly) {
+    $serverArgs += "--run"
+}
+
 Push-Location $repo
 try {
-    & $node.Source $server --run --port $Port
+    & $node.Source @serverArgs
 }
 finally {
     Pop-Location
