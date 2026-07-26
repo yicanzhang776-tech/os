@@ -1,7 +1,7 @@
 KERNEL_ELF := target/riscv64gc-unknown-none-elf/debug/ai-os-kernel
 QEMU := qemu-system-riscv64
 
-.PHONY: check-env build run live-demo test-qemu test-lab1 test-lab2 test-lab3 test-host test-lab3-host test-lab4 test-lab5 test-lab6 test-lab7 fmt clean
+.PHONY: check-env build run test-qemu test-lab1 fmt clean
 
 check-env:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
@@ -12,38 +12,11 @@ build:
 run: build
 	$(QEMU) -machine virt -nographic -bios default -kernel $(KERNEL_ELF)
 
-live-demo:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1
-
 test-qemu: build
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1
 
 test-lab1:
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
-
-test-lab2:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
-
-test-lab3:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
-
-test-host:
-	cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
-
-test-lab3-host:
-	cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
-
-test-lab4:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
-
-test-lab5:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
-
-test-lab6:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
-
-test-lab7:
-	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 
 fmt:
 	cargo fmt --all

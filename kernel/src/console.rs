@@ -1,33 +1,27 @@
 use crate::sbi;
 
 pub fn print_line(message: &str) {
-    print_str(message);
-    putchar(b'\n');
+    console_write(message);
+    console_putchar(b'\n');
 }
 
-pub fn print_str(message: &str) {
+pub fn console_putchar(byte: u8) {
+    sbi::console_putchar(byte);
+}
+
+pub fn console_write(message: &str) {
     for byte in message.bytes() {
-        putchar(byte);
+        console_putchar(byte);
     }
 }
 
-pub fn print_hex_usize(label: &str, value: usize) {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-
-    print_str(label);
-    print_str("0x");
-
-    let mut shift = usize::BITS as usize;
-    while shift > 0 {
-        shift -= 4;
-        let index = (value >> shift) & 0xf;
-        putchar(HEX[index]);
+pub fn raw_print_line(message: &str) {
+    for byte in message.bytes() {
+        raw_putchar(byte);
     }
-    putchar(b'\n');
+    raw_putchar(b'\n');
 }
 
-fn putchar(byte: u8) {
-    // TODO(student): trace how this function reaches the SBI console call.
-    // Lab1 keeps this helper small so students can inspect the full path.
+fn raw_putchar(byte: u8) {
     sbi::console_putchar(byte);
 }
