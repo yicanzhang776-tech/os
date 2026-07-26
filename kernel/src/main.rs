@@ -43,9 +43,7 @@ fn lab1_success_marker() -> &'static str {
 }
 
 fn lab2_success_marker() -> &'static str {
-    // TODO(LAB2-T3): return the final Lab2 success marker after the demo trap
-    // has been handled and the kernel can continue executing.
-    "[Lab2] TODO: replace this placeholder with the success marker"
+    "[Lab2] PASS"
 }
 
 #[panic_handler]

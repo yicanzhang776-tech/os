@@ -1,10 +1,12 @@
 # Lab2：Trap 与异常处理
 
-当前分支：`lab2-starter`
+当前分支：`lab2-solution`
 当前实验：Lab2 Trap 与异常处理
 适合对象：已经完成 Lab1，第一次接触 RISC-V trap 的本科生
 预计时间：3 到 5 小时
-参考答案：`lab2-solution` 分支，本 starter 分支不包含完整答案。
+分支定位：教师参考实现和验收材料，不建议直接发给学生作为起点。
+
+学生起点位于 `lab2-starter`。本分支在保留 starter 教学文档的基础上，额外提供参考实现、解题说明和教师指南。
 
 ## 5 分钟快速开始
 
@@ -20,19 +22,19 @@
    cargo build -p ai-os-kernel
    ```
 
-3. 启动 QEMU，观察当前 starter 输出：
+3. 启动 QEMU，观察当前 solution 输出：
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
    ```
 
-4. 阅读任务一，找到 trap 初始化 TODO：
+4. 阅读任务一，理解 trap 初始化和参考实现边界：
 
    ```text
    docs/labs/lab2/TASKS.md
    ```
 
-5. 完成任务一后运行 Stage 1 测试：
+5. 运行 Stage 1 测试：
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1 -Stage 1
@@ -55,15 +57,17 @@
 - [任务书](docs/labs/lab2/TASKS.md)
 - [分级提示](docs/labs/lab2/HINTS.md)
 - [测试说明](docs/labs/lab2/TESTING.md)
+- [参考答案说明](docs/labs/lab2/SOLUTION.md)
+- [教师指南](docs/labs/lab2/TEACHER_GUIDE.md)
 
 旧版单页说明 [docs/labs/lab2.md](docs/labs/lab2.md) 只保留跳转说明。请优先阅读 `docs/labs/lab2/` 目录下的教学文档。
 
-## 允许修改
+## 学生分支允许修改
 
 - `kernel/src/trap.rs`
 - `kernel/src/main.rs` 中标记为 `TODO(LAB2-*)` 的少量 marker 边界
 
-## 禁止修改
+## 学生分支禁止修改
 
 - `kernel/src/boot.rs`
 - `kernel/src/sbi.rs`
@@ -88,13 +92,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1 -Stage
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
 ```
 
-教师可用 starter incomplete 验证确认本分支没有提前泄露答案：
+教师可在 `lab2-starter` 中使用 starter incomplete 验证确认起点分支没有提前泄露答案：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1 -ExpectIncomplete
 ```
 
-## 最终提交要求
+## 学生最终提交要求
 
 学生完成 Lab2 后应提交：
 
@@ -110,7 +114,7 @@ lab2: complete trap and breakpoint exercise
 
 ## 答案说明
 
-完整参考实现位于 `lab2-solution` 分支。请先独立完成 starter，再查看 solution。`lab2-solution` 中会额外包含：
+完整参考实现位于当前 `lab2-solution` 分支。教学使用时建议先让学生在 `lab2-starter` 独立完成，再由教师根据本分支讲解关键实现。`lab2-solution` 中额外包含：
 
 - `docs/labs/lab2/SOLUTION.md`
 - `docs/labs/lab2/TEACHER_GUIDE.md`

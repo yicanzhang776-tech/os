@@ -35,6 +35,8 @@
 - [TASKS.md](TASKS.md)：每个任务的具体要求。
 - [HINTS.md](HINTS.md)：分级提示，卡住时再看。
 - [TESTING.md](TESTING.md)：环境、构建、QEMU 和 Stage 测试说明。
+- [SOLUTION.md](SOLUTION.md)：参考实现说明，仅在 `lab2-solution` 分支提供。
+- [TEACHER_GUIDE.md](TEACHER_GUIDE.md)：教师授课和验收建议，仅在 `lab2-solution` 分支提供。
 
 ## 完成标准
 
