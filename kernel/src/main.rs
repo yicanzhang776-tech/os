@@ -21,15 +21,21 @@ extern "C" fn kernel_main() -> ! {
 }
 
 fn lab1_task1_kernel_entered_marker() -> &'static str {
-    "[Lab1-T1] kernel entered"
+    // TODO(LAB1-T1): after tracing ENTRY(_start) -> boot::_start -> kernel_main,
+    // return the Stage 1 marker that proves Rust kernel code is running.
+    "[Lab1-T1] TODO: identify kernel entry path"
 }
 
 fn lab1_task1_pass_marker() -> &'static str {
-    "[Lab1-T1] PASS"
+    // TODO(LAB1-T1): return the Stage 1 success marker after you can explain
+    // why the boot stack is ready before kernel_main uses Rust code.
+    "[Lab1-T1] TODO: confirm boot flow"
 }
 
 fn lab1_success_marker() -> &'static str {
-    "[Lab1] PASS"
+    // TODO(LAB1-T3): after Stage 1 and Stage 2 pass, return the final Lab1
+    // success marker described by the Stage 3 test.
+    "[Lab1] TODO: finish boot log and shutdown path"
 }
 
 #[panic_handler]
