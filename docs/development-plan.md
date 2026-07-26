@@ -1,41 +1,53 @@
-# 开发计划
+# 开发计划与当前进度
 
-## P0：最小可运行内核
+本文档记录 P0-Lab7 的阶段目标、完成状态和后续可选扩展。
 
-| 项目 | 内容 |
-|---|---|
-| 目标 | 建立 Rust 裸机工程，能在 QEMU `virt` + OpenSBI 中启动、输出日志并退出 |
-| 主要文件 | `Cargo.toml`、`.cargo/config.toml`、`kernel/`、`Makefile`、`scripts/run-qemu.ps1`、`scripts/test-qemu.ps1` |
-| 完成标准 | 可交叉编译；QEMU 输出 P0 启动日志；测试脚本可重复执行 |
-| 验证命令 | `cargo fmt --all`；`cargo build -p ai-os-kernel`；`cargo clippy -p ai-os-kernel -- -D warnings`；`scripts/test-qemu.ps1` |
-| 风险 | Windows PATH、QEMU 安装、OpenSBI 行为差异、裸机 unsafe 代码边界 |
+## 阶段完成情况
 
-## P1：Lab1-Lab3
+| 阶段 | 目标 | 当前状态 | 主要验收命令 |
+|---|---|---|---|
+| P0 | 最小 Rust/RISC-V/QEMU 运行基线 | 已完成 | `scripts/test-qemu.ps1` |
+| Lab1 | 启动与 SBI 控制台 | 已完成 starter/solution | `scripts/test-lab1.ps1` |
+| Lab2 | Trap 与异常处理 | 已完成 starter/solution | `scripts/test-lab2.ps1` |
+| Lab3 | 物理内存管理 | 已完成 starter/solution | `scripts/test-lab3.ps1`；主机单测 |
+| Lab4 | Sv39 虚拟内存 | 已完成 starter/solution | `scripts/test-lab4.ps1`；主机单测 |
+| Lab5 | 任务管理与协作式调度 | 已完成 starter/solution | `scripts/test-lab5.ps1`；主机单测 |
+| Lab6 | 用户态与系统调用 | 已完成 starter/solution | `scripts/test-lab6.ps1`；主机单测 |
+| Lab7 | 设备与简化文件系统 | 已完成 starter/solution | `scripts/test-lab7.ps1`；主机单测 |
 
-| 项目 | 内容 |
-|---|---|
-| 目标 | 完成启动/控制台、trap 基础、物理内存管理三个教学实验 |
-| 主要文件 | `docs/labs/lab1.md`、`docs/labs/lab2.md`、`docs/labs/lab3.md`；后续按架构创建对应内核模块 |
-| 完成标准 | Lab1-Lab3 有 starter code、学生任务、参考实现边界和自动测试 |
-| 验证命令 | 规划中：`scripts/test-lab.ps1 lab1`、`scripts/test-lab.ps1 lab2`、`scripts/test-lab.ps1 lab3` |
-| 风险 | trap 入口调试困难；物理内存边界容易 off-by-one；测试 token 需要稳定 |
+## 当前分支组织
 
-## P2：Lab4-Lab6
+- `p0-minimal-qemu-baseline`：P0 稳定基线。
+- `labN-starter`：第 N 个实验的学生起点，保留清晰 TODO，不输出本实验 PASS。
+- `labN-solution`：第 N 个实验的教师参考实现，输出对应 `[LabN] PASS`。
 
-| 项目 | 内容 |
-|---|---|
-| 目标 | 完成 Sv39 虚拟内存、任务管理、用户态与系统调用 |
-| 主要文件 | `docs/labs/lab4.md`、`docs/labs/lab5.md`、`docs/labs/lab6.md`；后续创建 `memory`、`task`、`syscall`、`user` 相关模块 |
-| 完成标准 | 内核能启用分页；能运行多个任务；至少一个用户程序可通过系统调用输出和退出 |
-| 验证命令 | 规划中：`scripts/test-lab.ps1 lab4`、`scripts/test-lab.ps1 lab5`、`scripts/test-lab.ps1 lab6` |
-| 风险 | 页表启用后故障定位复杂；上下文切换 ABI 容易出错；用户指针校验需要谨慎设计 |
+P0 与 Lab1-Lab7 的 starter/solution 分支均已推送到官方 GitLab。`lab7-solution` 是当前最终成果分支，`main` 已作为 GitLab 默认展示入口同步到最终成果。
 
-## P3：Lab7、完整测试、文档和验收
+## 当前完成状态与可选后续
 
-| 项目 | 内容 |
-|---|---|
-| 目标 | 完成设备与简化文件系统实验，补齐测试、报告、AI 协作记录和验收材料 |
-| 主要文件 | `docs/labs/lab7.md`、`docs/testing.md`、设计报告、AI 协作记录、演示说明 |
-| 完成标准 | Lab1-Lab7 全部可测试；文档说明完整；演示流程可复现 |
-| 验证命令 | 规划中：`scripts/test-lab.ps1 all`；`cargo fmt --all`；`cargo clippy --all-targets -- -D warnings` |
-| 风险 | 文件系统范围过大；CI runner 可能缺 QEMU；文档与代码容易不同步 |
+1. P0 与 Lab1-Lab7 已形成构建、运行、主机测试和 QEMU 系统测试闭环。
+2. `docs/final-report.md`、`docs/submission-checklist.md` 和 `docs/demo-script.md` 已作为最终材料草稿加入仓库。
+3. 后续可根据比赛提交格式制作演示视频、答辩 PPT 和最终版报告 PDF。
+4. 若希望所有历史 starter/solution 分支都单独运行最新 CI，可将最终 CI 配置同步到对应分支；当前最终展示入口为 `main`/`lab7-solution`。
+
+## 最终验收建议
+
+```powershell
+cargo fmt --all -- --check
+cargo build -p ai-os-kernel
+cargo clippy -p ai-os-kernel -- -D warnings
+cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
+```
+
+## 风险与后续材料
+
+- GitLab runner 可能缺少 QEMU 或 Rust target，需要根据 CI 日志补安装命令。
+- 由于 `.gitlab-ci.yml` 只在包含该文件的分支生效，若希望旧 starter/solution 分支也自动跑最新 CI，需要将最终 CI 配置同步到对应分支。
+- 仓库内已提供最终报告草稿、提交清单、演示脚本和 AI 协作记录；比赛视频和答辩 PPT 仍需按现场提交要求制作。

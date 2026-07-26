@@ -11,6 +11,11 @@ Lab7 的目标是让学生理解操作系统如何把设备抽象成可读写对
 
 不做 virtio-block、真实磁盘、多目录、多进程文件表或复杂用户指针校验。
 
+当前如果位于 `lab7-solution` 分支，还可以阅读：
+
+- [SOLUTION.md](SOLUTION.md)：参考实现说明。
+- [TEACHER_GUIDE.md](TEACHER_GUIDE.md)：教师验收与课堂建议。
+
 ## 前置知识
 
 - Lab3：物理内存管理。

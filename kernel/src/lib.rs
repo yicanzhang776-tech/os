@@ -34,7 +34,11 @@ mod lab6_contract_tests {
 
         assert_eq!(
             syscall::dispatch(request),
-            Ok(syscall::SyscallOutcome::Write { bytes: 4 })
+            Ok(syscall::SyscallOutcome::Write {
+                fd: 1,
+                buffer: 0x1000,
+                len: 4,
+            })
         );
         assert_eq!(
             syscall::dispatch(syscall::SyscallRequest::new(syscall::SYS_YIELD, [0; 6])),

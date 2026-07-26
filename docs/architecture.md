@@ -1,33 +1,32 @@
-# 规划架构
+# 系统架构
 
-本文档描述预计架构，不把尚未实现的功能写成已完成。
+本文档描述当前 P0-Lab7 的实际架构和教学边界。实现目标不是工业级通用内核，而是适合本科生循序渐进理解操作系统核心机制的实验环境。
 
-## 当前 P0 状态
+## 当前总体状态
 
-当前 P0 已具备：
+当前仓库已经具备：
 
-- Rust workspace。
-- `kernel` crate。
+- Rust workspace 和 `kernel` crate。
 - RISC-V 64 裸机目标配置。
-- QEMU `virt` + OpenSBI 启动。
-- 最小启动日志。
-- QEMU 冒烟测试脚本。
+- QEMU `virt` + OpenSBI 启动链路。
+- P0 最小启动基线。
+- Lab1-Lab7 的 starter/solution 本地分支。
+- 主机单元测试、PowerShell QEMU 测试脚本和 Linux CI QEMU 脚本。
 
-当前 P0 尚未完成模块化拆分，`boot`、`sbi`、`console` 的最小逻辑仍集中在 `kernel/src/main.rs` 中。
-
-## 预计模块关系
+## 模块关系
 
 ```mermaid
 flowchart TD
-    boot["boot"] --> sbi["sbi"]
+    boot["boot / entry"] --> sbi["sbi"]
     boot --> console["console"]
     console --> sbi
     boot --> trap["trap"]
     boot --> memory["memory"]
     trap --> syscall["syscall"]
     memory --> task["task"]
-    task --> syscall
-    syscall --> user["user"]
+    memory --> user["user mapping"]
+    task --> user["user"]
+    syscall --> user
     syscall --> fs["fs"]
     fs --> drivers["drivers"]
     testing["testing"] --> boot
@@ -38,32 +37,34 @@ flowchart TD
     testing --> fs
 ```
 
-## P0 模块边界
+## 阶段模块边界
 
-P0 只覆盖：
-
-- `boot`：最小入口、栈初始化和跳转到内核主函数。
-- `sbi`：最小控制台输出和关机调用。
-- `console`：最小启动日志输出。
-- `testing`：QEMU 冒烟测试。
-
-这些模块目前可以先保持在 `kernel/src/main.rs`，后续 Lab1 再拆分为清晰模块。
-
-## Lab1-Lab7 逐步加入的模块
-
-| 阶段 | 计划模块 | 状态 |
+| 阶段 | 模块 | 当前状态 |
 |---|---|---|
-| Lab1 | `boot`、`sbi`、`console` | 规划中，基于 P0 拆分和教学化 |
-| Lab2 | `trap` | 规划中 |
-| Lab3 | `memory` 的物理内存部分 | 规划中 |
-| Lab4 | `memory` 的 Sv39 虚拟内存部分 | 规划中 |
-| Lab5 | `task` | 规划中 |
-| Lab6 | `syscall`、`user` | 规划中 |
-| Lab7 | `fs`、`drivers` | 规划中 |
-| 全阶段 | `testing` | 规划中，逐步从 P0 冒烟测试扩展 |
+| P0 | `boot`、`sbi`、`console`、`testing` | 已建立最小可运行基线 |
+| Lab1 | `boot`、`sbi`、`console` | 已建立 starter/solution，聚焦启动与控制台 |
+| Lab2 | `trap` | 已建立 starter/solution，处理 breakpoint 异常 |
+| Lab3 | `memory` 物理页分配 | 已建立 starter/solution，包含地址类型和 frame allocator |
+| Lab4 | `memory` Sv39 页表 | 已建立 starter/solution，采用恒等映射并启用 `satp` |
+| Lab5 | `task` | 已建立 starter/solution，单核内核态协作式调度 |
+| Lab6 | `syscall`、`user` | 已建立 starter/solution，最小 U-mode 程序与系统调用 |
+| Lab7 | `drivers`、`fs` | 已建立 starter/solution，教学版内存文件系统 |
 
-## 不确定项
+## 关键设计选择
 
-- 具体目录和函数名待 P0 架构稳定后补充。
-- 用户态 crate、共享 crate 和测试辅助 crate 的创建时机待 Lab6 前确认。
-- Lab7 优先使用内存文件系统还是 virtio-block，待教学难度和 QEMU 环境稳定性确认。
+- 内核加载地址沿用 QEMU/OpenSBI 进入地址和链接脚本配置，避免提前引入高地址内核映射。
+- Lab4 第一版采用恒等映射，但按 `.text`、`.rodata`、`.data/.bss`、用户页设置不同权限。
+- Lab5 使用固定任务数和静态任务栈，只保存 `ra`、`sp`、`s0..s11`，适用于单 hart 协作式切换。
+- Lab6 使用内置用户程序，不做 ELF 加载，系统调用覆盖教学所需的最小路径。
+- Lab7 使用固定容量内存设备和简化 fd 表，重点解释设备抽象、文件描述符和系统调用路径。
+
+## 教学边界
+
+以下内容不属于当前基础实验必做范围：
+
+- 抢占式调度、多核调度和复杂优先级策略。
+- 高地址内核映射、完整地址空间隔离和进程模型。
+- ELF 加载、动态用户程序、多进程和复杂用户指针校验。
+- virtio-block、真实磁盘文件系统、目录树和路径解析。
+
+这些内容可作为答辩扩展、思考题或后续课程项目。
