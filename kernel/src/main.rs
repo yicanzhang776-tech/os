@@ -87,13 +87,49 @@ fn run_lab4() {
     }
     console::print_line("[Lab4] data mapped");
     if memory_set
-        .map_identity_range(layout.bss_start, layout.kernel_end, data_flags)
+        .map_identity_range(layout.bss_start, layout.bss_end, data_flags)
         .is_err()
     {
         console::print_line("[Lab4] FAIL: bss mapping failed");
         return;
     }
     console::print_line("[Lab4] bss mapped");
+
+    let user_layout = user::demo_user_layout();
+    let user_text_flags = memory::PTEFlags::V
+        | memory::PTEFlags::U
+        | memory::PTEFlags::R
+        | memory::PTEFlags::X
+        | memory::PTEFlags::A;
+    let user_stack_flags = memory::PTEFlags::V
+        | memory::PTEFlags::U
+        | memory::PTEFlags::R
+        | memory::PTEFlags::W
+        | memory::PTEFlags::A
+        | memory::PTEFlags::D;
+    if memory_set
+        .map_identity_range(
+            user_layout.text_start,
+            user_layout.text_end,
+            user_text_flags,
+        )
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: user text mapping failed");
+        return;
+    }
+    if memory_set
+        .map_identity_range(
+            user_layout.stack_start,
+            user_layout.stack_end,
+            user_stack_flags,
+        )
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: user stack mapping failed");
+        return;
+    }
+    console::print_line("[Lab4] user pages mapped");
 
     let test_ppn = match memory_set.alloc_data_frame() {
         Ok(ppn) => ppn,
@@ -195,7 +231,7 @@ fn run_lab6() {
 
     if user::starter_interfaces_are_present() && syscall::starter_interfaces_are_present() {
         console::print_line("[Lab6] user runtime initialized");
-        console::print_line("[Lab6] TODO: implement user mode and syscalls");
+        user::enter_demo_user();
     } else {
         console::print_line("[Lab6] FAIL: user runtime skeleton check failed");
     }

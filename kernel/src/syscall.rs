@@ -40,11 +40,27 @@ pub enum SyscallError {
     UnknownSyscall,
 }
 
+/// Successful result of a Lab6 teaching system call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SyscallOutcome {
+    /// The write syscall accepted `bytes` bytes for the teaching console.
+    Write { bytes: usize },
+    /// The yield syscall requested a cooperative reschedule point.
+    Yield,
+    /// The exit syscall ended the user program with `code`.
+    Exit { code: usize },
+}
+
 /// Dispatch one system call request.
-pub fn dispatch(request: SyscallRequest) -> Result<usize, SyscallError> {
+pub fn dispatch(request: SyscallRequest) -> Result<SyscallOutcome, SyscallError> {
     match request.id() {
-        // TODO(LAB6-T2): return successful outcomes for write, yield, and exit.
-        SYS_WRITE | SYS_YIELD | SYS_EXIT => Err(SyscallError::Unimplemented),
+        SYS_WRITE => Ok(SyscallOutcome::Write {
+            bytes: request.args()[2],
+        }),
+        SYS_YIELD => Ok(SyscallOutcome::Yield),
+        SYS_EXIT => Ok(SyscallOutcome::Exit {
+            code: request.args()[0],
+        }),
         _ => Err(SyscallError::UnknownSyscall),
     }
 }
@@ -57,9 +73,9 @@ pub fn starter_interfaces_are_present() -> bool {
     let unknown = SyscallRequest::new(usize::MAX, [0; 6]);
 
     write.args()[0] == 1
-        && dispatch(write) == Err(SyscallError::Unimplemented)
-        && dispatch(yield_now) == Err(SyscallError::Unimplemented)
-        && dispatch(exit) == Err(SyscallError::Unimplemented)
+        && dispatch(write) == Ok(SyscallOutcome::Write { bytes: 4 })
+        && dispatch(yield_now) == Ok(SyscallOutcome::Yield)
+        && dispatch(exit) == Ok(SyscallOutcome::Exit { code: 0 })
         && dispatch(unknown) == Err(SyscallError::UnknownSyscall)
 }
 
@@ -70,16 +86,17 @@ pub fn syscall_abi_stage_is_complete() -> bool {
     let exit = SyscallRequest::new(SYS_EXIT, [0, 0, 0, 0, 0, 0]);
     let unknown = SyscallRequest::new(usize::MAX, [0; 6]);
 
-    write.args()[0] == 1
-        && dispatch(write).is_ok()
-        && dispatch(yield_now).is_ok()
-        && dispatch(exit).is_ok()
+    dispatch(write) == Ok(SyscallOutcome::Write { bytes: 4 })
+        && dispatch(yield_now) == Ok(SyscallOutcome::Yield)
+        && dispatch(exit) == Ok(SyscallOutcome::Exit { code: 0 })
         && dispatch(unknown) == Err(SyscallError::UnknownSyscall)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{dispatch, SyscallError, SyscallRequest, SYS_EXIT, SYS_WRITE, SYS_YIELD};
+    use super::{
+        dispatch, SyscallError, SyscallOutcome, SyscallRequest, SYS_EXIT, SYS_WRITE, SYS_YIELD,
+    };
 
     #[test]
     fn request_records_id_and_arguments() {
@@ -90,18 +107,18 @@ mod tests {
     }
 
     #[test]
-    fn starter_dispatch_marks_planned_syscalls_unimplemented() {
+    fn dispatcher_handles_planned_syscalls() {
         assert_eq!(
-            dispatch(SyscallRequest::new(SYS_WRITE, [0; 6])),
-            Err(SyscallError::Unimplemented)
+            dispatch(SyscallRequest::new(SYS_WRITE, [1, 0x1000, 5, 0, 0, 0])),
+            Ok(SyscallOutcome::Write { bytes: 5 })
         );
         assert_eq!(
             dispatch(SyscallRequest::new(SYS_YIELD, [0; 6])),
-            Err(SyscallError::Unimplemented)
+            Ok(SyscallOutcome::Yield)
         );
         assert_eq!(
-            dispatch(SyscallRequest::new(SYS_EXIT, [0; 6])),
-            Err(SyscallError::Unimplemented)
+            dispatch(SyscallRequest::new(SYS_EXIT, [9, 0, 0, 0, 0, 0])),
+            Ok(SyscallOutcome::Exit { code: 9 })
         );
     }
 

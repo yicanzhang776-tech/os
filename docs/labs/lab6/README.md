@@ -2,6 +2,8 @@
 
 本实验在 Lab5 协作式调度基础上引入最小用户态。第一版只运行一个内置用户程序，处理 `write`、`yield`、`exit` 三类教学系统调用。
 
+当前 `lab6-solution` 分支包含参考实现；学生起点请使用 `lab6-starter`。
+
 ## 学习目标
 
 - 理解 `sepc`、用户栈和 `sstatus.SPP/SPIE` 的作用。
@@ -21,6 +23,8 @@
 - [TASKS.md](TASKS.md)：每个任务的具体要求。
 - [HINTS.md](HINTS.md)：分级提示，卡住时再看。
 - [TESTING.md](TESTING.md)：环境、构建、QEMU 和 Stage 测试说明。
+- [SOLUTION.md](SOLUTION.md)：参考实现说明，仅在 solution 分支提供。
+- [TEACHER_GUIDE.md](TEACHER_GUIDE.md)：教师授课和验收建议，仅在 solution 分支提供。
 
 ## 完成标准
 
