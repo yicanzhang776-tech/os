@@ -4,7 +4,7 @@ use core::{
 };
 
 use crate::{
-    console, fs, sbi,
+    console, fs, sbi, telemetry,
     syscall::{self, SyscallError, SyscallOutcome, SyscallRequest},
     user,
 };
@@ -185,11 +185,13 @@ pub fn init() {
         );
     }
     console::print_line("[Lab2] trap entry installed");
+    telemetry::event("lab2", "stvec-installed");
 }
 
 /// Trigger one controlled breakpoint exception for the Lab2 smoke test.
 pub fn trigger_demo_exception() {
     console::print_line("[Lab2] triggering breakpoint exception");
+    telemetry::event("lab2", "breakpoint-triggered");
     // SAFETY: stvec has been installed by init(), and the trap handler advances
     // sepc by the 4-byte instruction length before returning with sret.
     unsafe {
@@ -248,11 +250,13 @@ extern "C" fn rust_trap_handler(frame: &mut TrapFrame) {
     if !is_interrupt && cause_code == SCAUSE_BREAKPOINT {
         console::print_line("[Lab2] trap: breakpoint exception");
         DEMO_TRAP_HANDLED.store(true, Ordering::Relaxed);
+        telemetry::event("lab2", "breakpoint-handled");
         frame.sepc += 4;
         return;
     }
 
     if !is_interrupt && cause_code == SCAUSE_ECALL_FROM_U {
+        telemetry::event("lab6", "user-ecall");
         handle_user_ecall(frame);
         return;
     }
@@ -277,6 +281,7 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             if fd == 1 {
                 console::print_line("[Lab6] user program: hello");
                 console::print_line("[Lab6] syscall write handled");
+                telemetry::event("lab6", "console-write");
                 frame.a0 = len;
                 return;
             }
@@ -289,7 +294,10 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             };
 
             match result {
-                Ok(bytes) => frame.a0 = bytes,
+                Ok(bytes) => {
+                    frame.a0 = bytes;
+                    telemetry::event("lab7", "file-write");
+                }
                 Err(_) => {
                     console::print_line("[Lab7] FAIL: file write failed");
                     sbi::shutdown();
@@ -307,6 +315,7 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             match result {
                 Ok(bytes) => {
                     frame.a0 = bytes;
+                    telemetry::event("lab7", "file-read");
                     let Some(verified) =
                         with_user_buffer(buffer, bytes, |buf| buf == fs::LAB7_TEST_BYTES)
                     else {
@@ -316,6 +325,7 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
                     if verified {
                         console::print_line("[Lab7] write/read verified");
                         fs::mark_verified();
+                        telemetry::event("lab7", "file-verified");
                     }
                 }
                 Err(_) => {
@@ -327,10 +337,12 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
         Ok(SyscallOutcome::Open) => {
             if fs::take_start_marker() {
                 console::print_line("[Lab7] start");
+                telemetry::event("lab7", "start");
             }
             match fs::with_global_fs(|fs| fs.open()) {
                 Ok(fd) => {
                     console::print_line("[Lab7] file opened");
+                    telemetry::event("lab7", "file-open");
                     frame.a0 = fd;
                 }
                 Err(_) => {
@@ -340,7 +352,10 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             }
         }
         Ok(SyscallOutcome::Close { fd }) => match fs::with_global_fs(|fs| fs.close(fd)) {
-            Ok(()) => frame.a0 = 0,
+            Ok(()) => {
+                frame.a0 = 0;
+                telemetry::event("lab7", "file-close");
+            }
             Err(_) => {
                 console::print_line("[Lab7] FAIL: file close failed");
                 sbi::shutdown();
@@ -348,14 +363,17 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
         },
         Ok(SyscallOutcome::Yield) => {
             console::print_line("[Lab6] syscall yield handled");
+            telemetry::event("lab6", "syscall-yield");
             frame.a0 = 0;
         }
         Ok(SyscallOutcome::Exit { code }) => {
             let _ = code;
             console::print_line("[Lab6] syscall exit handled");
             console::print_line("[Lab6] PASS");
+            telemetry::event("lab6", "user-exit");
             if fs::was_verified() {
                 console::print_line("[Lab7] PASS");
+                telemetry::event("lab7", "pass");
             } else {
                 console::print_line("[Lab7] FAIL: file I/O was not verified");
             }

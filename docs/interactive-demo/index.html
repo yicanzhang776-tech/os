@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RISC-V 教学操作系统 P0 到 Lab7 的交互式执行过程可视化。">
+  <title>AI辅助 OS教学内核——执行过程可视化</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="hero">
+      <p class="eyebrow">RISC-V 64 · QEMU · OpenSBI · Rust</p>
+      <h1>教学操作系统</h1>
+      <p class="hero-copy">沿着实际内核的执行顺序浏览 P0 到 Lab7。选择一个阶段，观察 CPU、寄存器、内核模块与数据结构如何共同完成一次操作。</p>
+      <div class="hero-actions" aria-label="全局演示控制">
+        <button class="button button-primary" id="auto-play" type="button" aria-pressed="false">自动演示</button>
+        <button class="button" id="previous-stage" type="button">← 上一阶段</button>
+        <button class="button" id="next-stage" type="button">下一阶段 →</button>
+      </div>
+      <div class="runtime-bar" aria-live="polite">
+        <span class="connection-status" id="connection-status">离线演示：未连接 QEMU</span>
+        <span id="last-event">等待运行时事件</span>
+      </div>
+    </header>
+
+    <section class="timeline-section" aria-labelledby="timeline-heading">
+      <div class="section-heading">
+        <p class="eyebrow">执行时间线</p>
+        <h2 id="timeline-heading">内核从启动到用户文件 I/O</h2>
+      </div>
+      <div class="timeline" id="timeline" role="tablist" aria-label="实验阶段"></div>
+    </section>
+
+    <section class="stage-layout" aria-live="polite">
+      <article class="stage-intro">
+        <p class="stage-label" id="stage-label">P0</p>
+        <h2 id="stage-title">最小运行基线</h2>
+        <p id="stage-summary"></p>
+        <div class="concept-list" id="concept-list" aria-label="关联知识点"></div>
+        <div class="source-links" id="source-links" aria-label="对应源代码"></div>
+      </article>
+
+      <section class="execution-panel" aria-labelledby="execution-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">动态执行面板</p>
+            <h2 id="execution-heading">正在准备启动链路</h2>
+          </div>
+          <output class="status-chip" id="status-chip">就绪</output>
+        </div>
+        <div class="visual-area" id="visual-area"></div>
+        <div class="panel-controls" id="panel-controls"></div>
+        <p class="explanation" id="explanation"></p>
+        <ol class="runtime-feed" id="runtime-feed" aria-label="最近运行时事件"></ol>
+      </section>
+    </section>
+
+    <section class="connection-section" aria-labelledby="connection-heading">
+      <div class="section-heading">
+        <p class="eyebrow">知识桥梁</p>
+        <h2 id="connection-heading">同一条执行链如何穿过所有模块</h2>
+      </div>
+      <ol class="connection-list">
+        <li><span class="connection-code">启动</span><span><code>_start</code> 设置栈，进入 <code>kernel_main</code>。</span></li>
+        <li><span class="connection-code">服务</span><span>SBI、Trap、内存和调度器逐步成为内核可调用的基础设施。</span></li>
+        <li><span class="connection-code">边界</span><span><code>sret</code> 进入 U-mode，<code>ecall</code> 通过 Trap 回到 S-mode。</span></li>
+        <li><span class="connection-code">抽象</span><span>系统调用连接用户程序、文件描述符、文件系统与 RAM 设备。</span></li>
+      </ol>
+    </section>
+  </main>
+
+  <template id="node-template">
+    <div class="flow-node"><span class="node-kicker"></span><strong></strong><small></small></div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
