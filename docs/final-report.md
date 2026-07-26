@@ -406,11 +406,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage
 
 | 角色 | 主要工作 | 负责人 |
 |---|---|---|
-| 项目负责人 | 赛题理解、路线确认、提交把关 | 李浩明 |
-| 内核实现 | P0、Trap、内存、调度、用户态、文件系统 | 李浩明 |
-| 教学设计 | Lab1-Lab7 任务拆分、提示和教师指南 | 李昊然、张义灿 |
-| 测试与验收 | QEMU 脚本、主机单元测试、分阶段测试 | 李昊然、张义灿 |
-| 文档与答辩 | 设计文档、演示脚本、PPT 和视频 | 李昊然、张义灿 |
+| 项目负责人 | 赛题理解、路线确认、提交把关 | 待项目成员补充 |
+| 内核实现 | P0、Trap、内存、调度、用户态、文件系统 | 待项目成员补充 |
+| 教学设计 | Lab1-Lab7 任务拆分、提示和教师指南 | 待项目成员补充 |
+| 测试与验收 | QEMU 脚本、主机单元测试、分阶段测试 | 待项目成员补充 |
+| 文档与答辩 | 设计文档、演示脚本、PPT 和视频 | 待项目成员补充 |
 
 ### 8.2 AI 协作说明
 
@@ -418,7 +418,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage
 
 可确认使用的 AI 工具：
 
-- OpenAI Codex / ChatGPT。
+- AI 编程助手。
 
 AI 参与内容：
 
