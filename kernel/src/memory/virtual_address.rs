@@ -26,17 +26,23 @@ impl VirtAddr {
 
     /// Return the virtual page number containing this address.
     pub fn floor(self) -> VirtPageNum {
-        VirtPageNum::new(self.0 / super::PAGE_SIZE)
+        // TODO(LAB4-T1): divide the virtual address by PAGE_SIZE.
+        let _ = self;
+        VirtPageNum::new(0)
     }
 
     /// Return the first virtual page number whose page starts at or after this address.
     pub fn ceil(self) -> VirtPageNum {
-        VirtPageNum::new(self.0.div_ceil(super::PAGE_SIZE))
+        // TODO(LAB4-T1): handle aligned and unaligned virtual addresses.
+        let _ = self;
+        VirtPageNum::new(0)
     }
 
     /// Return this address's offset inside its 4 KiB page.
     pub fn page_offset(self) -> usize {
-        self.0 % super::PAGE_SIZE
+        // TODO(LAB4-T1): keep only the low 12 bits within one page.
+        let _ = self;
+        0
     }
 }
 
@@ -57,22 +63,9 @@ impl VirtPageNum {
 
     /// Return Sv39 indexes in [level-0, level-1, level-2] order.
     pub fn indexes(self) -> [usize; SV39_LEVELS] {
-        [
-            self.0 & VPN_INDEX_MASK,
-            (self.0 >> VPN_INDEX_BITS) & VPN_INDEX_MASK,
-            (self.0 >> (VPN_INDEX_BITS * 2)) & VPN_INDEX_MASK,
-        ]
-    }
-
-    /// Return the start address of this virtual page.
-    pub fn start_address(self) -> VirtAddr {
-        VirtAddr::new(self.0 * super::PAGE_SIZE)
-    }
-}
-
-impl From<VirtPageNum> for VirtAddr {
-    fn from(value: VirtPageNum) -> Self {
-        value.start_address()
+        // TODO(LAB4-T1): split the VPN into three 9-bit indexes.
+        let _ = self;
+        [0; SV39_LEVELS]
     }
 }
 
@@ -82,37 +75,4 @@ impl From<VirtPageNum> for VirtAddr {
 /// strategy; it does not enable paging.
 pub fn identity_physical_address(va: VirtAddr) -> PhysAddr {
     PhysAddr::new(va.value())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{VirtAddr, VirtPageNum};
-    use crate::memory::PAGE_SIZE;
-
-    #[test]
-    fn virtual_address_floor_handles_aligned_and_unaligned_addresses() {
-        assert!(VirtAddr::new(0x8020_0000).floor() == VirtPageNum::new(0x80200));
-        assert!(VirtAddr::new(0x8020_0001).floor() == VirtPageNum::new(0x80200));
-        assert!(VirtAddr::new(0x8020_0fff).floor() == VirtPageNum::new(0x80200));
-    }
-
-    #[test]
-    fn virtual_address_ceil_handles_aligned_and_unaligned_addresses() {
-        assert!(VirtAddr::new(0x8020_0000).ceil() == VirtPageNum::new(0x80200));
-        assert!(VirtAddr::new(0x8020_0001).ceil() == VirtPageNum::new(0x80201));
-        assert!(VirtAddr::new(0x8020_0fff).ceil() == VirtPageNum::new(0x80201));
-    }
-
-    #[test]
-    fn virtual_address_page_offset_keeps_low_page_bits() {
-        assert!(VirtAddr::new(0x8020_0000).page_offset() == 0);
-        assert!(VirtAddr::new(0x8020_0123).page_offset() == 0x123);
-        assert!(VirtAddr::new(0x8020_0fff).page_offset() == PAGE_SIZE - 1);
-    }
-
-    #[test]
-    fn sv39_indexes_are_split_from_low_to_high_level() {
-        let vpn = VirtPageNum::new((3 << 18) | (2 << 9) | 1);
-        assert!(vpn.indexes() == [1, 2, 3]);
-    }
 }

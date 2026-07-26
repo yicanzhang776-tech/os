@@ -1,8 +1,6 @@
 # Lab4：RISC-V Sv39 虚拟内存
 
-本实验在 Lab3 物理页分配器基础上实现 Sv39 页表。学生会先完成虚拟地址和 PTE 解析，再实现页表映射查询，最后建立内核恒等映射并启用分页。
-
-当前 `lab4-solution` 分支包含参考实现；学生起点请使用 `lab4-starter`。
+本实验在 Lab3 物理页分配器基础上实现 Sv39 页表。你会先完成虚拟地址和 PTE 解析，再实现页表映射查询，最后建立内核恒等映射并启用分页。
 
 ## 学习目标
 
@@ -23,8 +21,6 @@
 - [TASKS.md](TASKS.md)：每个任务的具体要求。
 - [HINTS.md](HINTS.md)：分级提示，卡住时再看。
 - [TESTING.md](TESTING.md)：环境、构建、QEMU 和 Stage 测试说明。
-- [SOLUTION.md](SOLUTION.md)：参考实现说明，仅在 solution 分支提供。
-- [TEACHER_GUIDE.md](TEACHER_GUIDE.md)：教师授课和验收建议，仅在 solution 分支提供。
 
 ## 完成标准
 

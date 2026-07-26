@@ -7,19 +7,7 @@ use crate::{console, sbi};
 
 const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS - 1);
 const SCAUSE_CODE_MASK: usize = !SCAUSE_INTERRUPT_BIT;
-const SCAUSE_INSTRUCTION_ADDRESS_MISALIGNED: usize = 0;
-const SCAUSE_INSTRUCTION_ACCESS_FAULT: usize = 1;
-const SCAUSE_ILLEGAL_INSTRUCTION: usize = 2;
 const SCAUSE_BREAKPOINT: usize = 3;
-const SCAUSE_LOAD_ADDRESS_MISALIGNED: usize = 4;
-const SCAUSE_LOAD_ACCESS_FAULT: usize = 5;
-const SCAUSE_STORE_ADDRESS_MISALIGNED: usize = 6;
-const SCAUSE_STORE_ACCESS_FAULT: usize = 7;
-const SCAUSE_ECALL_FROM_U: usize = 8;
-const SCAUSE_ECALL_FROM_S: usize = 9;
-const SCAUSE_INSTRUCTION_PAGE_FAULT: usize = 12;
-const SCAUSE_LOAD_PAGE_FAULT: usize = 13;
-const SCAUSE_STORE_PAGE_FAULT: usize = 15;
 
 static DEMO_TRAP_HANDLED: AtomicBool = AtomicBool::new(false);
 
@@ -136,7 +124,7 @@ pub fn was_demo_handled() -> bool {
     DEMO_TRAP_HANDLED.load(Ordering::Relaxed)
 }
 
-extern "C" fn rust_trap_handler(scause: usize, sepc: usize, stval: usize) {
+extern "C" fn rust_trap_handler(scause: usize, sepc: usize, _stval: usize) {
     let is_interrupt = (scause & SCAUSE_INTERRUPT_BIT) != 0;
     let cause_code = scause & SCAUSE_CODE_MASK;
 
@@ -148,29 +136,7 @@ extern "C" fn rust_trap_handler(scause: usize, sepc: usize, stval: usize) {
     }
 
     console::print_line("[Lab2] trap: unexpected cause");
-    console::print_line(unexpected_cause_label(cause_code));
-    console::print_hex_usize("[Lab2] scause code: ", cause_code);
-    console::print_hex_usize("[Lab2] sepc: ", sepc);
-    console::print_hex_usize("[Lab2] stval: ", stval);
     sbi::shutdown();
-}
-
-fn unexpected_cause_label(cause_code: usize) -> &'static str {
-    match cause_code {
-        SCAUSE_INSTRUCTION_ADDRESS_MISALIGNED => "[Lab2] trap cause: instruction misaligned",
-        SCAUSE_INSTRUCTION_ACCESS_FAULT => "[Lab2] trap cause: instruction access fault",
-        SCAUSE_ILLEGAL_INSTRUCTION => "[Lab2] trap cause: illegal instruction",
-        SCAUSE_LOAD_ADDRESS_MISALIGNED => "[Lab2] trap cause: load misaligned",
-        SCAUSE_LOAD_ACCESS_FAULT => "[Lab2] trap cause: load access fault",
-        SCAUSE_STORE_ADDRESS_MISALIGNED => "[Lab2] trap cause: store misaligned",
-        SCAUSE_STORE_ACCESS_FAULT => "[Lab2] trap cause: store access fault",
-        SCAUSE_ECALL_FROM_U => "[Lab2] trap cause: ecall from U-mode",
-        SCAUSE_ECALL_FROM_S => "[Lab2] trap cause: ecall from S-mode",
-        SCAUSE_INSTRUCTION_PAGE_FAULT => "[Lab2] trap cause: instruction page fault",
-        SCAUSE_LOAD_PAGE_FAULT => "[Lab2] trap cause: load page fault",
-        SCAUSE_STORE_PAGE_FAULT => "[Lab2] trap cause: store page fault",
-        _ => "[Lab2] trap cause: other",
-    }
 }
 
 fn write_sepc(value: usize) {
