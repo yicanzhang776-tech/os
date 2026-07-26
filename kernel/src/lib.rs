@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod drivers;
+pub mod fs;
 pub mod memory;
 pub mod syscall;
 pub mod task;
@@ -27,12 +29,27 @@ mod lab6_contract_tests {
     }
 
     #[test]
-    fn syscall_dispatcher_is_explicitly_incomplete_in_starter() {
+    fn syscall_dispatcher_handles_lab6_teaching_abi() {
         let request = syscall::SyscallRequest::new(syscall::SYS_WRITE, [1, 0x1000, 4, 0, 0, 0]);
 
         assert_eq!(
             syscall::dispatch(request),
-            Err(syscall::SyscallError::Unimplemented)
+            Ok(syscall::SyscallOutcome::Write {
+                fd: 1,
+                buffer: 0x1000,
+                len: 4,
+            })
+        );
+        assert_eq!(
+            syscall::dispatch(syscall::SyscallRequest::new(syscall::SYS_YIELD, [0; 6])),
+            Ok(syscall::SyscallOutcome::Yield)
+        );
+        assert_eq!(
+            syscall::dispatch(syscall::SyscallRequest::new(
+                syscall::SYS_EXIT,
+                [7, 0, 0, 0, 0, 0]
+            )),
+            Ok(syscall::SyscallOutcome::Exit { code: 7 })
         );
     }
 
@@ -40,5 +57,25 @@ mod lab6_contract_tests {
     fn lab6_starter_interfaces_are_present_without_claiming_success() {
         assert!(user::starter_interfaces_are_present());
         assert!(syscall::starter_interfaces_are_present());
+    }
+
+    #[test]
+    fn user_layout_provides_non_overlapping_code_and_stack_ranges() {
+        let layout = user::demo_user_layout();
+
+        assert!(layout.text_start.value() < layout.text_end.value());
+        assert!(layout.stack_start.value() < layout.stack_end.value());
+        assert!(layout.text_end.value() <= layout.stack_start.value());
+    }
+}
+
+#[cfg(test)]
+mod lab7_starter_contract_tests {
+    use super::{drivers, fs};
+
+    #[test]
+    fn lab7_starter_interfaces_are_present_without_claiming_success() {
+        assert!(drivers::starter_interfaces_are_present());
+        assert!(fs::starter_interfaces_are_present());
     }
 }

@@ -23,6 +23,7 @@ unsafe extern "C" {
     fn sdata();
     fn edata();
     fn sbss();
+    fn ebss();
     fn ekernel();
 }
 
@@ -35,7 +36,7 @@ pub struct KernelMemoryLayout {
     pub data_start: PhysAddr,
     pub data_end: PhysAddr,
     pub bss_start: PhysAddr,
-    pub kernel_end: PhysAddr,
+    pub bss_end: PhysAddr,
 }
 
 /// Return the first address after the linked kernel image.
@@ -53,7 +54,7 @@ pub fn kernel_memory_layout() -> KernelMemoryLayout {
         data_start: PhysAddr::new(sdata as *const () as usize),
         data_end: PhysAddr::new(edata as *const () as usize),
         bss_start: PhysAddr::new(sbss as *const () as usize),
-        kernel_end: kernel_end(),
+        bss_end: PhysAddr::new(ebss as *const () as usize),
     }
 }
 
