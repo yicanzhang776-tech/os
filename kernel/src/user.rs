@@ -29,49 +29,7 @@ __lab6_user_entry:
     li a2, 4
     li a7, 64
     ecall
-
-    addi sp, sp, -16
-    li t0, 0x3742414c
-    sw t0, 0(sp)
-
-    li a7, 1024
-    ecall
-    mv s0, a0
-
-    mv a0, s0
-    mv a1, sp
-    li a2, 4
-    li a7, 64
-    ecall
-
-    mv a0, s0
-    li a7, 57
-    ecall
-
-    li a7, 1024
-    ecall
-    mv s0, a0
-
-    sw zero, 0(sp)
-    mv a0, s0
-    mv a1, sp
-    li a2, 4
-    li a7, 63
-    ecall
-
-    lw t1, 0(sp)
-    li t0, 0x3742414c
-    bne t0, t1, 2f
-
-    mv a0, s0
-    li a7, 57
-    ecall
-
     li a0, 0
-    li a7, 93
-    ecall
-2:
-    li a0, 1
     li a7, 93
     ecall
 1:

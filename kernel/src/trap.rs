@@ -4,9 +4,8 @@ use core::{
 };
 
 use crate::{
-    console, fs, sbi, telemetry,
+    console, drivers, fs, sbi,
     syscall::{self, SyscallError, SyscallOutcome, SyscallRequest},
-    user,
 };
 
 const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS - 1);
@@ -24,7 +23,6 @@ const SCAUSE_ECALL_FROM_S: usize = 9;
 const SCAUSE_INSTRUCTION_PAGE_FAULT: usize = 12;
 const SCAUSE_LOAD_PAGE_FAULT: usize = 13;
 const SCAUSE_STORE_PAGE_FAULT: usize = 15;
-const SSTATUS_SUM: usize = 1 << 18;
 
 static DEMO_TRAP_HANDLED: AtomicBool = AtomicBool::new(false);
 
@@ -185,13 +183,11 @@ pub fn init() {
         );
     }
     console::print_line("[Lab2] trap entry installed");
-    telemetry::event("lab2", "stvec-installed");
 }
 
 /// Trigger one controlled breakpoint exception for the Lab2 smoke test.
 pub fn trigger_demo_exception() {
     console::print_line("[Lab2] triggering breakpoint exception");
-    telemetry::event("lab2", "breakpoint-triggered");
     // SAFETY: stvec has been installed by init(), and the trap handler advances
     // sepc by the 4-byte instruction length before returning with sret.
     unsafe {
@@ -250,13 +246,11 @@ extern "C" fn rust_trap_handler(frame: &mut TrapFrame) {
     if !is_interrupt && cause_code == SCAUSE_BREAKPOINT {
         console::print_line("[Lab2] trap: breakpoint exception");
         DEMO_TRAP_HANDLED.store(true, Ordering::Relaxed);
-        telemetry::event("lab2", "breakpoint-handled");
         frame.sepc += 4;
         return;
     }
 
     if !is_interrupt && cause_code == SCAUSE_ECALL_FROM_U {
-        telemetry::event("lab6", "user-ecall");
         handle_user_ecall(frame);
         return;
     }
@@ -277,105 +271,36 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
     frame.sepc += 4;
 
     match syscall::dispatch(request) {
-        Ok(SyscallOutcome::Write { fd, buffer, len }) => {
-            if fd == 1 {
-                console::print_line("[Lab6] user program: hello");
-                console::print_line("[Lab6] syscall write handled");
-                telemetry::event("lab6", "console-write");
-                frame.a0 = len;
-                return;
-            }
-
-            let Some(result) = with_user_buffer(buffer, len, |buf| {
-                fs::with_global_fs(|fs| fs.write(fd, buf))
-            }) else {
-                console::print_line("[Lab7] FAIL: invalid user write buffer");
-                sbi::shutdown();
-            };
-
-            match result {
-                Ok(bytes) => {
-                    frame.a0 = bytes;
-                    telemetry::event("lab7", "file-write");
-                }
-                Err(_) => {
-                    console::print_line("[Lab7] FAIL: file write failed");
-                    sbi::shutdown();
-                }
-            }
+        Ok(SyscallOutcome::Write { bytes }) => {
+            console::print_line("[Lab6] user program: hello");
+            console::print_line("[Lab6] syscall write handled");
+            frame.a0 = bytes;
         }
-        Ok(SyscallOutcome::Read { fd, buffer, len }) => {
-            let Some(result) =
-                with_user_buffer_mut(buffer, len, |buf| fs::with_global_fs(|fs| fs.read(fd, buf)))
-            else {
-                console::print_line("[Lab7] FAIL: invalid user read buffer");
-                sbi::shutdown();
-            };
-
-            match result {
-                Ok(bytes) => {
-                    frame.a0 = bytes;
-                    telemetry::event("lab7", "file-read");
-                    let Some(verified) =
-                        with_user_buffer(buffer, bytes, |buf| buf == fs::LAB7_TEST_BYTES)
-                    else {
-                        console::print_line("[Lab7] FAIL: invalid verification buffer");
-                        sbi::shutdown();
-                    };
-                    if verified {
-                        console::print_line("[Lab7] write/read verified");
-                        fs::mark_verified();
-                        telemetry::event("lab7", "file-verified");
-                    }
-                }
-                Err(_) => {
-                    console::print_line("[Lab7] FAIL: file read failed");
-                    sbi::shutdown();
-                }
-            }
-        }
-        Ok(SyscallOutcome::Open) => {
-            if fs::take_start_marker() {
-                console::print_line("[Lab7] start");
-                telemetry::event("lab7", "start");
-            }
-            match fs::with_global_fs(|fs| fs.open()) {
-                Ok(fd) => {
-                    console::print_line("[Lab7] file opened");
-                    telemetry::event("lab7", "file-open");
-                    frame.a0 = fd;
-                }
-                Err(_) => {
-                    console::print_line("[Lab7] FAIL: file open failed");
-                    sbi::shutdown();
-                }
-            }
-        }
-        Ok(SyscallOutcome::Close { fd }) => match fs::with_global_fs(|fs| fs.close(fd)) {
-            Ok(()) => {
-                frame.a0 = 0;
-                telemetry::event("lab7", "file-close");
-            }
-            Err(_) => {
-                console::print_line("[Lab7] FAIL: file close failed");
-                sbi::shutdown();
-            }
-        },
         Ok(SyscallOutcome::Yield) => {
             console::print_line("[Lab6] syscall yield handled");
-            telemetry::event("lab6", "syscall-yield");
             frame.a0 = 0;
         }
         Ok(SyscallOutcome::Exit { code }) => {
             let _ = code;
             console::print_line("[Lab6] syscall exit handled");
             console::print_line("[Lab6] PASS");
-            telemetry::event("lab6", "user-exit");
-            if fs::was_verified() {
-                console::print_line("[Lab7] PASS");
-                telemetry::event("lab7", "pass");
+            console::print_line("[Lab7] start");
+            if drivers::ram_device_stage_is_complete() {
+                console::print_line("[Lab7-T1] ram device ready");
+                console::print_line("[Lab7-T1] PASS");
             } else {
-                console::print_line("[Lab7] FAIL: file I/O was not verified");
+                console::print_line("[Lab7-T1] TODO: implement RAM byte device");
+            }
+            if fs::simple_fs_stage_is_complete() {
+                console::print_line("[Lab7-T2] simple fs ready");
+                console::print_line("[Lab7-T2] PASS");
+            } else {
+                console::print_line("[Lab7-T2] TODO: implement simple file system");
+            }
+            if fs::starter_interfaces_are_present() {
+                console::print_line(fs::LAB7_TODO_MARKER);
+            } else {
+                console::print_line("[Lab7] FAIL: file-system skeleton check failed");
             }
             sbi::shutdown();
         }
@@ -389,70 +314,6 @@ fn handle_user_ecall(frame: &mut TrapFrame) {
             sbi::shutdown();
         }
     }
-}
-
-fn user_buffer_is_allowed(address: usize, len: usize) -> bool {
-    let Some(end) = address.checked_add(len) else {
-        return false;
-    };
-    let layout = user::demo_user_layout();
-
-    address >= layout.stack_start.value() && end <= layout.stack_end.value()
-}
-
-fn with_user_buffer<R>(address: usize, len: usize, f: impl FnOnce(&[u8]) -> R) -> Option<R> {
-    if !user_buffer_is_allowed(address, len) {
-        return None;
-    }
-
-    // SAFETY: The address range was checked against the fixed Lab7 user stack
-    // mapping. SUM is enabled only while S-mode copies bytes from that range.
-    Some(unsafe {
-        with_sum_enabled(|| {
-            let slice = core::slice::from_raw_parts(address as *const u8, len);
-            f(slice)
-        })
-    })
-}
-
-fn with_user_buffer_mut<R>(
-    address: usize,
-    len: usize,
-    f: impl FnOnce(&mut [u8]) -> R,
-) -> Option<R> {
-    if !user_buffer_is_allowed(address, len) {
-        return None;
-    }
-
-    // SAFETY: The address range was checked against the fixed Lab7 user stack
-    // mapping. SUM is enabled only while S-mode copies bytes into that range.
-    Some(unsafe {
-        with_sum_enabled(|| {
-            let slice = core::slice::from_raw_parts_mut(address as *mut u8, len);
-            f(slice)
-        })
-    })
-}
-
-unsafe fn with_sum_enabled<R>(f: impl FnOnce() -> R) -> R {
-    let previous: usize;
-    // SAFETY: This helper runs in S-mode while handling one user syscall. It
-    // saves and restores sstatus so SUM is scoped to the user-buffer copy.
-    unsafe {
-        asm!(
-            "csrr {previous}, sstatus",
-            "csrs sstatus, {sum}",
-            previous = out(reg) previous,
-            sum = in(reg) SSTATUS_SUM,
-            options(nostack)
-        );
-    }
-    let result = f();
-    // SAFETY: Restores the exact sstatus value captured before enabling SUM.
-    unsafe {
-        asm!("csrw sstatus, {previous}", previous = in(reg) previous, options(nostack));
-    }
-    result
 }
 
 fn unexpected_cause_label(cause_code: usize) -> &'static str {

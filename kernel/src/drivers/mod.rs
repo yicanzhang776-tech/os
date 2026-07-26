@@ -47,28 +47,14 @@ impl Default for RamDevice {
 }
 
 impl ByteDevice for RamDevice {
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize, DeviceError> {
-        let end = offset
-            .checked_add(buf.len())
-            .ok_or(DeviceError::OutOfBounds)?;
-        if end > self.bytes.len() {
-            return Err(DeviceError::OutOfBounds);
-        }
-
-        buf.copy_from_slice(&self.bytes[offset..end]);
-        Ok(buf.len())
+    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize, DeviceError> {
+        // TODO(LAB7-T1): check the range and copy bytes from the RAM device.
+        Err(DeviceError::Unimplemented)
     }
 
-    fn write_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize, DeviceError> {
-        let end = offset
-            .checked_add(buf.len())
-            .ok_or(DeviceError::OutOfBounds)?;
-        if end > self.bytes.len() {
-            return Err(DeviceError::OutOfBounds);
-        }
-
-        self.bytes[offset..end].copy_from_slice(buf);
-        Ok(buf.len())
+    fn write_at(&mut self, _offset: usize, _buf: &[u8]) -> Result<usize, DeviceError> {
+        // TODO(LAB7-T1): check the range and copy bytes into the RAM device.
+        Err(DeviceError::Unimplemented)
     }
 }
 
@@ -78,9 +64,19 @@ pub fn starter_interfaces_are_present() -> bool {
     let mut one_byte = [0u8; 1];
 
     device.capacity() == RAM_DEVICE_CAPACITY
-        && device.write_at(0, &[1]) == Ok(1)
-        && device.read_at(0, &mut one_byte) == Ok(1)
-        && one_byte[0] == 1
+        && device.read_at(0, &mut one_byte) == Err(DeviceError::Unimplemented)
+        && device.write_at(0, &[1]) == Err(DeviceError::Unimplemented)
+}
+
+/// Return whether task 1 has a working RAM byte device implementation.
+pub fn ram_device_stage_is_complete() -> bool {
+    let mut device = RamDevice::new();
+    let mut buf = [0u8; 3];
+
+    device.write_at(2, b"os!").is_ok()
+        && device.read_at(2, &mut buf).is_ok()
+        && buf == *b"os!"
+        && device.write_at(RAM_DEVICE_CAPACITY - 1, b"too long") == Err(DeviceError::OutOfBounds)
 }
 
 #[cfg(test)]
@@ -88,23 +84,13 @@ mod tests {
     use super::{starter_interfaces_are_present, ByteDevice, DeviceError, RamDevice};
 
     #[test]
-    fn ram_device_reads_and_writes_at_offsets() {
-        let mut device = RamDevice::new();
-        let mut buf = [0u8; 3];
-
-        assert_eq!(device.write_at(2, b"os!"), Ok(3));
-        assert_eq!(device.read_at(2, &mut buf), Ok(3));
-        assert_eq!(&buf, b"os!");
-    }
-
-    #[test]
-    fn ram_device_rejects_out_of_bounds_ranges() {
+    fn starter_ram_device_exposes_capacity_without_implementing_io() {
         let mut device = RamDevice::new();
         let mut buf = [0u8; 1];
 
         assert_eq!(device.capacity(), 64);
-        assert_eq!(device.read_at(64, &mut buf), Err(DeviceError::OutOfBounds));
-        assert_eq!(device.write_at(63, &[1, 2]), Err(DeviceError::OutOfBounds));
+        assert_eq!(device.read_at(0, &mut buf), Err(DeviceError::Unimplemented));
+        assert_eq!(device.write_at(0, &[1]), Err(DeviceError::Unimplemented));
         assert!(starter_interfaces_are_present());
     }
 }
