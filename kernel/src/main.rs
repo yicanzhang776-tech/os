@@ -9,6 +9,8 @@ mod trap;
 
 use core::panic::PanicInfo;
 
+use crate::memory::FrameAllocator;
+
 extern "C" fn kernel_main() -> ! {
     console::print_line("[Lab2] start");
     console::print_line("[Lab1] console is available");
@@ -21,28 +23,116 @@ extern "C" fn kernel_main() -> ! {
         console::print_line("[Lab2] TODO: configure stvec and handle the demo trap");
     }
     console::print_line("[Lab3] start");
-
-    if memory::address_stage_is_complete() {
-        console::print_line("[Lab3-T1] address types ready");
-        console::print_line("[Lab3-T1] PASS");
-    } else {
-        console::print_line("[Lab3-T1] TODO: implement physical address conversions");
-    }
-
-    if memory::allocation_stage_is_complete() {
-        console::print_line("[Lab3-T2] allocator can allocate");
-        console::print_line("[Lab3-T2] PASS");
-    } else {
-        console::print_line("[Lab3-T2] TODO: initialize allocator and allocate frames");
-    }
-
     if memory::run_lab3_checks() {
-        console::print_line("[Lab3] frame allocator ready");
         console::print_line("[Lab3] PASS");
     } else {
         console::print_line("[Lab3] FAIL: physical frame allocator check failed");
     }
+    run_lab4();
     sbi::shutdown()
+}
+
+fn run_lab4() {
+    console::print_line("[Lab4] start");
+    if memory::lab4_address_pte_stage_is_complete() {
+        console::print_line("[Lab4-T1] address and PTE ready");
+        console::print_line("[Lab4-T1] PASS");
+    } else {
+        console::print_line("[Lab4-T1] TODO: implement Sv39 address and PTE helpers");
+    }
+    if memory::lab4_page_table_stage_is_complete() {
+        console::print_line("[Lab4-T2] page table maps");
+        console::print_line("[Lab4-T2] PASS");
+    } else {
+        console::print_line("[Lab4-T2] TODO: implement page table map and translate");
+    }
+
+    let mut allocator = memory::StackFrameAllocator::new();
+    allocator.init(memory::kernel_end().ceil(), memory::PHYS_MEMORY_END.floor());
+    console::print_line("[Lab4] allocator ready");
+
+    let layout = memory::kernel_memory_layout();
+    let mut memory_set = match memory::MemorySet::new(allocator) {
+        Ok(memory_set) => memory_set,
+        Err(_) => {
+            console::print_line("[Lab4] FAIL: could not allocate root page table");
+            return;
+        }
+    };
+    console::print_line("[Lab4] root page table allocated");
+
+    let text_flags =
+        memory::PTEFlags::V | memory::PTEFlags::R | memory::PTEFlags::X | memory::PTEFlags::A;
+    let rodata_flags = memory::PTEFlags::V | memory::PTEFlags::R | memory::PTEFlags::A;
+    let data_flags = memory::PTEFlags::V
+        | memory::PTEFlags::R
+        | memory::PTEFlags::W
+        | memory::PTEFlags::A
+        | memory::PTEFlags::D;
+
+    if memory_set
+        .map_identity_range(layout.text_start, layout.text_end, text_flags)
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: text mapping failed");
+        return;
+    }
+    console::print_line("[Lab4] text mapped");
+    if memory_set
+        .map_identity_range(layout.rodata_start, layout.rodata_end, rodata_flags)
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: rodata mapping failed");
+        return;
+    }
+    console::print_line("[Lab4] rodata mapped");
+    if memory_set
+        .map_identity_range(layout.data_start, layout.data_end, data_flags)
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: data mapping failed");
+        return;
+    }
+    console::print_line("[Lab4] data mapped");
+    if memory_set
+        .map_identity_range(layout.bss_start, layout.kernel_end, data_flags)
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: bss mapping failed");
+        return;
+    }
+    console::print_line("[Lab4] bss mapped");
+
+    let test_ppn = match memory_set.alloc_data_frame() {
+        Ok(ppn) => ppn,
+        Err(_) => {
+            console::print_line("[Lab4] FAIL: could not allocate test frame");
+            return;
+        }
+    };
+    if memory_set
+        .map(
+            memory::virtual_address::VirtPageNum::new(test_ppn.value()),
+            test_ppn,
+            data_flags,
+        )
+        .is_err()
+    {
+        console::print_line("[Lab4] FAIL: test page mapping failed");
+        return;
+    }
+
+    let runtime = memory::Lab4Runtime::new(memory_set, test_ppn);
+    console::print_line("[Lab4] page table built");
+    let _satp = runtime.activate();
+    console::print_line("[Lab4] satp activated");
+    console::print_line("[Lab4] paging is active");
+    if runtime.verify_after_activation() {
+        console::print_line("[Lab4] map/translate test passed");
+        console::print_line("[Lab4] PASS");
+    } else {
+        console::print_line("[Lab4] FAIL: map/translate test failed");
+    }
 }
 
 fn lab1_success_marker() -> &'static str {

@@ -1,8 +1,12 @@
 mod address;
 mod frame_allocator;
+pub mod page_table;
+pub mod virtual_address;
 
 pub use address::{PhysAddr, PhysPageNum, PAGE_SIZE};
 pub use frame_allocator::{FrameAllocator, FrameAllocatorError, StackFrameAllocator};
+pub use page_table::{MemorySet, PTEFlags};
+use virtual_address::{VirtAddr, VirtPageNum};
 
 /// Conservative upper bound for allocatable memory on the current QEMU virt run.
 ///
@@ -12,7 +16,26 @@ pub use frame_allocator::{FrameAllocator, FrameAllocatorError, StackFrameAllocat
 pub const PHYS_MEMORY_END: PhysAddr = PhysAddr::new(0x87e0_0000);
 
 unsafe extern "C" {
+    fn stext();
+    fn etext();
+    fn srodata();
+    fn erodata();
+    fn sdata();
+    fn edata();
+    fn sbss();
     fn ekernel();
+}
+
+/// Linked kernel section boundaries used by the Lab4 identity mapping.
+pub struct KernelMemoryLayout {
+    pub text_start: PhysAddr,
+    pub text_end: PhysAddr,
+    pub rodata_start: PhysAddr,
+    pub rodata_end: PhysAddr,
+    pub data_start: PhysAddr,
+    pub data_end: PhysAddr,
+    pub bss_start: PhysAddr,
+    pub kernel_end: PhysAddr,
 }
 
 /// Return the first address after the linked kernel image.
@@ -20,39 +43,22 @@ pub fn kernel_end() -> PhysAddr {
     PhysAddr::new(ekernel as *const () as usize)
 }
 
-/// Return whether the address and page-number helpers are implemented.
-pub fn address_stage_is_complete() -> bool {
-    let aligned = PhysAddr::new(PAGE_SIZE * 3);
-    let unaligned = PhysAddr::new(PAGE_SIZE * 3 + 17);
-    let page = PhysPageNum::new(5);
-
-    aligned.floor().value() == 3
-        && aligned.ceil().value() == 3
-        && aligned.page_offset() == 0
-        && unaligned.floor().value() == 3
-        && unaligned.ceil().value() == 4
-        && unaligned.page_offset() == 17
-        && page.start_address().value() == PAGE_SIZE * 5
-}
-
-/// Return whether the allocator can initialize a range and allocate pages.
-pub fn allocation_stage_is_complete() -> bool {
-    let mut allocator = StackFrameAllocator::new();
-    allocator.init(PhysPageNum::new(10), PhysPageNum::new(12));
-
-    allocator.is_initialized()
-        && allocator.bounds() == (PhysPageNum::new(10), PhysPageNum::new(12))
-        && allocator.alloc() == Some(PhysPageNum::new(10))
-        && allocator.alloc() == Some(PhysPageNum::new(11))
-        && allocator.alloc().is_none()
+/// Return the linker-provided kernel memory layout.
+pub fn kernel_memory_layout() -> KernelMemoryLayout {
+    KernelMemoryLayout {
+        text_start: PhysAddr::new(stext as *const () as usize),
+        text_end: PhysAddr::new(etext as *const () as usize),
+        rodata_start: PhysAddr::new(srodata as *const () as usize),
+        rodata_end: PhysAddr::new(erodata as *const () as usize),
+        data_start: PhysAddr::new(sdata as *const () as usize),
+        data_end: PhysAddr::new(edata as *const () as usize),
+        bss_start: PhysAddr::new(sbss as *const () as usize),
+        kernel_end: kernel_end(),
+    }
 }
 
 /// Run the Lab3 QEMU integration checks.
 pub fn run_lab3_checks() -> bool {
-    if !address_stage_is_complete() || !allocation_stage_is_complete() {
-        return false;
-    }
-
     let kernel_end = kernel_end();
     let start = kernel_end.ceil();
     let end = PHYS_MEMORY_END.floor();
@@ -99,4 +105,63 @@ pub fn run_lab3_checks() -> bool {
         && releases_second
         && rejects_double_free
         && reuses_second
+}
+
+/// Run the Lab4 starter checks.
+#[allow(dead_code)]
+pub fn run_lab4_starter_checks() -> bool {
+    page_table::starter_interfaces_are_present()
+}
+
+/// Return whether Lab4 task 1 address and PTE helpers are complete.
+pub fn lab4_address_pte_stage_is_complete() -> bool {
+    page_table::address_pte_stage_is_complete()
+}
+
+/// Return whether Lab4 task 2 page table operations are complete.
+pub fn lab4_page_table_stage_is_complete() -> bool {
+    page_table::page_table_stage_is_complete()
+}
+
+/// Runtime state for the Lab4 QEMU integration check.
+pub struct Lab4Runtime {
+    memory_set: MemorySet,
+    test_ppn: PhysPageNum,
+}
+
+impl Lab4Runtime {
+    /// Create runtime state from a built address space and one mapped test page.
+    pub const fn new(memory_set: MemorySet, test_ppn: PhysPageNum) -> Self {
+        Self {
+            memory_set,
+            test_ppn,
+        }
+    }
+
+    /// Activate the Lab4 kernel identity address space.
+    pub fn activate(&self) -> usize {
+        self.memory_set.activate()
+    }
+
+    /// Verify mapping and memory access after paging has been enabled.
+    pub fn verify_after_activation(&self) -> bool {
+        let test_va = VirtAddr::from(VirtPageNum::new(self.test_ppn.value()));
+        let translated = self.memory_set.translate(test_va) == Some(PhysAddr::from(self.test_ppn));
+        let data_page_is_not_page_table = !self
+            .memory_set
+            .page_table()
+            .owns_page_table_frame(self.test_ppn);
+
+        // SAFETY: The test page was allocated as a data frame, mapped with
+        // identity VA == PA and read/write permissions, and is distinct from
+        // all page table frames. Volatile access keeps the integration check
+        // visible to the compiler without relying on a heap or allocator.
+        let read_write_works = unsafe {
+            let ptr = self.test_ppn.start_address().value() as *mut usize;
+            ptr.write_volatile(0x4c41_4234);
+            ptr.read_volatile() == 0x4c41_4234
+        };
+
+        translated && data_page_is_not_page_table && read_write_works
+    }
 }

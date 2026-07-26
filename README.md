@@ -1,120 +1,65 @@
-# Lab3：物理内存管理
+# Lab4 Solution：RISC-V Sv39 虚拟内存
 
-当前分支：`lab3-solution`
-当前实验：Lab3 物理内存管理
-适合对象：已经完成 Lab2，第一次实现页帧分配器的本科生
-预计时间：4 到 6 小时
-分支定位：教师参考实现和验收材料，不建议直接发给学生作为起点。
+当前分支：`lab4-solution`
 
-学生起点位于 `lab3-starter`。本分支在保留 starter 教学文档的基础上，额外提供参考实现、解题说明和教师指南。
+当前实验：Lab4 RISC-V Sv39 虚拟内存参考实现与教师验收材料。
 
-## 5 分钟快速开始
+适合对象：教师、助教和完成 `lab4-starter` 后需要对照参考实现的学生。
 
-1. 检查环境：
+> 注意：本分支包含完整参考答案，不建议直接作为学生起始分支发布给学生。学生应从 `lab4-starter` 开始。
 
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
-   ```
+## 本分支包含什么
 
-2. 构建内核：
+- Lab4 三个教学任务的完整参考实现。
+- 与 `lab4-starter` 相同的任务书、提示和测试说明。
+- 额外的参考答案说明：`docs/labs/lab4/SOLUTION.md`。
+- 教师验收和授课建议：`docs/labs/lab4/TEACHER_GUIDE.md`。
+- 分阶段测试脚本：`scripts/test-lab4.ps1 -Stage 1/2/3`。
 
-   ```powershell
-   cargo build -p ai-os-kernel
-   ```
+## Lab4 三个递进任务
 
-3. 启动 QEMU，观察当前 solution 输出：
-
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
-   ```
-
-4. 阅读任务一，理解地址计算和参考实现边界：
-
-   ```text
-   docs/labs/lab3/TASKS.md
-   ```
-
-5. 运行 Stage 1 测试：
-
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1 -Stage 1
-   ```
-
-## 你要完成的三个任务
-
-| 阶段 | 任务 | 完成后关键输出 |
+| 阶段 | 任务 | 关键输出 |
 |---|---|---|
-| Stage 1 | 完成物理地址和页号转换 | `[Lab3-T1] address types ready` 和 `[Lab3-T1] PASS` |
-| Stage 2 | 初始化分配器并完成基本分配 | `[Lab3-T2] allocator can allocate` 和 `[Lab3-T2] PASS` |
-| Stage 3 | 完成释放、复用和错误检查 | `[Lab3] frame allocator ready` 和 `[Lab3] PASS` |
+| Stage 1 | Sv39 地址、VPN 索引、PTE flags 和 `PageTableEntry::ppn` | `[Lab4-T1] address and PTE ready`，`[Lab4-T1] PASS` |
+| Stage 2 | `find_pte_create`、`map`、`unmap`、`translate` | `[Lab4-T2] page table maps`，`[Lab4-T2] PASS` |
+| Stage 3 | 内核恒等映射、`satp`、`sfence.vma` 和启用分页后继续执行 | `[Lab4] page table built`，`[Lab4] satp activated`，`[Lab4] paging is active`，`[Lab4] PASS` |
 
-三个任务由易到难。任务一只处理纯地址计算；任务二实现最小分配；任务三补齐释放、复用和非法释放检查。
-
-## 文档入口
-
-- 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
-- [实验总览](docs/labs/lab3/README.md)
-- [任务书](docs/labs/lab3/TASKS.md)
-- [分级提示](docs/labs/lab3/HINTS.md)
-- [测试说明](docs/labs/lab3/TESTING.md)
-- [参考答案说明](docs/labs/lab3/SOLUTION.md)
-- [教师指南](docs/labs/lab3/TEACHER_GUIDE.md)
-
-旧版单页说明 [docs/labs/lab3.md](docs/labs/lab3.md) 只保留跳转说明。请优先阅读 `docs/labs/lab3/` 目录下的教学文档。
-
-## 学生分支允许修改
-
-- `kernel/src/memory/address.rs`
-- `kernel/src/memory/frame_allocator.rs`
-
-## 学生分支禁止修改
-
-- `kernel/src/boot.rs`
-- `kernel/src/sbi.rs`
-- `kernel/src/trap.rs`
-- `kernel/linker.ld`
-- `scripts/test-lab3.ps1`
-- Lab4 及后续实验模块
-
-禁止修改的文件是本实验基础设施。修改这些文件可能让测试失去教学意义。
-
-## 分阶段测试命令
+## 快速验收
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1 -Stage 1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1 -Stage 2
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1 -Stage 3
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
+cargo build -p ai-os-kernel
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1 -Stage 3
 ```
 
 默认测试等价于 Stage 3：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
 ```
 
-教师可在 `lab3-starter` 中使用 starter incomplete 验证确认起点分支没有提前泄露答案：
+## 文档入口
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1 -ExpectIncomplete
-```
+- 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
+- [Lab4 总览](docs/labs/lab4/README.md)
+- [任务书](docs/labs/lab4/TASKS.md)
+- [分级提示](docs/labs/lab4/HINTS.md)
+- [测试说明](docs/labs/lab4/TESTING.md)
+- [参考答案说明](docs/labs/lab4/SOLUTION.md)
+- [教师指南](docs/labs/lab4/TEACHER_GUIDE.md)
 
-## 学生最终提交要求
+## 参考实现边界
 
-学生完成 Lab3 后应提交：
+本分支实现的是教学版 Sv39：
 
-- 修改后的 `kernel/src/memory/address.rs`
-- 修改后的 `kernel/src/memory/frame_allocator.rs`
-- 一段简短说明：三个 Stage 测试是否通过，以及自己如何避免分配内核占用内存
+- 采用内核恒等映射，不引入高地址内核映射。
+- 区分 `.text`、`.rodata`、`.data`、`.bss` 的权限。
+- 页表页使用固定容量所有权数组，不提前引入堆分配器。
+- QEMU 中真实写入 `satp` 并执行 `sfence.vma`。
+- 不实现 Lab5 任务调度、用户态、系统调用或文件系统。
 
-建议提交信息：
+## 建议使用方式
 
-```text
-lab3: complete physical memory allocator exercise
-```
-
-## 答案说明
-
-完整参考实现位于当前 `lab3-solution` 分支。教学使用时建议先让学生在 `lab3-starter` 独立完成，再由教师根据本分支讲解关键实现。`lab3-solution` 中额外包含：
-
-- `docs/labs/lab3/SOLUTION.md`
-- `docs/labs/lab3/TEACHER_GUIDE.md`
+教师可先向学生发布 `lab4-starter`，课堂讲解 `TASKS.md` 和 `HINTS.md`。验收或讲评时再切换到本分支，对照 `SOLUTION.md` 和 `TEACHER_GUIDE.md` 说明关键实现。
