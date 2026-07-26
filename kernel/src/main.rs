@@ -4,43 +4,53 @@
 mod boot;
 mod console;
 mod sbi;
+mod trap;
 
 use core::panic::PanicInfo;
 
 extern "C" fn kernel_main() -> ! {
-    console::raw_print_line(lab1_task1_kernel_entered_marker());
-    console::raw_print_line(lab1_task1_pass_marker());
-
-    console::print_line("[Lab1-T2] console ready");
-    console::print_line("[Lab1-T2] PASS");
-
-    console::print_line("[Lab1] start");
-    console::print_line("[Lab1] console ready");
+    console::print_line("[Lab2] start");
+    console::print_line("[Lab1] console is available");
     console::print_line(lab1_success_marker());
+
+    trap::init();
+    if trap::is_trap_entry_installed() {
+        console::print_line("[Lab2-T1] stvec configured");
+        console::print_line("[Lab2-T1] PASS");
+    } else {
+        console::print_line("[Lab2-T1] TODO: install trap entry in stvec");
+    }
+
+    trap::trigger_demo_exception();
+    if trap::was_demo_decoded() {
+        console::print_line("[Lab2-T2] breakpoint decoded");
+        console::print_line("[Lab2-T2] PASS");
+    } else {
+        console::print_line("[Lab2-T2] TODO: read scause sepc stval");
+    }
+
+    if trap::was_demo_handled() {
+        console::print_line("[Lab2] breakpoint handled");
+        console::print_line(lab2_success_marker());
+    } else {
+        console::print_line("[Lab2-T3] TODO: advance sepc and return from breakpoint");
+    }
     sbi::shutdown()
 }
 
-fn lab1_task1_kernel_entered_marker() -> &'static str {
-    // TODO(LAB1-T1): after tracing ENTRY(_start) -> boot::_start -> kernel_main,
-    // return the Stage 1 marker that proves Rust kernel code is running.
-    "[Lab1-T1] TODO: identify kernel entry path"
-}
-
-fn lab1_task1_pass_marker() -> &'static str {
-    // TODO(LAB1-T1): return the Stage 1 success marker after you can explain
-    // why the boot stack is ready before kernel_main uses Rust code.
-    "[Lab1-T1] TODO: confirm boot flow"
-}
-
 fn lab1_success_marker() -> &'static str {
-    // TODO(LAB1-T3): after Stage 1 and Stage 2 pass, return the final Lab1
-    // success marker described by the Stage 3 test.
-    "[Lab1] TODO: finish boot log and shutdown path"
+    "[Lab1] PASS"
+}
+
+fn lab2_success_marker() -> &'static str {
+    // TODO(LAB2-T3): return the final Lab2 success marker after the demo trap
+    // has been handled and the kernel can continue executing.
+    "[Lab2] TODO: replace this placeholder with the success marker"
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    console::print_line("[Lab1] kernel panic");
+    console::print_line("[Lab2] kernel panic");
     if let Some(location) = info.location() {
         console::print_line(location.file());
     }
