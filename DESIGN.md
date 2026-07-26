@@ -418,7 +418,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage
 
 可确认使用的 AI 工具：
 
-- OpenAI Codex / ChatGPT。
+- AI 编程助手。
 
 AI 参与内容：
 
