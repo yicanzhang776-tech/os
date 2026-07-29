@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
 $qemu = "qemu-system-riscv64"
-$log = Join-Path $repo "target/qemu-lab1.log"
-$errLog = Join-Path $repo "target/qemu-lab1.err.log"
+$log = Join-Path $repo "target/qemu-lab3.log"
+$errLog = Join-Path $repo "target/qemu-lab3.err.log"
 $timeoutSeconds = 20
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
@@ -67,20 +67,20 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-$markerPattern = "\[Lab1\] PASS"
+$markerPattern = "\[Lab3\] PASS"
 
 if ($ExpectIncomplete) {
     if ($output -match $markerPattern) {
-        throw "Unexpected Lab1 success marker [Lab1] PASS was found in starter output."
+        throw "Unexpected Lab3 success marker [Lab3] PASS was found in starter output."
     }
-    if ($output -notmatch "\[Lab1\] TODO") {
-        throw "Expected Lab1 starter TODO output was not found in QEMU output."
+    if ($output -notmatch "\[Lab3\] TODO") {
+        throw "Expected Lab3 starter TODO output was not found in QEMU output."
     }
-    Write-Output "Lab1 QEMU starter incomplete test passed."
+    Write-Output "Lab3 QEMU starter incomplete test passed."
 }
 else {
     if ($output -notmatch $markerPattern) {
-        throw "Expected Lab1 success marker [Lab1] PASS was not found in QEMU output."
+        throw "Expected Lab3 success marker [Lab3] PASS was not found in QEMU output."
     }
-    Write-Output "Lab1 QEMU smoke test passed."
+    Write-Output "Lab3 QEMU smoke test passed."
 }
