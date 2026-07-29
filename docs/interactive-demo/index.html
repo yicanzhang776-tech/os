@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="跟随 Git 分支和 QEMU 串口实时变化的 RISC-V 教学操作系统多维知识可视化。">
+  <title>OS实验可视化展示</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <main class="app-shell" id="main-content">
+    <header class="hero-grid">
+      <div class="hero">
+        <p class="eyebrow">RISC-V 64 · QEMU · OpenSBI · Rust</p>
+        <h1>OS实验可视化展示</h1>
+        <p class="hero-copy">
+          页面同时回答三个问题：代码现在运行到哪里、这个动作改变了什么、它与前后实验为什么相连。
+          可手动推演，也可跟随当前 Git 分支的真实构建与 QEMU 串口输出。
+        </p>
+        <div class="hero-actions" aria-label="全局演示控制">
+          <button class="button button-primary" id="auto-play" type="button" aria-pressed="false">自动讲解</button>
+          <button class="button" id="previous-stage" type="button">← 上一实验</button>
+          <button class="button" id="next-stage" type="button">下一实验 →</button>
+        </div>
+      </div>
+
+      <aside class="runtime-card" aria-labelledby="runtime-card-title">
+        <div class="runtime-card-heading">
+          <div>
+            <p class="eyebrow">Live workspace</p>
+            <h2 id="runtime-card-title">当前实验现场</h2>
+          </div>
+          <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+        </div>
+        <dl class="runtime-facts">
+          <div><dt>Git 分支</dt><dd><code id="branch-name">离线页面</code></dd></div>
+          <div><dt>分支角色</dt><dd id="branch-variant">等待连接</dd></div>
+          <div><dt>目标实验</dt><dd id="branch-lab">—</dd></div>
+          <div><dt>运行状态</dt><dd id="run-state">未连接本地桥接器</dd></div>
+        </dl>
+        <div class="runtime-run-controls">
+          <button class="button button-run" id="run-current" type="button" disabled>构建并运行当前分支</button>
+          <button class="button button-stop" id="stop-current" type="button" disabled>停止当前运行</button>
+        </div>
+        <p class="runtime-hint" id="runtime-hint">离线时仍可使用全部手动推演与知识地图。</p>
+      </aside>
+    </header>
+
+    <div class="runtime-bar" aria-live="polite">
+      <span class="connection-status" id="connection-status">离线演示：未连接 QEMU</span>
+      <span id="last-event">等待运行时证据</span>
+    </div>
+
+    <section class="timeline-section" aria-labelledby="timeline-heading">
+      <div class="section-heading heading-with-note">
+        <div>
+          <p class="eyebrow">01 · 实验纵向递进</p>
+          <h2 id="timeline-heading">从启动现场到用户文件 I/O</h2>
+        </div>
+        <p>颜色来自当前分支与真实事件：已继承、正在实验、TODO、通过或尚未进入。</p>
+      </div>
+      <div class="timeline" id="timeline" role="tablist" aria-label="实验阶段"></div>
+    </section>
+
+    <section class="stage-layout" aria-live="polite">
+      <article class="stage-intro card">
+        <div class="stage-heading-row">
+          <div>
+            <p class="stage-label" id="stage-label">P0</p>
+            <h2 id="stage-title">最小运行基线</h2>
+          </div>
+          <span class="branch-fit" id="branch-fit">知识总览</span>
+        </div>
+        <p id="stage-summary"></p>
+        <div class="concept-list" id="concept-list" aria-label="关联知识点"></div>
+
+        <div class="learning-detail">
+          <section>
+            <h3>学习目标</h3>
+            <p id="stage-objective"></p>
+          </section>
+          <section>
+            <h3>依赖与输入</h3>
+            <ul id="prerequisite-list"></ul>
+          </section>
+          <section>
+            <h3>必须守住的不变量</h3>
+            <ul id="invariant-list"></ul>
+          </section>
+        </div>
+
+        <div class="source-links" id="source-links" aria-label="对应源代码"></div>
+      </article>
+
+      <section class="execution-panel card" aria-labelledby="execution-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">02 · 动态执行与状态变化</p>
+            <h2 id="execution-heading">正在准备启动链路</h2>
+          </div>
+          <output class="status-chip" id="status-chip">就绪</output>
+        </div>
+        <div class="visual-area" id="visual-area"></div>
+        <div class="panel-controls" id="panel-controls"></div>
+        <p class="explanation" id="explanation"></p>
+
+        <div class="task-progress">
+          <div class="task-progress-heading">
+            <h3>本实验任务</h3>
+            <span id="task-progress-summary">0 / 0</span>
+          </div>
+          <ol id="task-list"></ol>
+        </div>
+      </section>
+    </section>
+
+    <section class="knowledge-section card" aria-labelledby="knowledge-heading">
+      <div class="section-heading heading-with-note">
+        <div>
+          <p class="eyebrow">03 · 横向知识框架</p>
+          <h2 id="knowledge-heading">换一个维度，再看同一组实验</h2>
+        </div>
+        <p id="dimension-description">按 CPU 实际执行顺序理解“为什么下一步必须发生”。</p>
+      </div>
+      <div class="dimension-tabs" id="dimension-tabs" role="tablist" aria-label="知识观察维度"></div>
+      <div class="framework-layout">
+        <div class="framework-canvas" id="framework-canvas" aria-live="polite"></div>
+        <aside class="framework-insight">
+          <span class="insight-label">观察问题</span>
+          <h3 id="dimension-question">控制权现在属于谁？</h3>
+          <p id="dimension-insight"></p>
+          <div class="legend framework-legend">
+            <span class="legend-current">当前 Lab</span>
+            <span class="legend-related">直接相关</span>
+            <span>背景节点</span>
+          </div>
+        </aside>
+      </div>
+
+      <div class="matrix-wrap">
+        <table class="knowledge-matrix" id="knowledge-matrix">
+          <caption>知识点 × 实验阶段：点击单元格可跳转到对应实验</caption>
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="evidence-grid" aria-labelledby="evidence-heading">
+      <div class="section-heading evidence-heading">
+        <p class="eyebrow">04 · 真实运行证据</p>
+        <h2 id="evidence-heading">页面为什么认为“做到这里了”</h2>
+      </div>
+      <article class="event-panel card">
+        <div class="subpanel-heading">
+          <h3>结构化事件</h3>
+          <button class="text-button" id="clear-events" type="button">清空显示</button>
+        </div>
+        <ol class="runtime-feed" id="runtime-feed" aria-label="最近运行时事件">
+          <li class="empty-state">尚未收到实验事件。</li>
+        </ol>
+      </article>
+      <article class="console-panel card">
+        <div class="subpanel-heading">
+          <h3>构建 / QEMU 串口</h3>
+          <span class="console-channel" id="console-channel">idle</span>
+        </div>
+        <pre class="console-output" id="console-output" tabindex="0"><code>等待本地桥接器输出…</code></pre>
+      </article>
+    </section>
+
+    <section class="learning-loop card" aria-labelledby="loop-heading">
+      <div class="section-heading">
+        <p class="eyebrow">教学闭环</p>
+        <h2 id="loop-heading">从“代码能跑”走到“能够解释”</h2>
+      </div>
+      <ol>
+        <li><span>1</span><strong>做</strong><p>在 starter 中补全一个明确 TODO。</p></li>
+        <li><span>2</span><strong>观</strong><p>用串口证据确认真实动作发生到哪一步。</p></li>
+        <li><span>3</span><strong>解</strong><p>说明寄存器、状态机或数据结构为何这样变化。</p></li>
+        <li><span>4</span><strong>联</strong><p>从执行链、层次、资源和保护四个维度连接前后知识。</p></li>
+      </ol>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
