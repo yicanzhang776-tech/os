@@ -55,6 +55,34 @@ flowchart LR
 
 从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
 
+## OS实验可视化展示
+
+可视化页面把 P0 和 Lab1-Lab7 放入同一张操作系统知识地图，将实验代码、当前 Git 分支以及 QEMU/OpenSBI 串口输出联系起来。学生既可以沿实验顺序理解知识的递进关系，也可以从执行流程、系统层次、资源状态和保护边界等维度观察同一知识点。
+
+### 当前分支入口
+
+- [可视化介绍与使用说明](docs/interactive-demo/README.md)
+- [可视化页面源码](docs/interactive-demo/index.html)
+
+以上链接均为相对路径。在 GitLab 中从哪个分支打开 README，就会进入该分支自己的可视化目录。仓库页面只能查看页面源码；实时分支识别、构建和 QEMU 事件需要在本机启动桥接服务。
+
+### 启动实时模式
+
+Windows PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
+```
+
+Ubuntu：
+
+```sh
+sh scripts/check-env.sh
+node docs/interactive-demo/server.js --port 8888
+```
+
+启动后访问 `http://127.0.0.1:8888`。需要立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。
+
 ## P0 与 Lab1-Lab7 的区别
 
 P0 是工程运行基线，不计入正式教学实验。P0 只负责：
