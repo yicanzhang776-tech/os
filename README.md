@@ -6,52 +6,16 @@
 
 ## 提交文档入口
 
-- **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
-- **OS实验可视化展示**：[介绍与启动说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)；[GitHub 最新目录](https://github.com/yicanzhang776-tech/os/tree/main/docs/interactive-demo)）
-- **答辩汇报 PPT**：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
+- 设计方案与开发文档：[DESIGN.md](DESIGN.md)
+- 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
 - 演示视频与答辩讲解脚本：[docs/demo-script.md](docs/demo-script.md)
 - AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
 
-## OS实验可视化展示
-
-可视化页面把 P0 和 Lab1-Lab7 放入同一张操作系统知识地图，将实验代码、当前 Git 分支以及 QEMU/OpenSBI 串口输出联系起来。学生既可以沿实验顺序理解知识的递进关系，也可以从执行流程、系统层次、资源状态和保护边界等维度观察同一知识点。
-
-页面主要提供以下内容：
-
-- 自动识别 `p0-minimal-qemu-baseline` 以及 Lab1-Lab7 的 starter/solution 分支，并定位当前实验与学习角色。
-- 展示从启动、Trap、物理内存、Sv39 虚拟内存、任务调度、用户态与系统调用到设备和文件系统的完整知识链。
-- 将真实构建结果和串口输出转换为时间线、知识节点状态及关键证据，而不是播放固定动画。
-- 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
-- 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
-
-### 启动实时模式
-
-Windows PowerShell：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
-```
-
-Ubuntu：
-
-```sh
-sh scripts/check-env.sh
-node docs/interactive-demo/server.js --port 8888
-```
-
-启动后访问 `http://127.0.0.1:8888`。需要在启动页面时立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。完整操作、分支切换方式和自动化测试命令见[可视化使用说明](docs/interactive-demo/README.md)。
-
-### 仓库页面中的链接说明
-
-`docs/interactive-demo/index.html` 是页面源码路径，不是已经部署到公网的动态页面。直接浏览源码或离线打开页面时可以查看教学内容，但实时分支识别、构建和 QEMU 事件需要在本机启动上述桥接服务。
-
-如果代码托管页面提示该文件“在主频道/主分支上并不存在”，请先确认当前仓库和分支中是否确实包含 `docs/interactive-demo/`。本项目当前完整版本位于 [GitHub main 分支](https://github.com/yicanzhang776-tech/os/tree/main)；把项目复制到其他 GitLab 仓库时，应同步整个仓库目录和分支，而不能只替换 `README.md`，否则 README 中的文档链接会指向尚未上传的文件。
-
 ## 如何阅读当前分支
 
-本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitHub 或 GitLab 页面显示哪个阶段，取决于当前选择的分支。
+本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitLab 页面显示哪个阶段，取决于当前选择的分支。
 
 | 分支 | 含义 | 验收方式 |
 |---|---|---|
@@ -100,6 +64,42 @@ flowchart LR
 ```
 
 从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
+
+## OS实验可视化展示
+
+可视化页面把 P0 和 Lab1-Lab7 放入同一张操作系统知识地图，将实验代码、当前 Git 分支以及 QEMU/OpenSBI 串口输出联系起来。学生既可以沿实验顺序理解知识的递进关系，也可以从执行流程、系统层次、资源状态和保护边界等维度观察同一知识点。
+
+页面主要提供以下内容：
+
+- 自动识别 `p0-minimal-qemu-baseline` 以及 Lab1-Lab7 的 starter/solution 分支，并定位当前实验与学习角色。
+- 展示从启动、Trap、物理内存、Sv39 虚拟内存、任务调度、用户态与系统调用到设备和文件系统的完整知识链。
+- 将真实构建结果和串口输出转换为时间线、知识节点状态及关键证据，而不是播放固定动画。
+- 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
+- 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
+
+### 当前分支入口
+
+- [可视化介绍与使用说明](docs/interactive-demo/README.md)
+- [可视化页面源码](docs/interactive-demo/index.html)
+
+以上链接均为相对路径。在 GitLab 中从哪个分支打开 README，就会进入该分支自己的可视化目录。仓库页面只能查看页面源码；实时分支识别、构建和 QEMU 事件需要在本机启动桥接服务。
+
+### 启动实时模式
+
+Windows PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
+```
+
+Ubuntu：
+
+```sh
+sh scripts/check-env.sh
+node docs/interactive-demo/server.js --port 8888
+```
+
+启动后访问 `http://127.0.0.1:8888`。需要在启动页面时立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。完整操作、分支切换方式和自动化测试命令见[可视化使用说明](docs/interactive-demo/README.md)。
 
 ## P0 与 Lab1-Lab7 的区别
 
