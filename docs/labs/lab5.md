@@ -1,20 +1,13 @@
 # Lab5 文档入口
 
-Lab5 已改造为目录化教学实验。学生应从 `lab5-starter` 分支开始，教师和助教可在 `lab5-solution` 分支查看参考实现和验收说明。
-
-## Starter 文档
+Lab5 已改造为目录化教学实验。请阅读：
 
 - [Lab5 总览](lab5/README.md)
 - [Lab5 任务书](lab5/TASKS.md)
 - [Lab5 分级提示](lab5/HINTS.md)
 - [Lab5 测试说明](lab5/TESTING.md)
 
-## Solution 专用文档
-
-以下文件只应出现在 `lab5-solution` 分支：
-
-- [Lab5 参考答案说明](lab5/SOLUTION.md)
-- [Lab5 教师指南](lab5/TEACHER_GUIDE.md)
+当前 `lab5-starter` 分支不包含完整参考答案。完成实验后可切换到 `lab5-solution` 查看 `SOLUTION.md` 和 `TEACHER_GUIDE.md`。
 
 ## 实验定位
 

@@ -139,53 +139,12 @@ fn run_lab5() {
         console::print_line("[Lab5-T2] TODO: implement cooperative round-robin scheduler");
     }
 
-    task::reset_global_manager();
-
-    let setup_result = task::spawn_kernel_task(task::TaskId::new(0), lab5_task_a)
-        .and_then(|_| task::spawn_kernel_task(task::TaskId::new(1), lab5_task_b))
-        .and_then(|_| task::spawn_kernel_task(task::TaskId::new(2), lab5_task_c));
-
-    if setup_result.is_err() || !task::starter_interfaces_are_present() {
-        console::print_line("[Lab5] FAIL: scheduler initialization failed");
-        return;
+    if task::starter_interfaces_are_present() {
+        console::print_line("[Lab5] scheduler initialized");
+    } else {
+        console::print_line("[Lab5] FAIL: scheduler skeleton check failed");
     }
-
-    console::print_line("[Lab5] scheduler initialized");
-    match task::run_ready_tasks() {
-        Ok(()) => {
-            console::print_line("[Lab5] scheduler finished");
-            console::print_line("[Lab5] PASS");
-        }
-        Err(_) => console::print_line("[Lab5] FAIL: scheduler stopped unexpectedly"),
-    }
-}
-
-extern "C" fn lab5_task_a() -> ! {
-    console::print_line("[Lab5] task A step 1");
-    lab5_yield_or_exit();
-    console::print_line("[Lab5] task A step 2");
-    task::exit_current()
-}
-
-extern "C" fn lab5_task_b() -> ! {
-    console::print_line("[Lab5] task B step 1");
-    lab5_yield_or_exit();
-    console::print_line("[Lab5] task B step 2");
-    task::exit_current()
-}
-
-extern "C" fn lab5_task_c() -> ! {
-    console::print_line("[Lab5] task C step 1");
-    lab5_yield_or_exit();
-    console::print_line("[Lab5] task C step 2");
-    task::exit_current()
-}
-
-fn lab5_yield_or_exit() {
-    if task::yield_now().is_err() {
-        console::print_line("[Lab5] FAIL: yield failed");
-        task::exit_current();
-    }
+    console::print_line("[Lab5] TODO: implement cooperative scheduler");
 }
 
 fn lab1_success_marker() -> &'static str {
