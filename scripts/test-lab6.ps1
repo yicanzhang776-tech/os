@@ -1,10 +1,14 @@
+param(
+    [switch]$ExpectIncomplete
+)
+
 $ErrorActionPreference = "Stop"
 
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
 $qemu = "qemu-system-riscv64"
-$log = Join-Path $repo "target/qemu-p0.log"
-$errLog = Join-Path $repo "target/qemu-p0.err.log"
+$log = Join-Path $repo "target/qemu-lab6.log"
+$errLog = Join-Path $repo "target/qemu-lab6.err.log"
 $timeoutSeconds = 20
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
@@ -63,8 +67,35 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[P0\] PASS") {
-    throw "Expected P0 success marker [P0] PASS was not found in QEMU output."
+if ($output -notmatch "\[Lab5\] PASS") {
+    throw "Expected Lab5 success marker [Lab5] PASS was not found in QEMU output."
 }
 
-Write-Output "QEMU P0 smoke test passed."
+if ($ExpectIncomplete) {
+    if ($output -match "\[Lab6\] PASS") {
+        throw "Unexpected Lab6 success marker [Lab6] PASS was found in starter output."
+    }
+    foreach ($marker in @(
+        "\[Lab6\] start",
+        "\[Lab6\] user runtime initialized",
+        "\[Lab6\] TODO: implement user mode and syscalls"
+    )) {
+        if ($output -notmatch $marker) {
+            throw "Expected Lab6 starter marker $marker was not found in QEMU output."
+        }
+    }
+    Write-Output "Lab6 QEMU starter incomplete test passed."
+}
+else {
+    foreach ($marker in @(
+        "\[Lab6\] user program: hello",
+        "\[Lab6\] syscall write handled",
+        "\[Lab6\] syscall exit handled",
+        "\[Lab6\] PASS"
+    )) {
+        if ($output -notmatch $marker) {
+            throw "Expected Lab6 solution marker $marker was not found in QEMU output."
+        }
+    }
+    Write-Output "Lab6 QEMU smoke test passed."
+}
