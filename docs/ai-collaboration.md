@@ -72,7 +72,7 @@ git status
 git status --short
 git branch -vv
 git log --oneline --decorate --graph --all -20
-git merge-base codex/p0-minimal-qemu-baseline lab1-starter
+git merge-base p0-minimal-qemu-baseline lab1-starter
 git merge-base lab1-starter lab1-solution
 git merge-base lab1-solution lab2-starter
 git merge-base lab2-starter lab2-solution
