@@ -7,6 +7,7 @@
 ## 提交文档入口
 
 - **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
+- **交互式执行过程 Demo**：[docs/interactive-demo/index.html](docs/interactive-demo/index.html)（实时模式见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)）
 - **答辩汇报 PPT**：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
