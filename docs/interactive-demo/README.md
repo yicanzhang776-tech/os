@@ -22,10 +22,10 @@ Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
-node docs/interactive-demo/server.js --port 4173
+node docs/interactive-demo/server.js --port 8888
 ```
 
-Ubuntu 中再打开 `http://127.0.0.1:4173`。若希望启动页面时立即构建并运行当前分支，在 Node 命令末尾添加 `--run`。
+Ubuntu 中再打开 `http://127.0.0.1:8888`。若希望启动页面时立即构建并运行当前分支，在 Node 命令末尾添加 `--run`。
 
 保持这个终端运行，然后让学生正常切换分支：
 
@@ -43,7 +43,7 @@ git switch lab3-starter
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1
 ```
 
-可选参数包括 `-Port 4173` 与 `-NoBrowser`。关闭终端或按 `Ctrl+C` 会停止本地服务和它启动的子进程。服务只监听 `127.0.0.1`，不会向网络发送代码或实验输出。
+可选参数包括 `-Port 8888` 与 `-NoBrowser`。关闭终端或按 `Ctrl+C` 会停止本地服务和它启动的子进程。服务只监听 `127.0.0.1`，不会向网络发送代码或实验输出。
 
 ## 事件兼容策略
 

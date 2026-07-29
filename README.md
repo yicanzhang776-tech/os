@@ -53,6 +53,7 @@
 ## 文档入口
 
 - 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
+- OS实验可视化展示：[使用说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)，自动进入当前 GitLab 分支）
 - [实验总览](docs/labs/lab5/README.md)
 - [任务书](docs/labs/lab5/TASKS.md)
 - [分级提示](docs/labs/lab5/HINTS.md)
