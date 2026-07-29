@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
 $qemu = "qemu-system-riscv64"
-$log = Join-Path $repo "target/qemu-lab2.log"
-$errLog = Join-Path $repo "target/qemu-lab2.err.log"
+$log = Join-Path $repo "target/qemu-lab5.log"
+$errLog = Join-Path $repo "target/qemu-lab5.err.log"
 $timeoutSeconds = 20
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
@@ -67,20 +67,39 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-$markerPattern = "\[Lab2\] PASS"
+if ($output -notmatch "\[Lab4\] PASS") {
+    throw "Expected Lab4 success marker [Lab4] PASS was not found in QEMU output."
+}
 
 if ($ExpectIncomplete) {
-    if ($output -match $markerPattern) {
-        throw "Unexpected Lab2 success marker [Lab2] PASS was found in starter output."
+    if ($output -match "\[Lab5\] PASS") {
+        throw "Unexpected Lab5 success marker [Lab5] PASS was found in starter output."
     }
-    if ($output -notmatch "\[Lab2\] TODO") {
-        throw "Expected Lab2 starter TODO output was not found in QEMU output."
+    foreach ($marker in @(
+        "\[Lab5\] start",
+        "\[Lab5\] scheduler initialized",
+        "\[Lab5\] TODO: implement cooperative scheduler"
+    )) {
+        if ($output -notmatch $marker) {
+            throw "Expected Lab5 starter marker $marker was not found in QEMU output."
+        }
     }
-    Write-Output "Lab2 QEMU starter incomplete test passed."
+    Write-Output "Lab5 QEMU starter incomplete test passed."
 }
 else {
-    if ($output -notmatch $markerPattern) {
-        throw "Expected Lab2 success marker [Lab2] PASS was not found in QEMU output."
+    foreach ($marker in @(
+        "\[Lab5\] task A step 1",
+        "\[Lab5\] task B step 1",
+        "\[Lab5\] task C step 1",
+        "\[Lab5\] task A step 2",
+        "\[Lab5\] task B step 2",
+        "\[Lab5\] task C step 2",
+        "\[Lab5\] scheduler finished",
+        "\[Lab5\] PASS"
+    )) {
+        if ($output -notmatch $marker) {
+            throw "Expected Lab5 solution marker $marker was not found in QEMU output."
+        }
     }
-    Write-Output "Lab2 QEMU smoke test passed."
+    Write-Output "Lab5 QEMU smoke test passed."
 }
