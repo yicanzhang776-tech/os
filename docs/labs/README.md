@@ -11,13 +11,13 @@ P0 是工程运行基线，不计入正式教学实验。Lab1 到 Lab7 是面向
 
 P0 使用独立基线分支：
 
-- `codex/p0-minimal-qemu-baseline`
+- `p0-minimal-qemu-baseline`
 
 ## 实验状态
 
 | 实验 | 名称 | 当前状态 | 分支 |
 |---|---|---|---|
-| P0 | 最小可运行内核 | 已建立工程基线 | `codex/p0-minimal-qemu-baseline` |
+| P0 | 最小可运行内核 | 已建立工程基线 | `p0-minimal-qemu-baseline` |
 | Lab1 | 启动与 SBI 控制台 | 已建立 starter/solution | `lab1-starter`, `lab1-solution` |
 | Lab2 | Trap 与异常处理 | 已建立 starter/solution | `lab2-starter`, `lab2-solution` |
 | Lab3 | 物理内存管理 | 未开始 | 待创建 |
