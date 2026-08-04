@@ -187,7 +187,7 @@
       <div class="section-heading heading-with-note">
         <div>
           <p class="eyebrow">05 · 教学评价与反馈</p>
-          <h2 id="feedback-heading">这套实验是否真的帮助了你</h2>
+          <h2 id="feedback-heading">实验专项评价</h2>
         </div>
         <p>欢迎填写正面或负面评价。反馈内容由你确认后再提交，页面不会自动上传代码或终端日志。</p>
       </div>
@@ -273,8 +273,14 @@
             </div>
           </fieldset>
 
+          <fieldset class="feedback-branch-fieldset">
+            <legend id="feedback-question-title">当前分支专项五题</legend>
+            <p class="feedback-question-description" id="feedback-question-description">正在根据当前实验分支准备评价题目。</p>
+            <div class="feedback-branch-questions" id="feedback-branch-questions"></div>
+          </fieldset>
+
           <fieldset>
-            <legend>具体感受</legend>
+            <legend>补充反馈</legend>
             <label>
               最有帮助的内容
               <textarea name="mostHelpful" rows="3" maxlength="2000" placeholder="例如：知识地图让我看清了 Lab2 与 Lab3 的联系。"></textarea>
@@ -324,6 +330,7 @@
     </section>
   </main>
 
+  <script src="feedback-questions.js"></script>
   <script src="feedback.js"></script>
   <script src="app.js"></script>
 </body>

@@ -85,7 +85,14 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /停止当前运行/);
   assert.match(html, /教学评价与反馈/);
   assert.match(html, /前往 GitLab 确认提交/);
-  assert.match(html, /<script src="feedback\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
+  assert.doesNotMatch(html, /这套实验是否真的帮助了你/);
+  assert.match(html, /当前分支专项五题/);
+  assert.match(html, /补充反馈/);
+  assert.match(html, /<script src="feedback-questions\.js"><\/script>[\s\S]*<script src="feedback\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
+
+  const feedbackQuestions = await fetch(`${url}/feedback-questions.js`);
+  assert.equal(feedbackQuestions.status, 200);
+  assert.match(await feedbackQuestions.text(), /Lab7 · 设备与简化文件系统专项评价/);
 
   const feedbackModule = await fetch(`${url}/feedback.js`);
   assert.equal(feedbackModule.status, 200);
