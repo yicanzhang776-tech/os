@@ -10,7 +10,7 @@
 })(typeof globalThis === "undefined" ? this : globalThis, function createFeedbackModule(questionApi) {
   "use strict";
 
-  if (!questionApi?.getQuestionSet) throw new Error("实验专项评价题库未加载");
+    if (!questionApi?.getQuestionSet) throw new Error("实验教学评价题库未加载");
   const { getQuestionSet } = questionApi;
 
   const DEFAULT_TARGET = Object.freeze({
@@ -110,12 +110,12 @@
 
     const questionSet = getQuestionSet(normalizeContext(context));
     if (input.questionSetId !== questionSet.id) {
-      errors.push("当前实验已切换，请重新回答对应分支的五道专项题");
+      errors.push("当前实验已切换，请重新回答对应分支的五道教学评价题");
     } else {
       const answers = input.branchAnswers || {};
       questionSet.questions.forEach((question, index) => {
         if (normalizeScore(answers[question.id]) === null) {
-          errors.push(`请回答专项评价第 ${index + 1} 题`);
+          errors.push(`请回答教学评价第 ${index + 1} 题`);
         }
       });
     }
@@ -210,7 +210,7 @@
           `   - 维度：${markdownValue(answer.dimension)}`,
           `   - 评分：${answer.score}/5（1 = ${markdownValue(answer.lowLabel)}；5 = ${markdownValue(answer.highLabel)}）`
         ].join("\n"))
-      : ["未记录分支专项评价。"];
+      : ["未记录当前实验的五道教学评价。"];
 
     return [
       "# 教学评价与反馈",
@@ -228,7 +228,7 @@
       `- 总体效果：${optionLabel("outcomes", record.outcome)}`,
       `- 有帮助的方面：${areaLabels}`,
       "",
-      `## ${markdownValue(record.branchQuestionSet?.title || "实验专项评价")}`,
+      `## ${markdownValue(record.branchQuestionSet?.title || "实验教学评价")}`,
       "",
       ...branchQuestionLines,
       "",
@@ -424,7 +424,7 @@
     const description = document.getElementById("feedback-question-description");
     const container = document.getElementById("feedback-branch-questions");
     if (pageTitle) pageTitle.textContent = nextSet.title;
-    if (setTitle) setTitle.textContent = "当前分支专项五题";
+    if (setTitle) setTitle.textContent = "当前实验教学评价五题";
     if (description) description.textContent = nextSet.description;
     if (!container) return;
     container.innerHTML = "";

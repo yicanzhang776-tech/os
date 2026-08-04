@@ -60,7 +60,7 @@
 
 ## 教学评价
 
-运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab1 分支。在原有学习背景和理解变化问题之后，还会显示五道与启动入口、启动栈、SBI 控制台及正常关机相关的专项题，starter 分支的第 5 题会关注 TODO、Stage 和提示是否有效。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab1 starter 分支。在原有问题之后，还会显示五道针对启动入口、启动栈、SBI 控制台和正常关机实验的教学评价题，用来评价讲解、任务难度、提示与运行反馈，不要求填写知识答案；第 5 题关注 TODO、Stage 和提示是否有效。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
 
 ## 允许修改
 
