@@ -58,6 +58,10 @@
 
 旧版单页说明 [docs/labs/lab3.md](docs/labs/lab3.md) 只保留跳转说明。请优先阅读 `docs/labs/lab3/` 目录下的教学文档。
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab3 starter 分支，并显示五道针对地址换算、页帧分配、释放和复用实验的教学评价题，用来评价示例、任务难度、提示、可视化与测试反馈，不要求填写知识答案；第 5 题关注任务顺序是否帮助逐步理解分配器。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 允许修改
 
 - `kernel/src/memory/address.rs`
