@@ -81,7 +81,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   const page = await fetch(url);
   assert.equal(page.status, 200);
   const html = await page.text();
-    assert.match(html, /os实验可视化展示/);
+    assert.match(html, /OS实验可视化展示/);
   assert.match(html, /停止当前运行/);
 
   const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);

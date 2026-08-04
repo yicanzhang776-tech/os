@@ -10,13 +10,13 @@
 
 | 分支 | 含义 | 验收方式 |
 |---|---|---|
-| `main` | 默认展示入口，已同步到最终成果 | 查看完整项目、文档和最终材料 |
+| `main` | 默认集成展示入口，包含可视化遥测和最新材料 | 查看完整项目、文档和展示材料 |
 | `p0-minimal-qemu-baseline` | P0 工程运行基线，不计入正式教学实验 | `scripts/test-qemu.ps1` 输出 `[P0] PASS` |
 | `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
 
-如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整最终代码请查看 `main` 或 `lab7-solution`。
+如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整教学参考实现请查看 `lab7-solution`，包含可视化遥测和最新展示材料的集成版本请查看 `main`。
 
 ## 当前项目状态
 
@@ -98,7 +98,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 
 ## 目录结构
 
-不同阶段分支的文件树会随实验进度逐步增加。最终成果分支 `main` / `lab7-solution` 的主要结构如下：
+不同阶段分支的文件树会随实验进度逐步增加。集成展示分支 `main` 与教学最终解答分支 `lab7-solution` 的主要结构如下：
 
 ```text
 .
