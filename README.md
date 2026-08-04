@@ -51,6 +51,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
 - [参考答案说明](docs/labs/lab5/SOLUTION.md)
 - [教师指南](docs/labs/lab5/TEACHER_GUIDE.md)
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab5 solution 分支，并显示五道针对 TaskContext、任务状态、round-robin 和 `__switch` 实验的教学评价题，用来评价图示、切换轨迹及参考说明，不要求填写知识答案；第 5 题关注协作式与抢占式调度边界的说明是否有效。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 参考实现边界
 
 本分支实现的是教学版协作式调度：
