@@ -56,6 +56,10 @@
 
 旧版单页说明 [docs/labs/lab4.md](docs/labs/lab4.md) 只保留跳转说明。请优先阅读 `docs/labs/lab4/` 目录下的教学文档。
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab4 starter 分支，并显示五道针对 Sv39、三级页表、映射查询和分页激活实验的教学评价题，用来评价图示、任务顺序、提示和运行反馈，不要求填写知识答案；第 5 题关注三个 Stage 是否帮助按安全顺序完成实验。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 允许修改
 
 - `kernel/src/memory/virtual_address.rs`
