@@ -1319,6 +1319,71 @@ h3 {
   font-weight: 740;
 }
 
+.feedback-question-description {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.6;
+}
+
+.feedback-branch-questions {
+  display: grid;
+  gap: 10px;
+}
+
+.feedback-branch-question {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(178px, .42fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0c1422;
+}
+
+.feedback-question-heading {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.feedback-question-number {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue-strong);
+  color: #07111f;
+  font-family: var(--mono);
+  font-size: .72rem;
+  font-weight: 760;
+}
+
+.feedback-question-dimension {
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: .62rem;
+}
+
+.feedback-branch-question > label {
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.6;
+}
+
+.feedback-branch-question > select {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.feedback-branch-question > small {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  font-size: .68rem;
+}
+
 .feedback-field-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1565,6 +1630,16 @@ h3 {
   .learning-loop ol,
   .feedback-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-branch-question {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .feedback-branch-question > select,
+  .feedback-branch-question > small {
+    grid-column: 2;
+    grid-row: auto;
   }
 
   .flow-node {
