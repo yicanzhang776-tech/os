@@ -69,7 +69,7 @@ test("record only includes a small, sanitized experiment context", () => {
   assert.doesNotMatch(JSON.stringify(record), /abcdefghijk|raw log|main\.rs/);
 });
 
-test("Markdown and GitHub issue URL preserve an honest no-help evaluation", () => {
+test("Markdown and GitLab issue URL preserve an honest no-help evaluation", () => {
   const record = feedback.buildFeedbackRecord(completeInput({
     beforeUnderstanding: 3,
     afterUnderstanding: 3,
@@ -91,11 +91,11 @@ test("Markdown and GitHub issue URL preserve an honest no-help evaluation", () =
   assert.match(markdown, /lab2-solution/);
   assert.match(markdown, /不会自动附带源代码、终端日志/);
 
-  const issueUrl = new URL(feedback.buildGithubIssueUrl(record));
-  assert.equal(issueUrl.origin, "https://github.com");
-  assert.equal(issueUrl.pathname, "/yicanzhang776-tech/os/issues/new");
-  assert.match(issueUrl.searchParams.get("title"), /教学效果评价/);
-  assert.equal(issueUrl.searchParams.get("body"), markdown);
+  const issueUrl = new URL(feedback.buildIssueUrl(record));
+  assert.equal(issueUrl.origin, "https://gitlab.eduxiji.net");
+  assert.equal(issueUrl.pathname, "/T2026105749911072/project3136859-388774/-/issues/new");
+  assert.match(issueUrl.searchParams.get("issue[title]"), /教学效果评价/);
+  assert.equal(issueUrl.searchParams.get("issue[description]"), markdown);
 });
 
 test("feedback can be exported without attaching context", () => {
@@ -110,4 +110,17 @@ test("feedback can be exported without attaching context", () => {
   assert.match(feedback.buildFeedbackMarkdown(record), /选择不附带实验上下文/);
   assert.equal(feedback.feedbackFilename(record, "json"), "FB-20260804T010203Z-LOCAL.json");
   assert.equal(JSON.parse(feedback.serializeFeedbackJson(record)).context, null);
+});
+
+test("drafts stay local and can be restored or cleared", () => {
+  const values = new Map();
+  const storage = {
+    setItem: (key, value) => values.set(key, value),
+    getItem: (key) => values.get(key) || null,
+    removeItem: (key) => values.delete(key)
+  };
+  assert.equal(feedback.saveFeedbackDraft(completeInput(), storage), true);
+  assert.equal(feedback.loadFeedbackDraft(storage).input.role, "student");
+  assert.equal(feedback.clearFeedbackDraft(storage), true);
+  assert.equal(feedback.loadFeedbackDraft(storage), null);
 });
