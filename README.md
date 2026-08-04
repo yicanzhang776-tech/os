@@ -60,6 +60,10 @@
 
 旧版单页说明 [docs/labs/lab6.md](docs/labs/lab6.md) 只保留跳转说明。请优先阅读 `docs/labs/lab6/` 目录下的教学文档。
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab6 starter 分支，并显示五道针对用户态切换、UserContext、系统调用 ABI 和 ecall 路径实验的教学评价题，用来评价流程图、任务安排、提示和运行轨迹，不要求填写知识答案；第 5 题关注三个 Stage 是否帮助区分特权级切换和系统调用服务。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 允许修改
 
 - `kernel/src/user.rs`
