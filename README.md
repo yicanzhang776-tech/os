@@ -60,6 +60,10 @@
 
 旧版单页说明 [docs/labs/lab5.md](docs/labs/lab5.md) 只保留跳转说明。请优先阅读 `docs/labs/lab5/` 目录下的教学文档。
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab5 starter 分支，并显示五道针对 TaskContext、任务状态、round-robin 和 `__switch` 实验的教学评价题，用来评价图示、任务难度、分阶段提示和切换轨迹，不要求填写知识答案；第 5 题关注三个 Stage 对定位调度错误是否有帮助。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 允许修改
 
 - `kernel/src/task/mod.rs`
