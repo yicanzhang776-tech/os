@@ -60,6 +60,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage
 - 分级提示：[docs/labs/lab7/HINTS.md](docs/labs/lab7/HINTS.md)
 - 测试说明：[docs/labs/lab7/TESTING.md](docs/labs/lab7/TESTING.md)
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab7 starter 分支，并显示五道针对 RAM 设备、SimpleFs、fd 和文件 I/O 实验的教学评价题，用来评价分层图、任务难度、Stage 提示和错误反馈，不要求填写知识答案；第 5 题关注三个 Stage 是否帮助逐层学习文件系统。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 快速命令
 
 ```powershell
