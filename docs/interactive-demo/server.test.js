@@ -83,6 +83,9 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   const html = await page.text();
   assert.match(html, /OS实验可视化展示/);
   assert.match(html, /停止当前运行/);
+  assert.match(html, /教学评价与反馈/);
+  assert.match(html, /前往 GitLab 确认提交/);
+  assert.match(html, /<script src="feedback\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
 
   const feedbackModule = await fetch(`${url}/feedback.js`);
   assert.equal(feedbackModule.status, 200);
