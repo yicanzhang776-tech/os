@@ -1,11 +1,17 @@
 (function initFeedbackModule(root, factory) {
   "use strict";
 
-  const api = factory();
+  const questionApi = typeof module === "object" && module.exports
+    ? require("./feedback-questions.js")
+    : root?.OsFeedbackQuestions;
+  const api = factory(questionApi);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.OsFeedback = api;
-})(typeof globalThis === "undefined" ? this : globalThis, function createFeedbackModule() {
+})(typeof globalThis === "undefined" ? this : globalThis, function createFeedbackModule(questionApi) {
   "use strict";
+
+  if (!questionApi?.getQuestionSet) throw new Error("实验专项评价题库未加载");
+  const { getQuestionSet } = questionApi;
 
   const DEFAULT_TARGET = Object.freeze({
     provider: "gitlab",
@@ -14,6 +20,7 @@
   });
   const DRAFT_STORAGE_KEY = "os-visualization-feedback-draft-v1";
   let uiContext = normalizeContext();
+  let uiQuestionSet = getQuestionSet(uiContext);
   let uiInitialized = false;
 
   const OPTIONS = Object.freeze({
@@ -92,7 +99,7 @@
     };
   }
 
-  function validateFeedback(input = {}) {
+  function validateFeedback(input = {}, context = {}) {
     const errors = [];
     if (!OPTIONS.types[input.type]) errors.push("请选择反馈类型");
     if (!OPTIONS.roles[input.role]) errors.push("请选择使用者身份");
@@ -100,6 +107,18 @@
     if (normalizeScore(input.beforeUnderstanding) === null) errors.push("请填写使用前理解程度（1-5）");
     if (normalizeScore(input.afterUnderstanding) === null) errors.push("请填写使用后理解程度（1-5）");
     if (!OPTIONS.outcomes[input.outcome]) errors.push("请选择总体学习效果");
+
+    const questionSet = getQuestionSet(normalizeContext(context));
+    if (input.questionSetId !== questionSet.id) {
+      errors.push("当前实验已切换，请重新回答对应分支的五道专项题");
+    } else {
+      const answers = input.branchAnswers || {};
+      questionSet.questions.forEach((question, index) => {
+        if (normalizeScore(answers[question.id]) === null) {
+          errors.push(`请回答专项评价第 ${index + 1} 题`);
+        }
+      });
+    }
 
     const helpfulAreas = Array.isArray(input.helpfulAreas) ? input.helpfulAreas : [];
     if (helpfulAreas.some((area) => !OPTIONS.helpfulAreas[area])) {
@@ -124,7 +143,9 @@
   }
 
   function buildFeedbackRecord(input = {}, context = {}, options = {}) {
-    const errors = validateFeedback(input);
+    const normalizedContext = normalizeContext(context);
+    const questionSet = getQuestionSet(normalizedContext);
+    const errors = validateFeedback(input, normalizedContext);
     if (errors.length) {
       const error = new Error(errors.join("；"));
       error.validationErrors = errors;
@@ -135,7 +156,7 @@
     const helpfulAreas = [...new Set(input.helpfulAreas || [])]
       .filter((area) => OPTIONS.helpfulAreas[area]);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       id: createFeedbackId(createdAt, options.idSuffix),
       createdAt: createdAt.toISOString(),
       type: input.type,
@@ -145,10 +166,24 @@
       afterUnderstanding: normalizeScore(input.afterUnderstanding),
       outcome: input.outcome,
       helpfulAreas,
+      branchQuestionSet: {
+        id: questionSet.id,
+        lab: questionSet.lab,
+        variant: questionSet.variant,
+        title: questionSet.title,
+        answers: questionSet.questions.map((question) => ({
+          id: question.id,
+          dimension: question.dimension,
+          prompt: question.prompt,
+          score: normalizeScore(input.branchAnswers?.[question.id]),
+          lowLabel: question.lowLabel,
+          highLabel: question.highLabel
+        }))
+      },
       mostHelpful: sanitizeText(input.mostHelpful),
       stillConfusing: sanitizeText(input.stillConfusing),
       suggestion: sanitizeText(input.suggestion),
-      context: input.includeContext === false ? null : normalizeContext(context)
+      context: input.includeContext === false ? null : normalizedContext
     };
   }
 
@@ -157,7 +192,7 @@
   }
 
   function buildFeedbackMarkdown(record) {
-    if (!record || record.schemaVersion !== 1) throw new Error("无法识别的反馈数据");
+    if (!record || ![1, 2].includes(record.schemaVersion)) throw new Error("无法识别的反馈数据");
     const areaLabels = (record.helpfulAreas || [])
       .map((area) => optionLabel("helpfulAreas", area))
       .join("、") || "未选择";
@@ -169,6 +204,13 @@
           `- 运行状态：${markdownValue(record.context.runStatus)}`
         ]
       : ["- 使用者选择不附带实验上下文"];
+    const branchQuestionLines = record.branchQuestionSet?.answers?.length
+      ? record.branchQuestionSet.answers.map((answer, index) => [
+          `${index + 1}. ${markdownValue(answer.prompt)}`,
+          `   - 维度：${markdownValue(answer.dimension)}`,
+          `   - 评分：${answer.score}/5（1 = ${markdownValue(answer.lowLabel)}；5 = ${markdownValue(answer.highLabel)}）`
+        ].join("\n"))
+      : ["未记录分支专项评价。"];
 
     return [
       "# 教学评价与反馈",
@@ -186,7 +228,11 @@
       `- 总体效果：${optionLabel("outcomes", record.outcome)}`,
       `- 有帮助的方面：${areaLabels}`,
       "",
-      "## 具体反馈",
+      `## ${markdownValue(record.branchQuestionSet?.title || "实验专项评价")}`,
+      "",
+      ...branchQuestionLines,
+      "",
+      "## 补充反馈",
       "",
       `### 最有帮助的内容\n\n${markdownValue(record.mostHelpful)}`,
       "",
@@ -248,7 +294,7 @@
     const target = getStorage(storage);
     if (!target) return false;
     const safeDraft = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       savedAt: new Date().toISOString(),
       input: {
         type: sanitizeText(input.type, 30),
@@ -257,6 +303,12 @@
         beforeUnderstanding: normalizeScore(input.beforeUnderstanding),
         afterUnderstanding: normalizeScore(input.afterUnderstanding),
         outcome: sanitizeText(input.outcome, 30),
+        questionSetId: sanitizeText(input.questionSetId, 80),
+        branchAnswers: Object.fromEntries(
+          Object.entries(input.branchAnswers || {})
+            .map(([id, score]) => [sanitizeText(id, 80), normalizeScore(score)])
+            .filter(([id, score]) => id && score !== null)
+        ),
         helpfulAreas: Array.isArray(input.helpfulAreas)
           ? input.helpfulAreas.filter((area) => OPTIONS.helpfulAreas[area])
           : [],
@@ -279,7 +331,7 @@
     if (!target) return null;
     try {
       const draft = JSON.parse(target.getItem(DRAFT_STORAGE_KEY));
-      return draft?.schemaVersion === 1 && draft.input ? draft : null;
+      return [1, 2].includes(draft?.schemaVersion) && draft.input ? draft : null;
     } catch (_) {
       return null;
     }
@@ -298,6 +350,10 @@
 
   function collectFormInput(form) {
     const data = new FormData(form);
+    const branchAnswers = {};
+    form.querySelectorAll("[data-feedback-question-id]").forEach((control) => {
+      branchAnswers[control.dataset.feedbackQuestionId] = control.value;
+    });
     return {
       type: data.get("type"),
       role: data.get("role"),
@@ -305,6 +361,8 @@
       beforeUnderstanding: data.get("beforeUnderstanding"),
       afterUnderstanding: data.get("afterUnderstanding"),
       outcome: data.get("outcome"),
+      questionSetId: uiQuestionSet.id,
+      branchAnswers,
       helpfulAreas: data.getAll("helpfulAreas"),
       mostHelpful: data.get("mostHelpful"),
       stillConfusing: data.get("stillConfusing"),
@@ -315,6 +373,7 @@
 
   function applyDraftToForm(form, input) {
     for (const [name, value] of Object.entries(input || {})) {
+      if (["questionSetId", "branchAnswers"].includes(name)) continue;
       const controls = [...form.querySelectorAll(`[name="${name}"]`)];
       controls.forEach((control) => {
         if (control.type === "checkbox") {
@@ -322,6 +381,12 @@
         } else if (!Array.isArray(value) && value !== null && value !== undefined) {
           control.value = String(value);
         }
+      });
+    }
+    if (input?.questionSetId === uiQuestionSet.id) {
+      Object.entries(input.branchAnswers || {}).forEach(([id, score]) => {
+        const control = form.querySelector(`[data-feedback-question-id="${id}"]`);
+        if (control && normalizeScore(score) !== null) control.value = String(score);
       });
     }
   }
@@ -347,9 +412,78 @@
     });
   }
 
+  function renderBranchQuestions(force = false) {
+    if (typeof document === "undefined") return;
+    const nextSet = getQuestionSet(uiContext);
+    if (!force && uiQuestionSet.id === nextSet.id && document.querySelector("[data-feedback-question-id]")) {
+      return;
+    }
+    uiQuestionSet = nextSet;
+    const pageTitle = document.getElementById("feedback-heading");
+    const setTitle = document.getElementById("feedback-question-title");
+    const description = document.getElementById("feedback-question-description");
+    const container = document.getElementById("feedback-branch-questions");
+    if (pageTitle) pageTitle.textContent = nextSet.title;
+    if (setTitle) setTitle.textContent = "当前分支专项五题";
+    if (description) description.textContent = nextSet.description;
+    if (!container) return;
+    container.innerHTML = "";
+
+    nextSet.questions.forEach((question, index) => {
+      const item = document.createElement("div");
+      item.className = "feedback-branch-question";
+      const heading = document.createElement("div");
+      heading.className = "feedback-question-heading";
+      const number = document.createElement("span");
+      number.className = "feedback-question-number";
+      number.textContent = String(index + 1);
+      const dimension = document.createElement("span");
+      dimension.className = "feedback-question-dimension";
+      dimension.textContent = question.dimension;
+      heading.append(number, dimension);
+
+      const label = document.createElement("label");
+      label.htmlFor = `feedback-question-${question.id}`;
+      label.textContent = question.prompt;
+      const select = document.createElement("select");
+      select.id = `feedback-question-${question.id}`;
+      select.name = `branchAnswer-${question.id}`;
+      select.dataset.feedbackQuestionId = question.id;
+      select.required = true;
+      const labels = {
+        1: question.lowLabel,
+        2: "偏低",
+        3: "一般",
+        4: "偏高",
+        5: question.highLabel
+      };
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "请选择 1–5 分";
+      select.appendChild(placeholder);
+      for (let score = 1; score <= 5; score += 1) {
+        const option = document.createElement("option");
+        option.value = String(score);
+        option.textContent = `${score} · ${labels[score]}`;
+        select.appendChild(option);
+      }
+      const scale = document.createElement("small");
+      scale.textContent = `1 = ${question.lowLabel}；5 = ${question.highLabel}`;
+      item.append(heading, label, select, scale);
+      container.appendChild(item);
+    });
+
+    const draft = loadFeedbackDraft();
+    const form = document.getElementById("feedback-form");
+    if (draft && form && draft.input.questionSetId === nextSet.id) {
+      applyDraftToForm(form, draft.input);
+    }
+  }
+
   function setContext(context = {}) {
     uiContext = normalizeContext(context);
     renderFeedbackContext();
+    if (uiInitialized) renderBranchQuestions();
   }
 
   function downloadText(filename, text, type) {
@@ -371,6 +505,7 @@
     if (!form) return false;
     uiInitialized = true;
     renderFeedbackContext();
+    renderBranchQuestions(true);
 
     const draft = loadFeedbackDraft();
     if (draft) {
@@ -428,6 +563,7 @@
     document.getElementById("feedback-clear")?.addEventListener("click", () => {
       form.reset();
       clearFeedbackDraft();
+      renderBranchQuestions(true);
       setFeedbackStatus("表单和本机草稿已清空。", "success");
     });
     return true;
@@ -436,6 +572,7 @@
   return Object.freeze({
     DEFAULT_TARGET,
     OPTIONS,
+    getQuestionSet,
     sanitizeText,
     normalizeContext,
     validateFeedback,
