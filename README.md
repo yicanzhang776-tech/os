@@ -50,6 +50,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
 - [参考答案说明](docs/labs/lab6/SOLUTION.md)
 - [教师指南](docs/labs/lab6/TEACHER_GUIDE.md)
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab6 solution 分支，并显示五道针对用户态切换、UserContext、系统调用 ABI 和 ecall 路径实验的教学评价题，用来评价流程图、运行轨迹及参考说明，不要求填写知识答案；第 5 题关注用户页、用户栈和用户指针安全边界的说明是否清晰。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 参考实现边界
 
 本分支实现的是教学版用户态与系统调用：
