@@ -8,10 +8,13 @@
   "use strict";
 
   const DEFAULT_TARGET = Object.freeze({
-    provider: "github",
-    repository: "yicanzhang776-tech/os",
-    newIssueUrl: "https://github.com/yicanzhang776-tech/os/issues/new"
+    provider: "gitlab",
+    project: "T2026105749911072/project3136859-388774",
+    newIssueUrl: "https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/issues/new"
   });
+  const DRAFT_STORAGE_KEY = "os-visualization-feedback-draft-v1";
+  let uiContext = normalizeContext();
+  let uiInitialized = false;
 
   const OPTIONS = Object.freeze({
     types: Object.freeze({
@@ -200,18 +203,25 @@
     ].join("\n");
   }
 
-  function buildGithubIssueUrl(record, target = DEFAULT_TARGET) {
+  function buildIssueUrl(record, target = DEFAULT_TARGET) {
     const base = target?.newIssueUrl || DEFAULT_TARGET.newIssueUrl;
-    if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/new$/.test(base)) {
-      throw new Error("反馈目标地址不是受支持的 GitHub Issue 地址");
-    }
+    const provider = target?.provider || DEFAULT_TARGET.provider;
+    const supported = provider === "github"
+      ? /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/issues\/new$/.test(base)
+      : provider === "gitlab" && /^https:\/\/[^/]+\/.+\/-\/issues\/new$/.test(base);
+    if (!supported) throw new Error("反馈目标地址不是受支持的 Issue 地址");
     const typeLabel = optionLabel("types", record.type);
     const branchLabel = record.context?.branch && record.context.branch !== "unknown"
       ? ` · ${record.context.branch}`
       : "";
     const url = new URL(base);
-    url.searchParams.set("title", `[${typeLabel}] ${record.id}${branchLabel}`);
-    url.searchParams.set("body", buildFeedbackMarkdown(record));
+    if (provider === "gitlab") {
+      url.searchParams.set("issue[title]", `[${typeLabel}] ${record.id}${branchLabel}`);
+      url.searchParams.set("issue[description]", buildFeedbackMarkdown(record));
+    } else {
+      url.searchParams.set("title", `[${typeLabel}] ${record.id}${branchLabel}`);
+      url.searchParams.set("body", buildFeedbackMarkdown(record));
+    }
     return url.toString();
   }
 
@@ -225,6 +235,204 @@
     return `${JSON.stringify(record, null, 2)}\n`;
   }
 
+  function getStorage(storage) {
+    if (storage) return storage;
+    try {
+      return typeof localStorage === "undefined" ? null : localStorage;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function saveFeedbackDraft(input, storage) {
+    const target = getStorage(storage);
+    if (!target) return false;
+    const safeDraft = {
+      schemaVersion: 1,
+      savedAt: new Date().toISOString(),
+      input: {
+        type: sanitizeText(input.type, 30),
+        role: sanitizeText(input.role, 30),
+        osExperience: sanitizeText(input.osExperience, 30),
+        beforeUnderstanding: normalizeScore(input.beforeUnderstanding),
+        afterUnderstanding: normalizeScore(input.afterUnderstanding),
+        outcome: sanitizeText(input.outcome, 30),
+        helpfulAreas: Array.isArray(input.helpfulAreas)
+          ? input.helpfulAreas.filter((area) => OPTIONS.helpfulAreas[area])
+          : [],
+        mostHelpful: sanitizeText(input.mostHelpful),
+        stillConfusing: sanitizeText(input.stillConfusing),
+        suggestion: sanitizeText(input.suggestion),
+        includeContext: input.includeContext !== false
+      }
+    };
+    try {
+      target.setItem(DRAFT_STORAGE_KEY, JSON.stringify(safeDraft));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function loadFeedbackDraft(storage) {
+    const target = getStorage(storage);
+    if (!target) return null;
+    try {
+      const draft = JSON.parse(target.getItem(DRAFT_STORAGE_KEY));
+      return draft?.schemaVersion === 1 && draft.input ? draft : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function clearFeedbackDraft(storage) {
+    const target = getStorage(storage);
+    if (!target) return false;
+    try {
+      target.removeItem(DRAFT_STORAGE_KEY);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function collectFormInput(form) {
+    const data = new FormData(form);
+    return {
+      type: data.get("type"),
+      role: data.get("role"),
+      osExperience: data.get("osExperience"),
+      beforeUnderstanding: data.get("beforeUnderstanding"),
+      afterUnderstanding: data.get("afterUnderstanding"),
+      outcome: data.get("outcome"),
+      helpfulAreas: data.getAll("helpfulAreas"),
+      mostHelpful: data.get("mostHelpful"),
+      stillConfusing: data.get("stillConfusing"),
+      suggestion: data.get("suggestion"),
+      includeContext: data.get("includeContext") === "on"
+    };
+  }
+
+  function applyDraftToForm(form, input) {
+    for (const [name, value] of Object.entries(input || {})) {
+      const controls = [...form.querySelectorAll(`[name="${name}"]`)];
+      controls.forEach((control) => {
+        if (control.type === "checkbox") {
+          control.checked = Array.isArray(value) ? value.includes(control.value) : Boolean(value);
+        } else if (!Array.isArray(value) && value !== null && value !== undefined) {
+          control.value = String(value);
+        }
+      });
+    }
+  }
+
+  function setFeedbackStatus(text, kind = "info") {
+    const output = typeof document === "undefined" ? null : document.getElementById("feedback-status");
+    if (!output) return;
+    output.textContent = text;
+    output.dataset.kind = kind;
+  }
+
+  function renderFeedbackContext() {
+    if (typeof document === "undefined") return;
+    const values = {
+      "feedback-context-branch": uiContext.branch,
+      "feedback-context-lab": `${uiContext.lab} / ${uiContext.variant}`,
+      "feedback-context-commit": uiContext.commit,
+      "feedback-context-run": uiContext.runStatus
+    };
+    Object.entries(values).forEach(([id, value]) => {
+      const target = document.getElementById(id);
+      if (target) target.textContent = value;
+    });
+  }
+
+  function setContext(context = {}) {
+    uiContext = normalizeContext(context);
+    renderFeedbackContext();
+  }
+
+  function downloadText(filename, text, type) {
+    const blob = new Blob([text], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  function initFeedbackCenter() {
+    if (uiInitialized || typeof document === "undefined") return false;
+    const form = document.getElementById("feedback-form");
+    if (!form) return false;
+    uiInitialized = true;
+    renderFeedbackContext();
+
+    const draft = loadFeedbackDraft();
+    if (draft) {
+      applyDraftToForm(form, draft.input);
+      setFeedbackStatus(`已恢复本机草稿（${new Date(draft.savedAt).toLocaleString()}）`);
+    }
+
+    function recordFromForm() {
+      return buildFeedbackRecord(collectFormInput(form), uiContext);
+    }
+
+    document.getElementById("feedback-save")?.addEventListener("click", () => {
+      const saved = saveFeedbackDraft(collectFormInput(form));
+      setFeedbackStatus(saved ? "草稿已保存在当前浏览器。" : "浏览器未允许保存草稿。", saved ? "success" : "error");
+    });
+
+    document.getElementById("feedback-export-md")?.addEventListener("click", () => {
+      try {
+        const record = recordFromForm();
+        downloadText(feedbackFilename(record), buildFeedbackMarkdown(record), "text/markdown;charset=utf-8");
+        setFeedbackStatus("Markdown 反馈已导出，可离线交给项目负责人。", "success");
+      } catch (error) {
+        setFeedbackStatus(error.message, "error");
+      }
+    });
+
+    document.getElementById("feedback-export-json")?.addEventListener("click", () => {
+      try {
+        const record = recordFromForm();
+        downloadText(feedbackFilename(record, "json"), serializeFeedbackJson(record), "application/json;charset=utf-8");
+        setFeedbackStatus("JSON 反馈已导出。", "success");
+      } catch (error) {
+        setFeedbackStatus(error.message, "error");
+      }
+    });
+
+    document.getElementById("feedback-submit")?.addEventListener("click", () => {
+      try {
+        const record = recordFromForm();
+        saveFeedbackDraft(collectFormInput(form));
+        const link = document.createElement("a");
+        link.href = buildIssueUrl(record);
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.hidden = true;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setFeedbackStatus("已请求打开 GitLab 预填页面，请用你自己的账号检查后提交。", "success");
+      } catch (error) {
+        setFeedbackStatus(error.message, "error");
+      }
+    });
+
+    document.getElementById("feedback-clear")?.addEventListener("click", () => {
+      form.reset();
+      clearFeedbackDraft();
+      setFeedbackStatus("表单和本机草稿已清空。", "success");
+    });
+    return true;
+  }
+
   return Object.freeze({
     DEFAULT_TARGET,
     OPTIONS,
@@ -234,8 +442,13 @@
     createFeedbackId,
     buildFeedbackRecord,
     buildFeedbackMarkdown,
-    buildGithubIssueUrl,
+    buildIssueUrl,
     feedbackFilename,
-    serializeFeedbackJson
+    serializeFeedbackJson,
+    saveFeedbackDraft,
+    loadFeedbackDraft,
+    clearFeedbackDraft,
+    setContext,
+    initFeedbackCenter
   });
 });
