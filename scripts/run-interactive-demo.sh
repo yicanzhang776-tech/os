@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+# The page includes branch-specific teaching questions and needs no extra feedback service.
+
 PORT="${OS_DEMO_PORT:-8888}"
 RUN_KERNEL=0
 OPEN_BROWSER=1
