@@ -50,6 +50,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
 - [参考答案说明](docs/labs/lab4/SOLUTION.md)
 - [教师指南](docs/labs/lab4/TEACHER_GUIDE.md)
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab4 solution 分支，并显示五道针对 Sv39、三级页表、映射查询和分页激活实验的教学评价题，用来评价图示、运行反馈及参考说明，不要求填写知识答案；第 5 题关注映射、权限、`satp` 与 TLB 的排错说明是否有效。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 参考实现边界
 
 本分支实现的是教学版 Sv39：
