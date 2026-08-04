@@ -31,6 +31,10 @@
 - 参考实现说明：[docs/labs/lab7/SOLUTION.md](docs/labs/lab7/SOLUTION.md)
 - 教师指南：[docs/labs/lab7/TEACHER_GUIDE.md](docs/labs/lab7/TEACHER_GUIDE.md)
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab7 solution 分支，并显示五道针对 RAM 设备、SimpleFs、fd 和文件 I/O 实验的教学评价题，用来评价分层图、错误反馈及参考说明，不要求填写知识答案；第 5 题关注教学版文件系统与真实块设备、多目录和用户指针校验边界的说明是否清晰。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 验收命令
 
 ```powershell
