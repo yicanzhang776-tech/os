@@ -26,6 +26,12 @@
 - 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
 - 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
 
+### 教学评价与反馈
+
+页面底部提供学生、教师、助教和其他学习者使用的教学评价表。评价可以如实选择“理解加深”“没有明显变化”“没有帮助”或“更加困惑”，并可保存本机草稿或导出 Markdown/JSON。使用账号提交时，反馈者会前往 GitLab 预填页面，用自己的账号检查后再发布。
+
+目前没有独立数据库、匿名在线问卷、班级统计页面和统一登录系统，草稿也不会跨设备同步。没有 GitLab 项目权限时，可以导出 Markdown 后交给教师或项目负责人。现阶段先通过同学和教师的真实试用验证教学价值；未来在具备服务器、维护人员和有效样本后，再考虑匿名收集、集中统计、处理状态跟踪与更完整的分支事件标记。
+
 ### 启动实时模式
 
 Windows PowerShell：
@@ -38,10 +44,10 @@ Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
-node docs/interactive-demo/server.js --port 8888
+sh scripts/run-interactive-demo.sh
 ```
 
-启动后访问 `http://127.0.0.1:8888`。需要在启动页面时立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。完整操作、分支切换方式和自动化测试命令见[可视化使用说明](docs/interactive-demo/README.md)。
+启动后访问 `http://127.0.0.1:8888`。需要在启动页面时立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可运行 `sh scripts/run-interactive-demo.sh --run`。完整操作、分支切换方式和自动化测试命令见[可视化使用说明](docs/interactive-demo/README.md)。
 
 ### 仓库页面中的链接说明
 
