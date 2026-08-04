@@ -51,6 +51,19 @@
 - `docs/demo-script.md`：演示视频与答辩讲解脚本。
 - `docs/ai-collaboration.md`：AI 协作记录。
 
+## OS 实验可视化与教学反馈
+
+可视化页面位于 [docs/interactive-demo/index.html](docs/interactive-demo/index.html)。它把 P0–Lab7 放入同一张知识地图，实时识别当前 Git 分支，并用构建与 QEMU 串口证据展示实验进度。Ubuntu 中可运行：
+
+```sh
+sh scripts/check-env.sh
+sh scripts/run-interactive-demo.sh
+```
+
+目前页面底部提供学生、教师和其他学习者使用的教学评价表。评价允许如实选择“理解加深”“没有明显变化”“没有帮助”或“更加困惑”，可以保存在本机，也可以导出 Markdown/JSON。后续启用账号提交时，反馈者使用自己的 GitLab 账号检查并发布预填 Issue，项目负责人再根据 Issue 回复和改进。
+
+当前不足是没有独立数据库、匿名在线问卷、班级统计页面和统一登录系统，草稿也不会跨设备同步。没有 GitLab 项目权限的使用者需要导出 Markdown 后交给教师或项目负责人。现阶段先用真实试用反馈验证教学价值；未来在服务器、维护人员和有效样本具备后，再考虑匿名收集、集中统计、处理状态跟踪与更完整的分支事件标记。详细说明见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
+
 ## 实验路线
 
 ```mermaid
