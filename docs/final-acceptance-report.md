@@ -4,8 +4,8 @@
 
 ## 当前状态
 
-- 最终成果分支：`lab7-solution`。
-- 默认展示分支：`main`，通过 fast-forward 展示最终成果。
+- 教学实验最终解答分支：`lab7-solution`。
+- 默认集成展示分支：`main`，包含可视化遥测和最新展示材料。
 - P0 与 Lab1-Lab7 的 starter/solution 分支均已推送到官方 GitLab。
 - 本报告记录最终验收结果、远端分支状态和仍属于教学版边界的内容。
 
@@ -21,7 +21,7 @@
 | `lab5-starter` / `lab5-solution` | 已推送到远端同名分支 | Lab5 协作式调度 |
 | `lab6-starter` / `lab6-solution` | 已推送到远端同名分支 | Lab6 用户态与系统调用 |
 | `lab7-starter` / `lab7-solution` | 已推送到远端同名分支 | Lab7 设备与简化文件系统 |
-| `main` | 已快进到最终成果 | GitLab 默认页面展示入口 |
+| `main` | 已更新为集成展示版本 | GitLab 默认页面展示入口，包含可视化遥测和最新材料 |
 
 ## 本轮验证命令与结果
 
