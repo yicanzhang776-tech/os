@@ -58,6 +58,10 @@
 
 旧版单页说明 [docs/labs/lab2.md](docs/labs/lab2.md) 只保留跳转说明。请优先阅读 `docs/labs/lab2/` 目录下的教学文档。
 
+## 教学评价
+
+运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab2 starter 分支。在原有问题之后，还会显示五道与 `stvec`、breakpoint、`scause/sepc/stval` 及异常返回相关的专项题，第 5 题会评价分阶段任务对定位 Trap 路径错误是否有帮助。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
+
 ## 允许修改
 
 - `kernel/src/trap.rs`
