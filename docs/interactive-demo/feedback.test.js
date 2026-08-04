@@ -97,7 +97,7 @@ test("Markdown and GitLab issue URL preserve an honest no-help evaluation", () =
   const markdown = feedback.buildFeedbackMarkdown(record);
   assert.match(markdown, /对理解没有帮助/);
   assert.match(markdown, /lab2-solution/);
-  assert.match(markdown, /Trap 与异常处理专项评价/);
+  assert.match(markdown, /Trap 与异常处理教学评价/);
   assert.match(markdown, /scause、sepc、stval/);
   assert.match(markdown, /评分：4\/5/);
   assert.match(markdown, /不会自动附带源代码、终端日志/);
@@ -171,10 +171,31 @@ test("starter and solution branches receive different fifth questions", () => {
   }
 });
 
+test("branch questions evaluate teaching instead of testing knowledge answers", () => {
+  const contexts = [
+    { lab: "overview", variant: "main" },
+    { lab: "overview", variant: "demo" },
+    { lab: "p0", variant: "baseline" }
+  ];
+  for (let labNumber = 1; labNumber <= 7; labNumber += 1) {
+    contexts.push({ lab: `lab${labNumber}`, variant: "starter" });
+    contexts.push({ lab: `lab${labNumber}`, variant: "solution" });
+  }
+  for (const context of contexts) {
+    const set = feedback.getQuestionSet(context);
+    assert.match(set.description, /评价/, set.id);
+    for (const question of set.questions) {
+      assert.doesNotMatch(question.prompt, /你是否能|你能否|是否掌握|有信心|独立实现|独立解释/, question.id);
+      assert.doesNotMatch(question.dimension, /掌握度|信心度/, question.id);
+      assert.doesNotMatch(question.highLabel, /没有|不能|不清晰|不合适|不足|困难|很难/, question.id);
+    }
+  }
+});
+
 test("all five branch questions are required after a branch switch", () => {
   const context = { lab: "lab4", variant: "starter", branch: "lab4-starter" };
   const input = completeInput(context);
   delete input.branchAnswers[feedback.getQuestionSet(context).questions[2].id];
-  assert.match(feedback.validateFeedback(input, context).join("\n"), /专项评价第 3 题/);
+  assert.match(feedback.validateFeedback(input, context).join("\n"), /教学评价第 3 题/);
   assert.match(feedback.validateFeedback(completeInput(), context).join("\n"), /当前实验已切换/);
 });
