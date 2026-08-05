@@ -1,6 +1,8 @@
 (() => {
   "use strict";
 
+  const PREDICTION_STORAGE_KEY = "os-demo.pending-prediction.v1";
+
   const stages = [
     {
       id: "p0",
@@ -311,7 +313,11 @@
     "run-state", "runtime-hint", "live-dot", "run-current", "stop-current", "dimension-tabs",
     "dimension-description", "framework-canvas", "dimension-question",
     "dimension-insight", "knowledge-matrix", "previous-stage", "next-stage",
-    "auto-play", "clear-events"
+    "auto-play", "clear-events", "prediction-form", "prediction-result",
+    "prediction-reasoning", "save-prediction", "prediction-status", "save-run",
+    "saved-run-select", "replay-start", "replay-previous", "replay-next",
+    "replay-status", "replay-timeline", "starter-run-select", "solution-run-select",
+    "compare-runs", "comparison-summary", "comparison-list"
   ].map((id) => [id.replaceAll("-", "_"), document.getElementById(id)]));
 
   const state = {
@@ -325,6 +331,12 @@
     live: false,
     context: null,
     runState: { phase: "offline", running: false, detail: "未连接本地桥接器" },
+    prediction: null,
+    lastPredictionAssessment: "",
+    activeRun: null,
+    completedRun: null,
+    savedRuns: window.OsRunHistory?.loadRuns(window.localStorage) || [],
+    replay: { run: null, index: -1 },
     autoTimer: null,
     reconnectTimer: null
   };
@@ -825,7 +837,14 @@
   }
 
   function applyContext(context, jumpToTarget = true) {
+    const previous = state.context;
     state.context = context;
+    if (!previous || previous.branch !== context?.branch || previous.commit !== context?.commit) {
+      state.prediction = loadStoredPrediction(context);
+      state.lastPredictionAssessment = "";
+      dom.prediction_result.value = state.prediction?.expectedResult || "";
+      dom.prediction_reasoning.value = state.prediction?.reasoning || "";
+    }
     dom.branch_name.textContent = context?.branch || "unknown";
     dom.branch_variant.textContent = context?.variantLabel || "未知";
     dom.branch_lab.textContent = context?.lab ? stages[stageIndexById[context.lab]]?.label : "自定义";
@@ -834,6 +853,7 @@
     }
     renderTimeline();
     renderStage();
+    renderPredictionGate();
     syncFeedbackContext();
   }
 
@@ -847,15 +867,265 @@
     });
   }
 
+  function resultLabel(result) {
+    return {
+      pass: "出现 PASS",
+      todo: "停在 TODO",
+      fail: "构建或运行失败",
+      finished: "正常退出但没有目标 PASS",
+      stopped: "被手动停止"
+    }[result] || result;
+  }
+
+  function loadStoredPrediction(context) {
+    try {
+      const prediction = JSON.parse(window.localStorage.getItem(PREDICTION_STORAGE_KEY) || "null");
+      if (prediction?.branch !== context?.branch || prediction?.commit !== context?.commit) return null;
+      if (!["pass", "todo", "fail"].includes(prediction.expectedResult)) return null;
+      if (!String(prediction.reasoning || "").trim()) return null;
+      return prediction;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function storePrediction(prediction) {
+    try {
+      if (prediction) {
+        window.localStorage.setItem(PREDICTION_STORAGE_KEY, JSON.stringify(prediction));
+      } else {
+        window.localStorage.removeItem(PREDICTION_STORAGE_KEY);
+      }
+    } catch (_) {
+      // The demo remains usable when browser storage is unavailable.
+    }
+  }
+
+  function predictionMatchesContext() {
+    return Boolean(
+      state.prediction
+      && state.context
+      && state.prediction.branch === state.context.branch
+      && state.prediction.commit === state.context.commit
+    );
+  }
+
+  function renderPredictionGate() {
+    const ready = predictionMatchesContext();
+    if (ready) {
+      dom.prediction_status.textContent = `已保存：${resultLabel(state.prediction.expectedResult)}。现在可以运行。`;
+      dom.prediction_status.dataset.status = "ready";
+    } else if (state.lastPredictionAssessment) {
+      dom.prediction_status.textContent = state.lastPredictionAssessment;
+      dom.prediction_status.dataset.status = "assessed";
+    } else {
+      dom.prediction_status.textContent = "尚未保存当前分支的预测。";
+      dom.prediction_status.dataset.status = "waiting";
+    }
+  }
+
+  function formatRunLabel(run) {
+    const time = new Date(run.startedAt).toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+    return `${run.context.branch} · ${resultLabel(run.result)} · ${time}`;
+  }
+
+  function fillRunSelect(select, runs, placeholder) {
+    const selected = select.value;
+    select.innerHTML = "";
+    const empty = element("option", "", placeholder);
+    empty.value = "";
+    select.appendChild(empty);
+    runs.forEach((run) => {
+      const option = element("option", "", formatRunLabel(run));
+      option.value = run.id;
+      select.appendChild(option);
+    });
+    if (runs.some((run) => run.id === selected)) select.value = selected;
+  }
+
+  function renderSavedRuns() {
+    fillRunSelect(dom.saved_run_select, state.savedRuns, "选择一次已保存运行");
+    fillRunSelect(
+      dom.starter_run_select,
+      state.savedRuns.filter((run) => run.context.variant === "starter"),
+      "选择 starter 运行"
+    );
+    fillRunSelect(
+      dom.solution_run_select,
+      state.savedRuns.filter((run) => run.context.variant === "solution"),
+      "选择 solution 运行"
+    );
+  }
+
+  function beginActiveRun(message) {
+    state.replay = { run: null, index: -1 };
+    const prediction = predictionMatchesContext() ? state.prediction : null;
+    state.activeRun = {
+      id: message.runId || `run-${message.timestamp || Date.now()}`,
+      context: message.context || state.context,
+      prediction,
+      events: [],
+      startedAt: message.timestamp || Date.now()
+    };
+    state.prediction = null;
+    storePrediction(null);
+    dom.prediction_result.value = "";
+    dom.prediction_reasoning.value = "";
+    state.completedRun = null;
+    state.lastPredictionAssessment = "预测已锁定，正在等待真实运行结果。";
+    dom.save_run.disabled = true;
+    renderPredictionGate();
+    renderReplayTimeline();
+  }
+
+  function captureRunEvent(event) {
+    if (!state.activeRun || !event) return;
+    if (event.runId && state.activeRun.id !== event.runId) return;
+    state.activeRun.events.push(event);
+  }
+
+  function finishActiveRun(message) {
+    if (!window.OsRunHistory) return;
+    const active = state.activeRun || {
+      id: message.runId || `run-${message.timestamp || Date.now()}`,
+      context: message.context || state.context,
+      prediction: null,
+      events: [...state.recentEvents].reverse(),
+      startedAt: message.startedAt || message.timestamp || Date.now()
+    };
+    state.completedRun = window.OsRunHistory.createRunRecord({
+      ...active,
+      endedAt: message.timestamp || Date.now(),
+      exitCode: message.exitCode,
+      stopped: message.stopped,
+      error: message.message || ""
+    });
+    state.activeRun = null;
+    dom.save_run.disabled = false;
+    if (state.completedRun.prediction) {
+      const expected = resultLabel(state.completedRun.prediction.expectedResult);
+      const actual = resultLabel(state.completedRun.result);
+      state.lastPredictionAssessment = state.completedRun.predictionMatches
+        ? `预测与结果一致：${actual}。请结合时间线解释原因。`
+        : `预测为“${expected}”，实际为“${actual}”。请回放时间线定位差异。`;
+    } else {
+      state.lastPredictionAssessment = `本次结果：${resultLabel(state.completedRun.result)}。此次运行没有保存学生预测。`;
+    }
+    renderPredictionGate();
+    renderRunState();
+  }
+
+  function saveCompletedRun() {
+    if (!state.completedRun || !window.OsRunHistory) return;
+    state.savedRuns = window.OsRunHistory.saveRun(window.localStorage, state.completedRun);
+    dom.save_run.disabled = true;
+    dom.replay_status.textContent = `已保存 ${state.completedRun.context.branch} 的 ${state.completedRun.events.length} 个事件。`;
+    renderSavedRuns();
+  }
+
+  function renderReplayTimeline() {
+    dom.replay_timeline.innerHTML = "";
+    const run = state.replay.run;
+    if (!run) {
+      dom.replay_timeline.appendChild(element("li", "empty-state", "保存运行后可在这里逐步回放。"));
+      dom.replay_previous.disabled = true;
+      dom.replay_next.disabled = true;
+      return;
+    }
+    run.events.forEach((event, index) => {
+      const item = element("li", "replay-event");
+      if (index < state.replay.index) item.dataset.status = "played";
+      if (index === state.replay.index) item.dataset.status = "current";
+      item.append(
+        element("span", "event-sequence", `#${index + 1}`),
+        element("strong", "", event.step.replaceAll("-", " → ")),
+        element("span", "", event.detail)
+      );
+      dom.replay_timeline.appendChild(item);
+    });
+    dom.replay_previous.disabled = state.replay.index < 0;
+    dom.replay_next.disabled = state.replay.index >= run.events.length - 1;
+  }
+
+  function replayTo(index) {
+    const run = state.replay.run;
+    if (!run) return;
+    const nextIndex = Math.max(-1, Math.min(index, run.events.length - 1));
+    state.progress = {};
+    state.recentEvents = [];
+    state.consoleLines = [];
+    const targetIndex = stageIndexById[run.context.lab];
+    if (targetIndex !== undefined) state.stageIndex = targetIndex;
+    for (let eventIndex = 0; eventIndex <= nextIndex; eventIndex += 1) {
+      applyRuntimeEvent(run.events[eventIndex], false);
+    }
+    state.replay.index = nextIndex;
+    renderEventFeed();
+    renderConsole();
+    renderStage(nextIndex >= 0 ? run.events[nextIndex] : null);
+    dom.replay_status.textContent = nextIndex < 0
+      ? `${run.context.branch}：预测已加载，等待播放第一个事件。`
+      : `${run.context.branch}：第 ${nextIndex + 1} / ${run.events.length} 个事件。`;
+    renderReplayTimeline();
+  }
+
+  function loadSelectedReplay() {
+    const run = state.savedRuns.find((item) => item.id === dom.saved_run_select.value);
+    if (!run) {
+      dom.replay_status.textContent = "请先选择一次已保存运行。";
+      return;
+    }
+    state.replay = { run, index: -1 };
+    replayTo(-1);
+  }
+
+  function renderComparison() {
+    dom.comparison_list.innerHTML = "";
+    const starter = state.savedRuns.find((run) => run.id === dom.starter_run_select.value);
+    const solution = state.savedRuns.find((run) => run.id === dom.solution_run_select.value);
+    const comparison = window.OsRunHistory?.compareRuns(starter, solution);
+    if (!comparison) {
+      dom.comparison_summary.textContent = "请选择同一 Lab 的 starter 与 solution 运行。";
+      return;
+    }
+    dom.comparison_summary.textContent = `${comparison.lab.toUpperCase()}：共同 ${comparison.shared}，仅 starter ${comparison.starterOnly}，仅 solution ${comparison.solutionOnly}。`;
+    comparison.rows.forEach((row) => {
+      const event = row.starter || row.solution;
+      const item = element("li", "comparison-event");
+      item.dataset.scope = row.scope;
+      const scope = {
+        shared: "两者都有",
+        "starter-only": "仅 starter",
+        "solution-only": "仅 solution"
+      }[row.scope];
+      item.append(
+        element("span", "comparison-scope", scope),
+        element("strong", "", event.step.replaceAll("-", " → ")),
+        element("span", "", event.detail)
+      );
+      dom.comparison_list.appendChild(item);
+    });
+  }
+
   function renderRunState() {
     const current = state.runState;
     dom.run_state.textContent = current.detail || current.phase;
-    dom.run_current.disabled = !state.live || current.running;
+    const predictionReady = predictionMatchesContext();
+    dom.run_current.disabled = !state.live || current.running || !predictionReady;
     dom.stop_current.disabled = !state.live || !current.running || current.phase === "stopping";
-    dom.run_current.textContent = current.running ? "当前运行进行中…" : "构建并运行当前分支";
+    dom.run_current.textContent = current.running
+      ? "当前运行进行中…"
+      : predictionReady ? "构建并运行当前分支" : "先保存预测再运行";
     dom.runtime_hint.textContent = current.phase === "error"
       ? "查看下方构建/串口输出定位问题；修复后可再次运行。"
-      : "切换 Git 分支后页面会自动更新；点击按钮重新构建该分支。";
+      : predictionReady
+        ? "预测已经锁定；运行后可保存并回放完整事件时间线。"
+        : "先填写预测；切换 Git 分支后需要为新分支重新预测。";
     syncFeedbackContext();
   }
 
@@ -879,6 +1149,15 @@
       applyContext(message.context, true);
       state.recentEvents = [];
       state.consoleLines = message.console || [];
+      if (message.activeRun) {
+        state.activeRun = {
+          id: message.activeRun.runId,
+          context: message.activeRun.context || message.context,
+          prediction: predictionMatchesContext() ? state.prediction : null,
+          events: [...(message.events || [])],
+          startedAt: message.activeRun.startedAt || Date.now()
+        };
+      }
       (message.events || []).forEach((event) => applyRuntimeEvent(event, false));
       renderEventFeed();
       renderConsole();
@@ -887,12 +1166,16 @@
     }
     if (message.type === "branch-change") {
       resetRunEvidence();
+      state.replay = { run: null, index: -1 };
       applyContext(message.context, true);
       dom.last_event.textContent = `已检测到分支切换：${message.previous.branch} → ${message.context.branch}`;
+      renderReplayTimeline();
+      renderRunState();
     }
     if (message.type === "run-start") {
       resetRunEvidence();
       applyContext(message.context, true);
+      beginActiveRun(message);
       dom.last_event.textContent = `开始运行 ${message.context.branch}，等待真实 marker`;
     }
     if (message.type === "run-state") {
@@ -900,14 +1183,19 @@
       renderRunState();
     }
     if (message.type === "console") appendConsole(message);
-    if (message.type === "telemetry") applyRuntimeEvent(message);
+    if (message.type === "telemetry") {
+      captureRunEvent(message);
+      applyRuntimeEvent(message);
+    }
     if (message.type === "run-error") {
       dom.last_event.textContent = `运行失败：${message.message}`;
+      finishActiveRun(message);
     }
     if (message.type === "run-end") {
       dom.last_event.textContent = message.stopped
         ? `已停止 ${message.context.branch}，可以切换或重新运行分支`
         : `QEMU 运行结束：exit code ${message.exitCode}`;
+      finishActiveRun(message);
     }
   }
 
@@ -951,6 +1239,11 @@
   }
 
   async function runCurrentBranch() {
+    if (!predictionMatchesContext()) {
+      dom.prediction_status.textContent = "请先为当前分支保存预测。";
+      dom.prediction_reasoning.focus();
+      return;
+    }
     dom.run_current.disabled = true;
     try {
       const response = await fetch("/api/run", { method: "POST" });
@@ -1005,6 +1298,31 @@
     }, 1500);
   }
 
+  function savePrediction(event) {
+    event.preventDefault();
+    const expectedResult = dom.prediction_result.value;
+    const reasoning = dom.prediction_reasoning.value.trim();
+    if (!state.context) {
+      dom.prediction_status.textContent = "尚未识别当前 Git 分支，请先连接本地桥接器。";
+      return;
+    }
+    if (!expectedResult || !reasoning) {
+      dom.prediction_status.textContent = "请选择预期结果，并写下关键事件或原因。";
+      return;
+    }
+    state.prediction = {
+      expectedResult,
+      reasoning,
+      branch: state.context.branch,
+      commit: state.context.commit,
+      savedAt: Date.now()
+    };
+    storePrediction(state.prediction);
+    state.lastPredictionAssessment = "";
+    renderPredictionGate();
+    renderRunState();
+  }
+
   dom.previous_stage.addEventListener("click", () => setStage(state.stageIndex - 1));
   dom.next_stage.addEventListener("click", () => setStage(state.stageIndex + 1));
   dom.auto_play.addEventListener("click", toggleAuto);
@@ -1014,11 +1332,20 @@
     state.recentEvents = [];
     renderEventFeed();
   });
+  dom.prediction_form.addEventListener("submit", savePrediction);
+  dom.save_run.addEventListener("click", saveCompletedRun);
+  dom.replay_start.addEventListener("click", loadSelectedReplay);
+  dom.replay_previous.addEventListener("click", () => replayTo(state.replay.index - 1));
+  dom.replay_next.addEventListener("click", () => replayTo(state.replay.index + 1));
+  dom.compare_runs.addEventListener("click", renderComparison);
 
   window.OsFeedback?.initFeedbackCenter();
   renderDimensionTabs();
   renderEventFeed();
   renderConsole();
+  renderSavedRuns();
+  renderReplayTimeline();
+  renderPredictionGate();
   renderRunState();
   setStage(0);
   connectTelemetry();
