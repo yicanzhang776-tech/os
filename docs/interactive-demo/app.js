@@ -834,6 +834,17 @@
     }
     renderTimeline();
     renderStage();
+    syncFeedbackContext();
+  }
+
+  function syncFeedbackContext() {
+    window.OsFeedback?.setContext({
+      branch: state.context?.branch,
+      commit: state.context?.commit,
+      lab: state.context?.lab,
+      variant: state.context?.variant,
+      runStatus: state.runState.detail || state.runState.phase
+    });
   }
 
   function renderRunState() {
@@ -845,6 +856,7 @@
     dom.runtime_hint.textContent = current.phase === "error"
       ? "查看下方构建/串口输出定位问题；修复后可再次运行。"
       : "切换 Git 分支后页面会自动更新；点击按钮重新构建该分支。";
+    syncFeedbackContext();
   }
 
   function setConnection(text, connected) {
@@ -1003,6 +1015,7 @@
     renderEventFeed();
   });
 
+  window.OsFeedback?.initFeedbackCenter();
   renderDimensionTabs();
   renderEventFeed();
   renderConsole();

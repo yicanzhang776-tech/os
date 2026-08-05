@@ -182,8 +182,156 @@
         <li><span>4</span><strong>联</strong><p>从执行链、层次、资源和保护四个维度连接前后知识。</p></li>
       </ol>
     </section>
+
+    <section class="feedback-section card" aria-labelledby="feedback-heading" id="feedback">
+      <div class="section-heading heading-with-note">
+        <div>
+          <p class="eyebrow">05 · 教学评价与反馈</p>
+          <h2 id="feedback-heading">实验教学评价</h2>
+        </div>
+        <p>欢迎填写正面或负面评价。反馈内容由你确认后再提交，页面不会自动上传代码或终端日志。</p>
+      </div>
+
+      <div class="feedback-layout">
+        <form class="feedback-form" id="feedback-form" novalidate>
+          <fieldset>
+            <legend>学习背景</legend>
+            <div class="feedback-field-grid">
+              <label>
+                反馈类型
+                <select name="type" required>
+                  <option value="evaluation">教学效果评价</option>
+                  <option value="suggestion">改进建议</option>
+                  <option value="problem">实验问题</option>
+                </select>
+              </label>
+              <label>
+                你的身份
+                <select name="role" required>
+                  <option value="student">学生</option>
+                  <option value="teacher">教师</option>
+                  <option value="assistant">助教</option>
+                  <option value="learner">其他学习者</option>
+                </select>
+              </label>
+              <label>
+                操作系统学习经历
+                <select name="osExperience" required>
+                  <option value="none">尚未学习过</option>
+                  <option value="learning" selected>正在学习</option>
+                  <option value="learned">已经学过课程</option>
+                  <option value="kernel">有内核或系统开发经验</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>理解变化</legend>
+            <div class="feedback-field-grid feedback-score-grid">
+              <label>
+                使用前理解程度
+                <select name="beforeUnderstanding" required>
+                  <option value="1">1 · 几乎不了解</option>
+                  <option value="2" selected>2 · 了解较少</option>
+                  <option value="3">3 · 基本理解</option>
+                  <option value="4">4 · 理解较好</option>
+                  <option value="5">5 · 能够解释</option>
+                </select>
+              </label>
+              <label>
+                使用后理解程度
+                <select name="afterUnderstanding" required>
+                  <option value="1">1 · 几乎不了解</option>
+                  <option value="2">2 · 了解较少</option>
+                  <option value="3" selected>3 · 基本理解</option>
+                  <option value="4">4 · 理解较好</option>
+                  <option value="5">5 · 能够解释</option>
+                </select>
+              </label>
+              <label>
+                总体学习效果
+                <select name="outcome" required>
+                  <option value="much_better">理解明显加深</option>
+                  <option value="somewhat_better" selected>理解有所加深</option>
+                  <option value="unchanged">理解没有明显变化</option>
+                  <option value="no_help">对理解没有帮助</option>
+                  <option value="more_confused">使用后更加困惑</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="feedback-check-group">
+              <span>哪些方面有帮助（可多选）</span>
+              <div class="feedback-checks">
+                <label><input type="checkbox" name="helpfulAreas" value="theory"> 理论概念</label>
+                <label><input type="checkbox" name="helpfulAreas" value="code"> 代码实现</label>
+                <label><input type="checkbox" name="helpfulAreas" value="process"> 实验流程</label>
+                <label><input type="checkbox" name="helpfulAreas" value="connections"> 知识联系</label>
+                <label><input type="checkbox" name="helpfulAreas" value="debugging"> 调试定位</label>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="feedback-branch-fieldset">
+            <legend id="feedback-question-title">当前实验教学评价五题</legend>
+            <p class="feedback-question-description" id="feedback-question-description">正在根据当前实验分支准备评价题目。</p>
+            <div class="feedback-branch-questions" id="feedback-branch-questions"></div>
+          </fieldset>
+
+          <fieldset>
+            <legend>补充反馈</legend>
+            <label>
+              最有帮助的内容
+              <textarea name="mostHelpful" rows="3" maxlength="2000" placeholder="例如：知识地图让我看清了 Lab2 与 Lab3 的联系。"></textarea>
+            </label>
+            <label>
+              仍然困惑的内容
+              <textarea name="stillConfusing" rows="3" maxlength="2000" placeholder="例如：Trap 前后寄存器如何变化还不够清楚。"></textarea>
+            </label>
+            <label>
+              改进建议
+              <textarea name="suggestion" rows="3" maxlength="2000" placeholder="一句话也可以；三项中至少填写一项。"></textarea>
+            </label>
+          </fieldset>
+
+          <label class="feedback-context-choice">
+            <input type="checkbox" name="includeContext" checked>
+            附带当前分支、实验、提交编号和运行状态（不包含代码与日志）
+          </label>
+
+          <div class="feedback-actions">
+            <button class="button" id="feedback-save" type="button">保存本机草稿</button>
+            <button class="button" id="feedback-export-md" type="button">导出 Markdown</button>
+            <button class="button" id="feedback-export-json" type="button">导出 JSON</button>
+            <button class="button button-primary" id="feedback-submit" type="button">前往 GitLab 确认提交</button>
+            <button class="text-button feedback-clear" id="feedback-clear" type="button">清空</button>
+          </div>
+          <output class="feedback-status" id="feedback-status" aria-live="polite">反馈只保存在当前浏览器，除非你主动导出或确认提交。</output>
+        </form>
+
+        <aside class="feedback-context" aria-labelledby="feedback-context-heading">
+          <p class="eyebrow">自动附带的实验现场</p>
+          <h3 id="feedback-context-heading">帮助项目负责人定位问题</h3>
+          <dl>
+            <div><dt>当前分支</dt><dd><code id="feedback-context-branch">unknown</code></dd></div>
+            <div><dt>实验版本</dt><dd id="feedback-context-lab">unknown / unknown</dd></div>
+            <div><dt>提交编号</dt><dd><code id="feedback-context-commit">unknown</code></dd></div>
+            <div><dt>运行状态</dt><dd id="feedback-context-run">未运行</dd></div>
+          </dl>
+          <ol class="feedback-route">
+            <li>先在本机填写并检查内容</li>
+            <li>可导出文件离线提交</li>
+            <li>后续用自己的 GitLab 账号确认发布</li>
+          </ol>
+          <p class="feedback-privacy">请不要在文本中填写密码、访问令牌或不希望公开的个人信息。</p>
+        </aside>
+      </div>
+    </section>
   </main>
 
+  <script src="feedback-questions.js"></script>
+  <script src="feedback.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
