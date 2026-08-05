@@ -77,18 +77,23 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(health.context.branch, "lab5-starter");
   assert.equal(health.context.lab, "lab5");
   assert.equal(health.context.variant, "starter");
+  assert.equal(health.protocol, "os-demo.event/v1");
+  assert.equal(health.target, "riscv64gc-unknown-none-elf");
 
   const page = await fetch(url);
   assert.equal(page.status, 200);
   const html = await page.text();
   assert.match(html, /OS实验可视化展示/);
   assert.match(html, /停止当前运行/);
+  assert.match(html, /先预测，再运行/);
+  assert.match(html, /完整时间线与分支差异/);
+  assert.match(html, /starter \/ solution 对比/);
   assert.match(html, /教学评价与反馈/);
   assert.match(html, /前往 GitLab 确认提交/);
   assert.doesNotMatch(html, /这套实验是否真的帮助了你/);
   assert.match(html, /当前实验教学评价五题/);
   assert.match(html, /补充反馈/);
-  assert.match(html, /<script src="feedback-questions\.js"><\/script>[\s\S]*<script src="feedback\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
+  assert.match(html, /<script src="feedback-questions\.js"><\/script>[\s\S]*<script src="feedback\.js"><\/script>[\s\S]*<script src="run-history\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
 
   const feedbackQuestions = await fetch(`${url}/feedback-questions.js`);
   assert.equal(feedbackQuestions.status, 200);
@@ -97,6 +102,15 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   const feedbackModule = await fetch(`${url}/feedback.js`);
   assert.equal(feedbackModule.status, 200);
   assert.match(await feedbackModule.text(), /buildFeedbackMarkdown/);
+
+  const runHistoryModule = await fetch(`${url}/run-history.js`);
+  assert.equal(runHistoryModule.status, 200);
+  assert.match(await runHistoryModule.text(), /compareRuns/);
+
+  const preflight = await fetch(`${url}/api/preflight`).then((response) => response.json());
+  assert.equal(preflight.target, "riscv64gc-unknown-none-elf");
+  assert.equal(Array.isArray(preflight.checks), true);
+  assert.deepEqual(preflight.checks.map((check) => check.name), ["git", "cargo", "Rust target", "QEMU"]);
 
   const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   const historyPromise = waitForMessage(socket, (message) => message.type === "history");
@@ -112,6 +126,8 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(telemetry.lab, "lab5");
   assert.equal(telemetry.status, "running");
   assert.equal(telemetry.source, "console");
+  assert.equal(telemetry.protocol, "os-demo.event/v1");
+  assert.match(telemetry.runId, /^external-/);
 
   const idleStop = await fetch(`${url}/api/stop`, { method: "POST" });
   assert.equal(idleStop.status, 409);
