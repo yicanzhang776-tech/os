@@ -39,6 +39,20 @@
           <div><dt>目标实验</dt><dd id="branch-lab">—</dd></div>
           <div><dt>运行状态</dt><dd id="run-state">未连接本地桥接器</dd></div>
         </dl>
+        <form class="prediction-gate" id="prediction-form">
+          <p><strong>先预测，再运行</strong><span>预测只保存在当前浏览器。</span></p>
+          <label for="prediction-result">你预计本次运行最终会</label>
+          <select id="prediction-result" required>
+            <option value="">请选择</option>
+            <option value="pass">出现当前 Lab 的 PASS</option>
+            <option value="todo">停在 starter 的 TODO</option>
+            <option value="fail">构建或运行失败</option>
+          </select>
+          <label for="prediction-reasoning">写下你判断的关键事件或原因</label>
+          <textarea id="prediction-reasoning" rows="2" maxlength="1000" placeholder="例如：预计安装 stvec 后会触发 breakpoint，并在 sepc 前进后返回。" required></textarea>
+          <button class="button" id="save-prediction" type="submit">保存预测并解锁运行</button>
+          <output class="prediction-status" id="prediction-status" aria-live="polite">尚未保存当前分支的预测。</output>
+        </form>
         <div class="runtime-run-controls">
           <button class="button button-run" id="run-current" type="button" disabled>构建并运行当前分支</button>
           <button class="button button-stop" id="stop-current" type="button" disabled>停止当前运行</button>
@@ -168,6 +182,41 @@
         </div>
         <pre class="console-output" id="console-output" tabindex="0"><code>等待本地桥接器输出…</code></pre>
       </article>
+      <article class="run-lab-panel card" aria-labelledby="run-lab-heading">
+        <div class="subpanel-heading">
+          <div>
+            <h3 id="run-lab-heading">完整时间线与分支差异</h3>
+            <p>分别保存同一 Lab 的 starter 与 solution 运行，即可比较真实事件。</p>
+          </div>
+          <button class="button" id="save-run" type="button" disabled>保存本次运行</button>
+        </div>
+
+        <div class="run-lab-grid">
+          <section aria-labelledby="replay-heading">
+            <h4 id="replay-heading">逐步回放</h4>
+            <label for="saved-run-select">已保存运行</label>
+            <select id="saved-run-select"></select>
+            <div class="replay-controls">
+              <button class="button" id="replay-start" type="button">载入时间线</button>
+              <button class="button" id="replay-previous" type="button" disabled>← 上一步</button>
+              <button class="button button-primary" id="replay-next" type="button" disabled>下一步 →</button>
+            </div>
+            <output id="replay-status" class="run-lab-status" aria-live="polite">尚未选择已保存运行。</output>
+            <ol class="replay-timeline" id="replay-timeline"></ol>
+          </section>
+
+          <section aria-labelledby="compare-heading">
+            <h4 id="compare-heading">starter / solution 对比</h4>
+            <label for="starter-run-select">Starter 运行</label>
+            <select id="starter-run-select"></select>
+            <label for="solution-run-select">Solution 运行</label>
+            <select id="solution-run-select"></select>
+            <button class="button" id="compare-runs" type="button">比较事件差异</button>
+            <output id="comparison-summary" class="run-lab-status" aria-live="polite">需要同一 Lab 的两次已保存运行。</output>
+            <ol class="comparison-list" id="comparison-list"></ol>
+          </section>
+        </div>
+      </article>
     </section>
 
     <section class="learning-loop card" aria-labelledby="loop-heading">
@@ -176,10 +225,11 @@
         <h2 id="loop-heading">从“代码能跑”走到“能够解释”</h2>
       </div>
       <ol>
-        <li><span>1</span><strong>做</strong><p>在 starter 中补全一个明确 TODO。</p></li>
-        <li><span>2</span><strong>观</strong><p>用串口证据确认真实动作发生到哪一步。</p></li>
-        <li><span>3</span><strong>解</strong><p>说明寄存器、状态机或数据结构为何这样变化。</p></li>
-        <li><span>4</span><strong>联</strong><p>从执行链、层次、资源和保护四个维度连接前后知识。</p></li>
+        <li><span>1</span><strong>预</strong><p>运行前写下预期结果和关键事件。</p></li>
+        <li><span>2</span><strong>行</strong><p>构建当前分支并采集真实 QEMU 事件。</p></li>
+        <li><span>3</span><strong>观</strong><p>逐步回放时间线，定位因果顺序。</p></li>
+        <li><span>4</span><strong>比</strong><p>比较 starter 与 solution 的真实差异。</p></li>
+        <li><span>5</span><strong>解</strong><p>用代码、事件和知识地图解释结果。</p></li>
       </ol>
     </section>
 
@@ -332,6 +382,7 @@
 
   <script src="feedback-questions.js"></script>
   <script src="feedback.js"></script>
+  <script src="run-history.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
