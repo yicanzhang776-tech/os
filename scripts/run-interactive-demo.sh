@@ -4,13 +4,16 @@ set -eu
 # The page includes branch-specific teaching questions and needs no extra feedback service.
 
 PORT="${OS_DEMO_PORT:-8888}"
+TARGET="${OS_DEMO_TARGET:-riscv64gc-unknown-none-elf}"
 RUN_KERNEL=0
 OPEN_BROWSER=1
+CHECK_ONLY=0
 
 usage() {
-    printf '%s\n' "Usage: sh scripts/run-interactive-demo.sh [--port PORT] [--run] [--no-browser]"
+    printf '%s\n' "Usage: sh scripts/run-interactive-demo.sh [--port PORT] [--run] [--check-only] [--no-browser]"
     printf '%s\n' "  --port PORT    Set the local page port (default: 8888)."
     printf '%s\n' "  --run          Build and run the current OS branch after startup."
+    printf '%s\n' "  --check-only   Check the complete Linux build/QEMU chain, then exit."
     printf '%s\n' "  --no-browser   Do not try to open the page automatically."
 }
 
@@ -26,6 +29,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --run)
             RUN_KERNEL=1
+            shift
+            ;;
+        --check-only)
+            CHECK_ONLY=1
             shift
             ;;
         --no-browser)
@@ -56,9 +63,54 @@ if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then
     exit 2
 fi
 
-if ! command -v node >/dev/null 2>&1; then
-    printf '%s\n' "Node.js was not found. Install Node.js 18 or newer first." >&2
-    exit 1
+require_command() {
+    command_name="$1"
+    install_hint="$2"
+    if command -v "$command_name" >/dev/null 2>&1; then
+        printf 'found %s: %s\n' "$command_name" "$(command -v "$command_name")"
+        return 0
+    fi
+    printf 'Missing dependency: %s. %s\n' "$command_name" "$install_hint" >&2
+    return 1
+}
+
+check_bridge_dependencies() {
+    failed=0
+    require_command node "Install Node.js 18 or newer." || failed=1
+    require_command git "Install Git." || failed=1
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    node_major=$(node -p 'Number(process.versions.node.split(".")[0])')
+    if [ "$node_major" -lt 18 ]; then
+        printf 'Node.js 18 or newer is required; found %s.\n' "$(node --version)" >&2
+        return 1
+    fi
+}
+
+check_kernel_dependencies() {
+    failed=0
+    require_command cargo "Install Rust via rustup." || failed=1
+    require_command rustc "Install Rust via rustup." || failed=1
+    require_command "${QEMU:-qemu-system-riscv64}" "Install QEMU with RISC-V system support." || failed=1
+    if [ "$failed" -ne 0 ]; then
+        return 1
+    fi
+    if ! rustc --print target-libdir --target "$TARGET" >/dev/null 2>&1; then
+        printf 'Rust target %s is unavailable. Run: rustup target add %s\n' "$TARGET" "$TARGET" >&2
+        return 1
+    fi
+    printf 'found Rust target: %s\n' "$TARGET"
+}
+
+check_bridge_dependencies
+if [ "$RUN_KERNEL" -eq 1 ] || [ "$CHECK_ONLY" -eq 1 ]; then
+    check_kernel_dependencies
+fi
+
+if [ "$CHECK_ONLY" -eq 1 ]; then
+    printf '%s\n' "Linux visualization run chain check passed."
+    exit 0
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -80,6 +132,8 @@ cleanup() {
 }
 
 cd "$REPO_DIR"
+export OS_DEMO_PORT="$PORT"
+export OS_DEMO_TARGET="$TARGET"
 if [ "$RUN_KERNEL" -eq 1 ]; then
     node "$SERVER" --port "$PORT" --run &
 else
