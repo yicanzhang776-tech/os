@@ -99,6 +99,8 @@ sh scripts/check-env.sh
 node docs/interactive-demo/server.js --port 8888
 ```
 
+Windows PowerShell 脚本属于兼容入口，不影响 Ubuntu/Linux 下的实验构建和可视化运行。
+
 启动后访问 `http://127.0.0.1:8888`。需要在启动页面时立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。完整操作、分支切换方式和自动化测试命令见[可视化使用说明](docs/interactive-demo/README.md)。
 
 ## P0 与 Lab1-Lab7 的区别
@@ -162,6 +164,29 @@ WSL2/Ubuntu 环境检查：
 ```sh
 sh scripts/check-env.sh
 ```
+
+### 跨平台运行与文件行尾说明
+
+本项目主要在 Ubuntu/Linux 环境中构建和运行，操作系统内核、QEMU 实验以及可视化页面均以 Linux 环境作为主要验收环境。
+
+仓库同时保留部分 Windows PowerShell 脚本，用于 Windows 环境下的依赖检查、QEMU 启动和实验测试。Linux 用户不需要执行这些 PowerShell 脚本，可直接使用对应的 Shell、Cargo、QEMU 和 Node.js 命令。
+
+为了避免 Windows 的 CRLF 行尾与 Linux 的 LF 行尾产生整文件差异，仓库使用 `.gitattributes` 对后续新增的可视化和教学评价文件进行约束：
+
+- `docs/interactive-demo/` 中的 HTML、CSS、JavaScript 和 Markdown 文件统一使用 LF。
+- Linux Shell 启动脚本统一使用 LF。
+- Windows PowerShell 启动脚本保留 CRLF。
+- 原有 Lab 实验代码、实验文档和测试内容不进行全仓库重新规范化，避免产生与功能无关的大规模修改。
+
+后续修改可视化或教学评价内容时，建议通过本地 Git 提交，并在提交前执行：
+
+```bash
+git status --short
+git diff --stat
+git diff --check
+```
+
+如果修改内容出现大量与实际功能无关的行尾变化，应先停止提交并检查编辑器的行尾设置。不要直接执行全仓库行尾重新规范化操作。
 
 ## 构建与运行
 
