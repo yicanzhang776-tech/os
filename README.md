@@ -79,6 +79,8 @@ flowchart LR
 
 运行前，学生需要先预测当前分支可能出现的结果并写下判断依据，再由页面启动真实构建与 QEMU。一次运行的结构化事件可以保存在当前浏览器中逐步回放；分别保存同一 Lab 的 starter 与 solution 运行后，还可以比较两者的共同事件和分支独有事件。Linux 运行链路、事件协议、分支映射和具体操作见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
 
+时间线中的事件可以点击查看进一步解释。页面以 `lab + step` 作为稳定键，将运行证据关联到事件名称、OS 知识点、仓库内代码文件、函数或符号、发生原因、状态变化以及可能出现的下一事件；同时高亮知识地图中的对应节点。代码位置使用“仓库相对路径 + 函数/符号”，不依赖容易随修改变化的绝对行号。未登记或旧格式事件会保留原始信息并安全降级，不会中断页面，也不会自动推进知识节点。
+
 ### 当前分支入口
 
 - [可视化介绍与使用说明](docs/interactive-demo/README.md)
@@ -242,6 +244,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Expec
 
 ```powershell
 cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
+```
+
+可视化事件知识目录与本地桥接器测试：
+
+```powershell
+node --test docs/interactive-demo/event-catalog.test.js docs/interactive-demo/feedback.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/run-history.test.js docs/interactive-demo/server.test.js
+node --check docs/interactive-demo/event-catalog.js
+node --check docs/interactive-demo/app.js
 ```
 
 ## 成功输出示例

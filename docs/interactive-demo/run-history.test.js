@@ -95,3 +95,33 @@ test("comparison rejects runs from different experiments", () => {
   });
   assert.equal(compareRuns(starter, other), null);
 });
+
+test("a completed run keeps structured prediction and lifecycle assessment", () => {
+  const record = createRunRecord({
+    id: "lab2-starter-structured",
+    context: { branch: "lab2-starter", commit: "abc1234", lab: "lab2", variant: "starter" },
+    prediction: {
+      version: 2,
+      expectedBuild: "success",
+      expectedRun: "todo",
+      expectedEvents: ["lab2:stvec-missing", "lab2:breakpoint-missing"],
+      expectedPass: false,
+      reasoning: "starter 应保留两个明确的教学停点。",
+      branch: "lab2-starter",
+      commit: "abc1234",
+      lab: "lab2"
+    },
+    events: [
+      { protocol: "os-demo.event/v1", lab: "lab2", step: "stvec-missing", status: "todo", sequence: 1 },
+      { protocol: "os-demo.event/v1", lab: "lab2", step: "breakpoint-missing", status: "todo", sequence: 2 }
+    ],
+    lifecycle: { buildResult: "success", runResult: "finished", completed: true },
+    startedAt: 1000,
+    endedAt: 2000,
+    exitCode: 0
+  });
+  assert.equal(record.prediction.version, 2);
+  assert.equal(record.lifecycle.buildResult, "success");
+  assert.equal(record.predictionAssessment.overall, "consistent");
+  assert.equal(record.predictionMatches, true);
+});

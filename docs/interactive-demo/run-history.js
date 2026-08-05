@@ -4,7 +4,12 @@
   const RUN_HISTORY_VERSION = 1;
   const STORAGE_KEY = "os-demo.run-history.v1";
   const MAX_SAVED_RUNS = 12;
-  const VALID_RESULTS = new Set(["pass", "todo", "fail", "finished", "stopped"]);
+  const VALID_RESULTS = new Set(["pass", "todo", "fail", "timeout", "finished", "stopped"]);
+
+  function predictionApi() {
+    if (typeof module !== "undefined" && module.exports) return require("./prediction-model");
+    return typeof window !== "undefined" ? window.OsPredictionModel : null;
+  }
 
   function text(value, limit = 500) {
     return String(value || "").trim().slice(0, limit);
@@ -20,7 +25,9 @@
     };
   }
 
-  function normalizePrediction(prediction = {}) {
+  function normalizePrediction(prediction = {}, context = null) {
+    const model = predictionApi();
+    if (model?.migratePrediction) return model.migratePrediction(prediction, context);
     const expectedResult = text(prediction.expectedResult, 20);
     const reasoning = text(prediction.reasoning, 1000);
     if (!VALID_RESULTS.has(expectedResult) || expectedResult === "finished" || expectedResult === "stopped") return null;
@@ -31,6 +38,20 @@
       branch: text(prediction.branch, 120),
       commit: text(prediction.commit, 80),
       savedAt: Number(prediction.savedAt) || Date.now()
+    };
+  }
+
+  function normalizeLifecycle(lifecycle = {}) {
+    const buildResult = ["success", "failure"].includes(lifecycle.buildResult)
+      ? lifecycle.buildResult
+      : null;
+    const runResult = ["running", "finished", "failure", "timeout", "stopped"].includes(lifecycle.runResult)
+      ? lifecycle.runResult
+      : null;
+    return {
+      buildResult,
+      runResult,
+      completed: Boolean(lifecycle.completed)
     };
   }
 
@@ -55,6 +76,8 @@
 
   function actualResult(events, input, context) {
     const targetEvents = context.lab ? events.filter((event) => event.lab === context.lab) : events;
+    if (input.lifecycle?.runResult === "timeout") return "timeout";
+    if (input.lifecycle?.buildResult === "failure" || input.lifecycle?.runResult === "failure") return "fail";
     if (input.error) return "fail";
     if (input.stopped) return "stopped";
     if (targetEvents.some((event) => event.status === "fail")) return "fail";
@@ -66,17 +89,19 @@
 
   function createRunRecord(input = {}) {
     const context = normalizeContext(input.context);
-    const prediction = normalizePrediction(input.prediction);
+    const prediction = normalizePrediction(input.prediction, context);
     const events = Array.from(input.events || [], normalizeEvent).filter(Boolean).slice(0, 512);
+    const lifecycle = normalizeLifecycle(input.lifecycle);
     const startedAt = Number(input.startedAt) || Date.now();
     const endedAt = Math.max(startedAt, Number(input.endedAt) || Date.now());
-    const result = actualResult(events, input, context);
-    return {
+    const result = actualResult(events, { ...input, lifecycle }, context);
+    const record = {
       version: RUN_HISTORY_VERSION,
       id: text(input.id, 120) || `local-${startedAt}`,
       context,
       prediction,
       events,
+      lifecycle,
       startedAt,
       endedAt,
       durationMs: endedAt - startedAt,
@@ -84,8 +109,21 @@
       stopped: Boolean(input.stopped),
       error: text(input.error, 500),
       result,
-      predictionMatches: prediction ? prediction.expectedResult === result : null
+      predictionMatches: null,
+      predictionAssessment: null
     };
+    const model = predictionApi();
+    record.predictionAssessment = prediction && model?.comparePrediction
+      ? model.comparePrediction(prediction, record)
+      : null;
+    record.predictionMatches = prediction?.migratedFrom === 1
+      ? prediction.expectedResult === result
+      : record.predictionAssessment?.overall === "consistent"
+        ? true
+        : record.predictionAssessment?.overall === "rethink"
+          ? false
+          : prediction ? prediction.expectedResult === result : null;
+    return record;
   }
 
   function isRunRecord(value) {
