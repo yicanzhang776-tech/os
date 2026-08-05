@@ -60,6 +60,8 @@ sh scripts/check-env.sh
 sh scripts/run-interactive-demo.sh
 ```
 
+运行前，学生需要先预测当前分支可能出现的结果并写下判断依据，再由页面启动真实构建与 QEMU。一次运行的结构化事件可以保存在当前浏览器中逐步回放；分别保存同一 Lab 的 starter 与 solution 运行后，还可以比较两者的共同事件和分支独有事件。Linux 运行链路、事件协议、分支映射和具体操作见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
+
 目前页面底部提供学生、教师和其他学习者使用的教学评价表。评价允许如实选择“理解加深”“没有明显变化”“没有帮助”或“更加困惑”。页面还会根据 P0、Lab1–Lab7 以及 starter/solution 分支显示五道针对实验内容的教学评价题，用来评价讲解、任务、提示、可视化和运行反馈，而不是考查知识答案；随后再填写补充反馈。结果可以保存在本机或导出 Markdown/JSON；使用账号提交时，反馈者用自己的 GitLab 账号检查并发布预填 Issue。
 
 当前不足是没有独立数据库、匿名在线问卷、班级统计页面和统一登录系统，草稿也不会跨设备同步。没有 GitLab 项目权限的使用者需要导出 Markdown 后交给教师或项目负责人。现阶段先用真实试用反馈验证教学价值；未来在服务器、维护人员和有效样本具备后，再考虑匿名收集、集中统计、处理状态跟踪与更完整的分支事件标记。详细说明见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
