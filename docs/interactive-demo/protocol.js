@@ -1,34 +1,19 @@
 "use strict";
 
 /**
- * Shared protocol helpers for the live teaching view.
+ * Stable event and branch protocol shared by the Linux bridge and the browser.
  *
- * The teaching branches intentionally do not depend on browser telemetry.
- * Therefore the bridge accepts both explicit `[OS_DEMO]` markers from `main`
- * and the stable human-readable markers already emitted by every starter and
- * solution branch.
+ * Kernel branches do not need browser-specific telemetry. The bridge accepts
+ * both explicit `[OS_DEMO]` markers and the stable console markers already
+ * emitted by starter and solution branches, then normalizes both forms to the
+ * same versioned event shape.
  */
 
-const EXPECTED_BRANCHES = [
-  "p0-minimal-qemu-baseline",
-  "lab1-starter",
-  "lab1-solution",
-  "lab2-starter",
-  "lab2-solution",
-  "lab3-starter",
-  "lab3-solution",
-  "lab4-starter",
-  "lab4-solution",
-  "lab5-starter",
-  "lab5-solution",
-  "lab6-starter",
-  "lab6-solution",
-  "lab7-starter",
-  "lab7-solution",
-  "main"
-];
+const EVENT_PROTOCOL = "os-demo.event/v1";
+const EVENT_STATUSES = new Set(["running", "todo", "pass", "fail"]);
+const EVENT_SOURCES = new Set(["tagged", "console", "lifecycle"]);
 
-const STAGE_INDEX = {
+const STAGE_INDEX = Object.freeze({
   p0: 0,
   lab1: 1,
   lab2: 2,
@@ -37,51 +22,60 @@ const STAGE_INDEX = {
   lab5: 5,
   lab6: 6,
   lab7: 7
+});
+
+const branchCatalog = {
+  "p0-minimal-qemu-baseline": {
+    lab: "p0",
+    stageIndex: 0,
+    variant: "baseline",
+    variantLabel: "运行基线"
+  },
+  main: {
+    lab: "lab7",
+    stageIndex: 7,
+    variant: "complete",
+    variantLabel: "完整成果"
+  },
+  "interactive-demo-learning-map": {
+    lab: "lab7",
+    stageIndex: 7,
+    variant: "demo",
+    variantLabel: "可视化开发"
+  }
 };
+
+for (let labNumber = 1; labNumber <= 7; labNumber += 1) {
+  for (const variant of ["starter", "solution"]) {
+    branchCatalog[`lab${labNumber}-${variant}`] = {
+      lab: `lab${labNumber}`,
+      stageIndex: labNumber,
+      variant,
+      variantLabel: variant === "starter" ? "学生起点" : "教师参考"
+    };
+  }
+}
+
+for (const value of Object.values(branchCatalog)) Object.freeze(value);
+const BRANCH_CATALOG = Object.freeze(branchCatalog);
+const EXPECTED_BRANCHES = Object.freeze(Object.keys(BRANCH_CATALOG));
 
 function normalizeBranchName(branch) {
   return String(branch || "unknown")
     .trim()
     .replace(/^refs\/heads\//, "")
-    .replace(/^remotes\/origin\//, "")
-    .replace(/^origin\//, "");
+    .replace(/^refs\/remotes\/(?:origin|gitlab)\//, "")
+    .replace(/^remotes\/(?:origin|gitlab)\//, "")
+    .replace(/^(?:origin|gitlab)\//, "");
 }
 
 function parseBranchContext(branch) {
   const name = normalizeBranchName(branch);
-
-  if (name === "main") {
+  const known = BRANCH_CATALOG[name];
+  if (known) {
     return {
       branch: name,
-      lab: "lab7",
-      stageIndex: 7,
-      variant: "complete",
-      variantLabel: "完整成果",
-      expectedBranch: true
-    };
-  }
-
-  if (name === "p0-minimal-qemu-baseline") {
-    return {
-      branch: name,
-      lab: "p0",
-      stageIndex: 0,
-      variant: "baseline",
-      variantLabel: "运行基线",
-      expectedBranch: true
-    };
-  }
-
-  const match = name.match(/^lab([1-7])-(starter|solution)$/);
-  if (match) {
-    const labNumber = Number(match[1]);
-    const variant = match[2];
-    return {
-      branch: name,
-      lab: `lab${labNumber}`,
-      stageIndex: labNumber,
-      variant,
-      variantLabel: variant === "starter" ? "学生起点" : "教师参考",
+      ...known,
       expectedBranch: true
     };
   }
@@ -96,8 +90,29 @@ function parseBranchContext(branch) {
   };
 }
 
+function normalizeTeachingEvent(candidate) {
+  if (!candidate || typeof candidate !== "object") return null;
+  const lab = String(candidate.lab || "").toLowerCase();
+  const step = String(candidate.step || "").toLowerCase();
+  const status = String(candidate.status || "").toLowerCase();
+  const source = String(candidate.source || "console").toLowerCase();
+
+  if (!Object.hasOwn(STAGE_INDEX, lab)) return null;
+  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(step)) return null;
+  if (!EVENT_STATUSES.has(status) || !EVENT_SOURCES.has(source)) return null;
+
+  return {
+    protocol: EVENT_PROTOCOL,
+    lab,
+    step,
+    status,
+    detail: String(candidate.detail || step).slice(0, 500),
+    source
+  };
+}
+
 function event(lab, step, status, detail, source = "console") {
-  return { lab, step, status, detail, source };
+  return normalizeTeachingEvent({ lab, step, status, detail, source });
 }
 
 const PROCESS_RULES = [
@@ -145,12 +160,17 @@ const PROCESS_RULES = [
 ];
 
 function parseTaggedTelemetry(clean) {
-  const match = clean.match(/^\[OS_DEMO\]\s+lab=([a-z0-9-]+)\s+step=([a-z0-9-]+)$/i);
-  if (!match) return null;
-  const lab = match[1].toLowerCase();
-  const step = match[2].toLowerCase();
-  const status = step === "pass" ? "pass" : step === "panic" ? "fail" : "running";
-  return event(lab, step, status, "内核发出的显式教学遥测", "tagged");
+  if (!/^\[OS_DEMO\]\s+/i.test(clean)) return null;
+  const fields = {};
+  for (const token of clean.replace(/^\[OS_DEMO\]\s+/i, "").split(/\s+/)) {
+    const splitAt = token.indexOf("=");
+    if (splitAt <= 0) continue;
+    fields[token.slice(0, splitAt).toLowerCase()] = token.slice(splitAt + 1);
+  }
+  if (!fields.lab || !fields.step || (fields.v && fields.v !== "1")) return null;
+  const step = fields.step.toLowerCase();
+  const status = fields.status || (step === "pass" ? "pass" : step === "panic" ? "fail" : "running");
+  return event(fields.lab, step, status, "内核发出的显式教学遥测", "tagged");
 }
 
 function parseTaskMarker(clean) {
@@ -203,9 +223,12 @@ function parseKernelLine(line) {
 }
 
 module.exports = {
+  BRANCH_CATALOG,
+  EVENT_PROTOCOL,
   EXPECTED_BRANCHES,
   STAGE_INDEX,
   normalizeBranchName,
+  normalizeTeachingEvent,
   parseBranchContext,
   parseKernelLine
 };
