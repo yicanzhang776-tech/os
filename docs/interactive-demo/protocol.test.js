@@ -3,13 +3,16 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  EVENT_PROTOCOL,
   EXPECTED_BRANCHES,
+  normalizeBranchName,
+  normalizeTeachingEvent,
   parseBranchContext,
   parseKernelLine
 } = require("./protocol");
 
-test("all 16 repository branches resolve to a teaching context", () => {
-  assert.equal(EXPECTED_BRANCHES.length, 16);
+test("all 17 repository branches resolve to a teaching context", () => {
+  assert.equal(EXPECTED_BRANCHES.length, 17);
   for (const branch of EXPECTED_BRANCHES) {
     const context = parseBranchContext(branch);
     assert.equal(context.expectedBranch, true, branch);
@@ -32,12 +35,29 @@ test("starter and solution variants keep the target lab", () => {
   assert.equal(parseBranchContext("refs/heads/lab7-solution").variant, "solution");
   assert.equal(parseBranchContext("main").variant, "complete");
   assert.equal(parseBranchContext("p0-minimal-qemu-baseline").lab, "p0");
+  assert.equal(parseBranchContext("gitlab/interactive-demo-learning-map").variant, "demo");
+  assert.equal(normalizeBranchName("refs/remotes/gitlab/lab2-starter"), "lab2-starter");
+});
+
+test("versioned teaching events reject invalid protocol values", () => {
+  const event = normalizeTeachingEvent({
+    lab: "lab4",
+    step: "satp-activated",
+    status: "running",
+    detail: "satp written",
+    source: "tagged"
+  });
+  assert.equal(event.protocol, EVENT_PROTOCOL);
+  assert.equal(normalizeTeachingEvent({ ...event, lab: "lab9" }), null);
+  assert.equal(normalizeTeachingEvent({ ...event, status: "complete" }), null);
+  assert.equal(parseKernelLine("[OS_DEMO] v=2 lab=lab4 step=pass"), null);
 });
 
 test("explicit OS_DEMO telemetry remains authoritative", () => {
   assert.deepEqual(
     parseKernelLine("[OS_DEMO] lab=lab4 step=satp-activated"),
     {
+      protocol: EVENT_PROTOCOL,
       lab: "lab4",
       step: "satp-activated",
       status: "running",
