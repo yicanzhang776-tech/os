@@ -325,7 +325,8 @@ h3 {
 .timeline-section,
 .knowledge-section,
 .evidence-grid,
-.learning-loop {
+.learning-loop,
+.feedback-section {
   margin-top: 58px;
 }
 
@@ -432,7 +433,8 @@ h3 {
 .knowledge-section,
 .event-panel,
 .console-panel,
-.learning-loop {
+.learning-loop,
+.feedback-section {
   padding: 24px;
 }
 
@@ -1289,10 +1291,276 @@ h3 {
   line-height: 1.55;
 }
 
+.feedback-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, .58fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 16px;
+}
+
+.feedback-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.feedback-form legend {
+  padding: 0 7px;
+  color: var(--cyan);
+  font-size: .8rem;
+  font-weight: 740;
+}
+
+.feedback-question-description {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.6;
+}
+
+.feedback-branch-questions {
+  display: grid;
+  gap: 10px;
+}
+
+.feedback-branch-question {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(178px, .42fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0c1422;
+}
+
+.feedback-question-heading {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.feedback-question-number {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--blue-strong);
+  color: #07111f;
+  font-family: var(--mono);
+  font-size: .72rem;
+  font-weight: 760;
+}
+
+.feedback-question-dimension {
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: .62rem;
+}
+
+.feedback-branch-question > label {
+  color: var(--text);
+  font-size: .82rem;
+  line-height: 1.6;
+}
+
+.feedback-branch-question > select {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.feedback-branch-question > small {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  font-size: .68rem;
+}
+
+.feedback-field-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.feedback-form label,
+.feedback-check-group > span {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.feedback-form fieldset > label + label {
+  margin-top: 13px;
+}
+
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #0c1422;
+  color: var(--text);
+  font: inherit;
+}
+
+.feedback-form select {
+  min-height: 42px;
+  padding: 8px 34px 8px 10px;
+}
+
+.feedback-form textarea {
+  min-height: 78px;
+  padding: 10px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.feedback-form select:focus-visible,
+.feedback-form textarea:focus-visible,
+.feedback-form input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.feedback-check-group {
+  margin-top: 15px;
+}
+
+.feedback-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.feedback-checks label,
+.feedback-context-choice {
+  display: flex;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.feedback-checks label {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0c1422;
+  color: var(--text);
+}
+
+.feedback-checks input,
+.feedback-context-choice input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--cyan);
+}
+
+.feedback-context-choice {
+  justify-content: start;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+}
+
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+
+.feedback-clear {
+  padding: 8px;
+  color: var(--muted);
+}
+
+.feedback-status {
+  min-height: 24px;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.feedback-status[data-kind="success"] {
+  color: var(--mint);
+}
+
+.feedback-status[data-kind="error"] {
+  color: var(--red);
+}
+
+.feedback-context {
+  position: sticky;
+  top: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.feedback-context dl {
+  display: grid;
+  gap: 10px;
+  margin: 17px 0;
+}
+
+.feedback-context dl div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.feedback-context dt,
+.feedback-context dd {
+  margin: 0;
+  font-size: .75rem;
+}
+
+.feedback-context dt {
+  color: var(--muted);
+}
+
+.feedback-context dd {
+  overflow-wrap: anywhere;
+}
+
+.feedback-route {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+
+.feedback-privacy {
+  margin: 15px 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  color: var(--amber);
+  font-size: .74rem;
+  line-height: 1.55;
+}
+
 @media (max-width: 1080px) {
   .hero-grid,
   .stage-layout,
-  .framework-layout {
+  .framework-layout,
+  .feedback-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1306,6 +1574,10 @@ h3 {
 
   .execution-panel {
     min-height: 0;
+  }
+
+  .feedback-context {
+    position: static;
   }
 
   .flow-row {
@@ -1338,12 +1610,13 @@ h3 {
 
   .stage-intro,
   .execution-panel,
-  .knowledge-section,
-  .event-panel,
-  .console-panel,
-  .learning-loop {
-    padding: 18px;
-  }
+    .knowledge-section,
+    .event-panel,
+    .console-panel,
+    .learning-loop,
+    .feedback-section {
+      padding: 18px;
+    }
 
   .panel-heading,
   .stage-heading-row {
@@ -1354,8 +1627,19 @@ h3 {
   .task-row,
   .fs-visual,
   .evidence-grid,
-  .learning-loop ol {
+  .learning-loop ol,
+  .feedback-field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-branch-question {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .feedback-branch-question > select,
+  .feedback-branch-question > small {
+    grid-column: 2;
+    grid-row: auto;
   }
 
   .flow-node {
