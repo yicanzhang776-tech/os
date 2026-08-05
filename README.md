@@ -77,6 +77,8 @@ flowchart LR
 - 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
 - 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
 
+运行前，学生需要先预测当前分支可能出现的结果并写下判断依据，再由页面启动真实构建与 QEMU。一次运行的结构化事件可以保存在当前浏览器中逐步回放；分别保存同一 Lab 的 starter 与 solution 运行后，还可以比较两者的共同事件和分支独有事件。Linux 运行链路、事件协议、分支映射和具体操作见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
+
 ### 当前分支入口
 
 - [可视化介绍与使用说明](docs/interactive-demo/README.md)
