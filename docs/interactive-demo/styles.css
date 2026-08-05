@@ -80,7 +80,7 @@ code {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(300px, .72fr);
   gap: clamp(26px, 5vw, 76px);
-  align-items: end;
+  align-items: start;
 }
 
 .hero {
@@ -220,7 +220,7 @@ h3 {
 }
 
 .button-stop {
-  border-color: var(--orange);
+  border-color: var(--amber);
 }
 
 .runtime-card,
@@ -300,6 +300,56 @@ h3 {
 .runtime-hint {
   margin: 10px 0 0;
   font-size: .78rem;
+}
+
+.prediction-gate {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.prediction-gate p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: space-between;
+  margin: 0 0 3px;
+}
+
+.prediction-gate p span,
+.prediction-gate label,
+.prediction-status {
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.45;
+}
+
+.prediction-gate select,
+.prediction-gate textarea,
+.run-lab-panel select {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.prediction-gate textarea {
+  resize: vertical;
+}
+
+.prediction-status[data-status="ready"] {
+  color: var(--mint);
+}
+
+.prediction-status[data-status="assessed"] {
+  color: var(--cyan);
 }
 
 .runtime-bar {
@@ -433,6 +483,7 @@ h3 {
 .knowledge-section,
 .event-panel,
 .console-panel,
+.run-lab-panel,
 .learning-loop,
 .feedback-section {
   padding: 24px;
@@ -1256,9 +1307,111 @@ h3 {
   white-space: pre-wrap;
 }
 
+.run-lab-panel {
+  grid-column: 1 / -1;
+}
+
+.run-lab-panel .subpanel-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.run-lab-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.run-lab-grid > section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.run-lab-grid h4 {
+  margin: 0 0 14px;
+}
+
+.run-lab-grid label {
+  display: block;
+  margin: 10px 0 5px;
+  color: var(--muted);
+  font-size: .72rem;
+}
+
+.replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.run-lab-status {
+  display: block;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: .76rem;
+  line-height: 1.5;
+}
+
+.replay-timeline,
+.comparison-list {
+  display: grid;
+  gap: 7px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 13px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.replay-event,
+.comparison-event {
+  display: grid;
+  grid-template-columns: auto minmax(110px, .55fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px 10px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .73rem;
+}
+
+.replay-event[data-status="played"] {
+  border-color: var(--mint);
+}
+
+.replay-event[data-status="current"] {
+  border-color: var(--blue);
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.comparison-event[data-scope="starter-only"] {
+  border-color: var(--amber);
+}
+
+.comparison-event[data-scope="solution-only"] {
+  border-color: var(--cyan);
+}
+
+.comparison-event[data-scope="shared"] {
+  border-color: var(--mint);
+}
+
+.comparison-scope {
+  min-width: 74px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
 .learning-loop ol {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   margin: 0;
   padding: 0;
@@ -1613,6 +1766,7 @@ h3 {
     .knowledge-section,
     .event-panel,
     .console-panel,
+    .run-lab-panel,
     .learning-loop,
     .feedback-section {
       padding: 18px;
@@ -1627,6 +1781,7 @@ h3 {
   .task-row,
   .fs-visual,
   .evidence-grid,
+  .run-lab-grid,
   .learning-loop ol,
   .feedback-field-grid {
     grid-template-columns: 1fr;
