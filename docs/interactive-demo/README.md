@@ -12,7 +12,11 @@
 
 - P0–Lab7 的纵向实验路线与五种横向知识观察维度；
 - 当前 Git 分支、starter/solution 角色、实验任务和提交编号的实时识别；
+- `os-demo.event/v1` 版本化事件协议，以及 GitHub/GitLab 前缀下 17 个现有分支的统一映射；
 - 构建、QEMU 串口与结构化实验事件的本地展示；
+- 学生保存预测后才能从页面启动当前分支，并在运行结束后对照预测与真实结果；
+- 一次运行最多保存 512 个有序结构化事件，可在当前浏览器中保存并逐步回放；
+- 对同一 Lab 已保存的 starter/solution 运行进行事件差异比较；
 - 包含“有帮助、没有变化、没有帮助、更加困惑”的教学效果评价；
 - 根据 P0、Lab1–Lab7 和 starter/solution 分支自动切换五道针对实验内容的教学评价题；
 - 评价草稿保存在当前浏览器，并可导出 Markdown 或 JSON；
@@ -24,10 +28,11 @@
 
 ```sh
 sh scripts/check-env.sh
+sh scripts/run-interactive-demo.sh --check-only
 sh scripts/run-interactive-demo.sh
 ```
 
-脚本会启动本地页面并尝试打开 `http://127.0.0.1:4173`。只想启动服务而不打开浏览器时使用：
+`--check-only` 会检查 Node.js、Git、Cargo、`riscv64gc-unknown-none-elf` 和 QEMU 的完整 Linux 运行链路。脚本会启动本地页面并尝试打开 `http://127.0.0.1:4173`。只想启动服务而不打开浏览器时使用：
 
 ```sh
 sh scripts/run-interactive-demo.sh --no-browser
@@ -62,7 +67,9 @@ Ubuntu 中再打开 `http://127.0.0.1:4173`。若希望启动页面时立即构�
 git switch lab3-starter
 ```
 
-页面会在约 1.2 秒内识别 `p0-minimal-qemu-baseline`、`lab1-starter` 至 `lab7-solution` 等 15 个教学分支，自动定位实验和分支角色。点击“构建并运行当前分支”后，页面清空上一轮证据并跟随本次实验；starter 停在 TODO 时会显示“停在 TODO”，不会伪装成已完成。若 QEMU 在 TODO 后保持运行，可先点“停止当前运行”，再切换或重跑。
+页面会在约 1.2 秒内识别 `main`、`interactive-demo-learning-map`、`p0-minimal-qemu-baseline`、`lab1-starter` 至 `lab7-solution` 共 17 个现有分支，自动定位实验和分支角色。学生需要先选择预期结果并写下关键事件或原因，保存预测后才能点击“构建并运行当前分支”。页面会清空上一轮证据并跟随本次实验；starter 停在 TODO 时会显示“停在 TODO”，不会伪装成已完成。若 QEMU 在 TODO 后保持运行，可先点“停止当前运行”，再切换或重跑。
+
+桥接器固定使用 `riscv64gc-unknown-none-elf` 构建目标，不依赖用户目录中的 Cargo 默认 target。页面启动的每次运行都有独立 `runId`，事件同时记录协议版本、分支、提交、顺序和时间。运行结束后可以保存时间线；切换到同一 Lab 的另一个分支再运行并保存，即可比较 starter 与 solution 的共同事件和分支独有事件。回放只重建可视化状态，不会重新执行内核或修改 Git 分支。
 
 桥接器在启动时把新版 HTML/CSS/JS 保存在内存中。因此，即使切到尚未同步新版页面的自定义或历史分支，正在运行的页面也不会退回旧版；源码链接则始终读取当前分支，便于对照实验代码。P0 和 Lab1–Lab7 的 starter/solution 均包含同一版桥接器，也可以先切换到目标教学分支，再从该分支独立启动页面。
 
@@ -95,6 +102,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo
 - 分支与运行状态可以实时跟踪，但不同实验原有输出不完全一致，细粒度动态效果仍取决于已有事件标记；
 - 当前评价是自愿反馈，样本数量较少时不能代表所有学生的学习效果。
 - 五道教学评价题目前由项目组根据实验任务书设计，仍需通过同学和教师试用来检查措辞是否容易理解、评价维度是否合理。
+- 运行时间线和预测目前只保存在当前浏览器，最多保留最近 12 次；清理浏览器数据后无法恢复；
+- starter/solution 对比需要使用者分别切换分支、真实运行并保存，页面不会自动执行 `git switch`；
+- 时间线保存的是经过协议校验的教学事件，不保存完整原始终端日志，也不自动上传到服务器。
 
 这些限制符合当前学生团队的设备和维护能力：只依赖浏览器、Node.js、Git、Rust 与 QEMU，不要求额外服务器、数据库或校园统一身份认证。
 
@@ -108,13 +118,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo
 
 ## 事件兼容策略
 
-桥接器优先识别显式标记：
+桥接器使用稳定协议 `os-demo.event/v1`。推荐的显式标记为：
 
 ```text
-[OS_DEMO] lab=lab4 step=satp-activated
+[OS_DEMO] v=1 lab=lab4 step=satp-activated status=running
 ```
 
-`main` 中已有的结构化标记能提供最细粒度的动态步骤。15 个教学分支没有一致、可达的 `[OS_DEMO]` 埋点，因此桥接器还会识别各分支原有且稳定的实验输出，例如 `[Lab5] scheduler initialized`、`[Lab6] syscall write`、任务级 `TODO/PASS` 和最终 `PASS/FAIL`。这样无需改写学生实验逻辑，也能在 starter/solution 间实时展示可信进度。
+为兼容已有内核，旧格式 `[OS_DEMO] lab=lab4 step=satp-activated` 仍按 v1 处理。未知协议版本、未知 Lab、非法状态和非法步骤会被忽略。`main` 中已有的结构化标记能提供最细粒度的动态步骤。15 个教学分支没有一致、可达的 `[OS_DEMO]` 埋点，因此桥接器还会识别各分支原有且稳定的实验输出，例如 `[Lab5] scheduler initialized`、`[Lab6] syscall write`、任务级 `TODO/PASS` 和最终 `PASS/FAIL`。这样无需改写学生实验逻辑，也能在 starter/solution 间实时展示可信进度。
+
+归一化事件至少包含 `protocol`、`lab`、`step`、`status`、`source`。本地桥接器再补充 `runId`、`branch`、`commit`、`sequence` 和 `timestamp`，从而使保存、比较和回放不依赖页面动画的当前状态。
 
 事件只在对应动作已经输出证据后更新。例如 `stvec` 安装、breakpoint 处理、页帧分配、`satp` 激活、任务切换、用户态 `ecall` 和文件读写。未完成的 TODO、构建失败和运行失败均不会被当作通过。
 
@@ -133,10 +145,11 @@ qemu-system-riscv64 ... | node docs/interactive-demo/server.js --stdin
 分支与串口协议使用 Node 内置测试，无第三方依赖：
 
 ```powershell
-node --test docs/interactive-demo/feedback.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/server.test.js
+node --test docs/interactive-demo/feedback.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/run-history.test.js docs/interactive-demo/server.test.js
 node --check docs/interactive-demo/feedback-questions.js
 node --check docs/interactive-demo/feedback.js
 node --check docs/interactive-demo/protocol.js
+node --check docs/interactive-demo/run-history.js
 node --check docs/interactive-demo/server.js
 node --check docs/interactive-demo/app.js
 ```
