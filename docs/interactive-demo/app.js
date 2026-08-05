@@ -49,7 +49,10 @@
         { id: "opensbi", kicker: "固件", title: "OpenSBI", detail: "处理 console_putchar" },
         { id: "console-available", kicker: "设备", title: "QEMU UART", detail: "字符成为可见证据" }
       ],
-      eventSteps: { start: 0, "console-available": 5, pass: 5, "task-1-pass": 1, "task-2-pass": 4 }
+      eventSteps: {
+        start: 0, "print-line": 0, "sbi-ecall": 3, "opensbi-console": 4,
+        "uart-write": 5, "console-available": 5, pass: 5, "task-1-pass": 1, "task-2-pass": 4
+      }
     },
     {
       id: "lab2",
@@ -74,7 +77,8 @@
         { id: "pass", kicker: "返回", title: "sret", detail: "恢复原执行流" }
       ],
       eventSteps: {
-        start: 0, "stvec-installed": 0, "breakpoint-triggered": 1, "breakpoint-decoded": 3,
+        start: 0, "stvec-installed": 0, "breakpoint-triggered": 1, "trap-enter": 2,
+        "scause-read": 3, "breakpoint-decoded": 3, "sepc-advanced": 4,
         "breakpoint-handled": 4, pass: 5, "task-1-pass": 0, "task-2-pass": 3, "task-3-pass": 5
       }
     },
@@ -100,7 +104,11 @@
         { id: "deallocate", title: "释放到 recycled" },
         { id: "pass", title: "优先复用并通过检查" }
       ],
-      eventSteps: { start: 0, "task-1-pass": 1, "allocator-ready": 2, "task-2-pass": 3, "frame-checks-start": 3, "frame-checks-pass": 5, pass: 5 }
+      eventSteps: {
+        start: 0, "task-1-pass": 1, "allocator-ready": 2, "task-2-pass": 3,
+        "frame-allocated": 3, "frame-freed": 4, "frame-reused": 5,
+        "frame-checks-start": 3, "frame-checks-pass": 5, pass: 5
+      }
     },
     {
       id: "lab4",
@@ -126,7 +134,7 @@
       ],
       eventSteps: {
         start: 0, "allocator-ready": 0, "root-page-table": 1, "task-1-pass": 1,
-        "page-table-built": 2, "task-2-pass": 2, "text-mapped": 3, "rodata-mapped": 3,
+        "page-table-built": 2, "pte-written": 2, "task-2-pass": 2, "text-mapped": 3, "rodata-mapped": 3,
         "data-mapped": 3, "bss-mapped": 3, "user-pages-mapped": 3,
         "satp-activated": 4, "paging-active": 4, "translate-verified": 5, pass: 5
       }
@@ -156,7 +164,8 @@
         { id: "pass", title: "全部 Exited" }
       ],
       eventSteps: {
-        start: 0, "scheduler-ready": 0, "task-1-pass": 0, "task-2-pass": 1,
+        start: 0, "task-created": 0, "scheduler-ready": 0, "task-1-pass": 0, "task-2-pass": 1,
+        "yield-called": 1, "context-switched": 1,
         "task-a-step-1": 1, "task-b-step-1": 2, "task-c-step-1": 3,
         "task-a-step-2": 4, "task-b-step-2": 5, "task-c-step-2": 6,
         "scheduler-finished": 7, pass: 7
@@ -186,8 +195,9 @@
       ],
       eventSteps: {
         start: 0, "user-context-ready": 0, "task-1-pass": 1, "entering-user": 1,
-        "user-ecall": 2, "task-2-pass": 3, "console-write": 3,
-        "syscall-yield": 3, "user-exit": 4, pass: 5
+        "user-mode-entered": 1, "user-ecall": 2, "syscall-dispatched": 3,
+        "task-2-pass": 3, "console-write": 3, "syscall-yield": 3,
+        "user-return": 2, "user-exit": 4, pass: 5
       }
     },
     {
@@ -229,12 +239,12 @@
       question: "控制权现在属于谁，下一次跳转由什么触发？",
       insight: "从启动到文件 I/O 不是八段孤立代码：每个 Lab 都把一种新机制接到已经可运行的控制流上。",
       nodes: [
-        { title: "启动并建立观察通道", detail: "QEMU → OpenSBI → kernel_main → SBI console", labs: ["p0", "lab1"] },
-        { title: "可控地打断与返回", detail: "ebreak → stvec → TrapFrame → sret", labs: ["lab2"] },
-        { title: "获得并组织内存", detail: "页帧 → 三级页表 → satp", labs: ["lab3", "lab4"] },
-        { title: "复用 CPU 时间", detail: "yield → scheduler → __switch", labs: ["lab5"] },
-        { title: "跨越用户/内核边界", detail: "sret → U-mode → ecall → dispatch", labs: ["lab6"] },
-        { title: "完成用户文件 I/O", detail: "syscall → fd → SimpleFs → RamDevice", labs: ["lab7"] }
+        { key: "sequence-console", title: "启动并建立观察通道", detail: "QEMU → OpenSBI → kernel_main → SBI console", labs: ["p0", "lab1"] },
+        { key: "sequence-trap", title: "可控地打断与返回", detail: "ebreak → stvec → TrapFrame → sret", labs: ["lab2"] },
+        { key: "sequence-memory", title: "获得并组织内存", detail: "页帧 → 三级页表 → satp", labs: ["lab3", "lab4"] },
+        { key: "sequence-schedule", title: "复用 CPU 时间", detail: "yield → scheduler → __switch", labs: ["lab5"] },
+        { key: "sequence-privilege", title: "跨越用户/内核边界", detail: "sret → U-mode → ecall → dispatch", labs: ["lab6"] },
+        { key: "sequence-file", title: "完成用户文件 I/O", detail: "syscall → fd → SimpleFs → RamDevice", labs: ["lab7"] }
       ]
     },
     {
@@ -313,11 +323,20 @@
     "run-state", "runtime-hint", "live-dot", "run-current", "stop-current", "dimension-tabs",
     "dimension-description", "framework-canvas", "dimension-question",
     "dimension-insight", "knowledge-matrix", "previous-stage", "next-stage",
-    "auto-play", "clear-events", "prediction-form", "prediction-result",
-    "prediction-reasoning", "save-prediction", "prediction-status", "save-run",
+    "auto-play", "clear-events", "prediction-form", "prediction-build", "prediction-run",
+    "prediction-pass", "prediction-event-options", "prediction-reasoning", "save-prediction",
+    "prediction-status", "prediction-comparison-summary", "prediction-correct-list",
+    "prediction-omission-list", "prediction-missing-list", "prediction-opposite-list",
+    "prediction-extra-list", "prediction-unknown-list", "save-run",
     "saved-run-select", "replay-start", "replay-previous", "replay-next",
     "replay-status", "replay-timeline", "starter-run-select", "solution-run-select",
-    "compare-runs", "comparison-summary", "comparison-list"
+    "compare-runs", "comparison-summary", "comparison-list", "event-detail-panel",
+    "event-detail-title", "event-detail-status", "event-detail-explanation",
+    "event-detail-code", "event-detail-symbol", "event-detail-knowledge",
+    "event-detail-cause", "event-detail-effect", "event-detail-next", "event-detail-raw",
+    "event-state-status", "event-state-list", "state-comparison", "state-comparison-status",
+    "starter-state-list", "solution-state-list", "same-state-list", "changed-state-list",
+    "starter-only-state-list", "solution-only-state-list"
   ].map((id) => [id.replaceAll("-", "_"), document.getElementById(id)]));
 
   const state = {
@@ -337,6 +356,8 @@
     completedRun: null,
     savedRuns: window.OsRunHistory?.loadRuns(window.localStorage) || [],
     replay: { run: null, index: -1 },
+    selectedEvent: null,
+    selectedKnowledgeNode: null,
     autoTimer: null,
     reconnectTimer: null
   };
@@ -353,6 +374,192 @@
   function sourceHref(path) {
     if (window.location.protocol === "file:") return `../../${path}`;
     return `/source/${path}`;
+  }
+
+  function resolveEventKnowledge(event) {
+    if (window.OsEventCatalog?.resolveEventKnowledge) {
+      return window.OsEventCatalog.resolveEventKnowledge(event);
+    }
+    const raw = event && typeof event === "object" ? event : { raw: event };
+    const detail = String(raw.detail || raw.raw || raw.step || "未提供事件内容").slice(0, 500);
+    return {
+      known: false,
+      eventName: "未加载事件知识目录",
+      explanation: detail,
+      knowledge: "未登记知识节点",
+      file: null,
+      symbol: "未提供",
+      cause: detail,
+      effect: `保留原始状态：${raw.status || "unknown"}。`,
+      nextEvents: [],
+      knowledgeNode: null,
+      raw: detail
+    };
+  }
+
+  function knowledgeNodeTitle(key) {
+    for (const dimension of dimensions) {
+      const node = dimension.nodes.find((item) => item.key === key);
+      if (node) return node.title;
+    }
+    return "未登记知识节点";
+  }
+
+  function syncEventKnowledge(event) {
+    const knowledge = resolveEventKnowledge(event);
+    state.selectedKnowledgeNode = knowledge.known ? knowledge.knowledgeNode : null;
+    if (state.selectedKnowledgeNode) state.activeDimension = "sequence";
+    return knowledge;
+  }
+
+  function sameRuntimeEvent(left, right) {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    if (left.sequence && right.sequence) {
+      return left.sequence === right.sequence && left.lab === right.lab && left.step === right.step;
+    }
+    return left.lab === right.lab
+      && left.step === right.step
+      && left.status === right.status
+      && left.timestamp === right.timestamp;
+  }
+
+  function selectedEventSequence() {
+    const selected = state.selectedEvent;
+    if (!selected) return { events: [], context: null };
+    if (selected.scope === "时间线回放" && state.replay.run) {
+      const index = Number.isInteger(selected.index) ? selected.index : state.replay.index;
+      return {
+        events: state.replay.run.events.slice(0, Math.max(0, index + 1)),
+        context: state.replay.run.context
+      };
+    }
+
+    const recent = [...state.recentEvents].reverse();
+    const eventPools = [state.activeRun?.events, state.completedRun?.events, recent]
+      .filter((events) => Array.isArray(events) && events.length);
+    const candidates = eventPools.find((events) => events.some((event) => sameRuntimeEvent(event, selected.event)))
+      || recent;
+    let cutoff = candidates.findIndex((event) => sameRuntimeEvent(event, selected.event));
+    if (cutoff < 0 && selected.event?.sequence) {
+      for (let index = candidates.length - 1; index >= 0; index -= 1) {
+        if (Number(candidates[index].sequence) <= Number(selected.event.sequence)) {
+          cutoff = index;
+          break;
+        }
+      }
+    }
+    if (cutoff < 0) cutoff = candidates.length - 1;
+    return {
+      events: candidates.slice(0, cutoff + 1),
+      context: state.activeRun?.events === candidates
+        ? state.activeRun.context
+        : state.completedRun?.events === candidates
+          ? state.completedRun.context
+          : state.context
+    };
+  }
+
+  function fieldStatusLabel(field) {
+    return {
+      known: "有明确事件证据",
+      partial: "只有部分事件证据",
+      insufficient: "没有足够运行证据"
+    }[field?.status] || "没有足够运行证据";
+  }
+
+  function renderStateFieldList(container, snapshot, emptyText = "没有足够运行证据。") {
+    container.innerHTML = "";
+    if (!snapshot?.fields || !window.OsStateModel) {
+      container.appendChild(element("li", "empty-state", emptyText));
+      return;
+    }
+    Object.values(snapshot.fields).forEach((field) => {
+      const item = element("li", "state-field");
+      item.dataset.evidence = field.status;
+      item.append(
+        element("strong", "", field.label),
+        element("span", "", window.OsStateModel.formatField(field)),
+        element("small", "", `${fieldStatusLabel(field)}${field.evidence.length ? ` · ${field.evidence.join("、")}` : ""}`)
+      );
+      container.appendChild(item);
+    });
+  }
+
+  function renderSelectedEventState() {
+    if (!state.selectedEvent || !window.OsStateModel?.computeState) {
+      dom.event_state_status.textContent = "选择事件后由事件序列重建。";
+      renderStateFieldList(dom.event_state_list, null, "尚未选择运行事件。");
+      return;
+    }
+    const selectedSequence = selectedEventSequence();
+    const lab = state.selectedEvent.event?.lab || selectedSequence.context?.lab;
+    const snapshot = window.OsStateModel.computeState(selectedSequence.events, {
+      lab,
+      variant: selectedSequence.context?.variant
+    });
+    renderStateFieldList(dom.event_state_list, snapshot);
+    const notes = [`${snapshot.eventCount} 条有效事件`];
+    if (snapshot.duplicateCount) notes.push(`忽略 ${snapshot.duplicateCount} 条重复事件`);
+    if (snapshot.ignoredCount) notes.push(`忽略 ${snapshot.ignoredCount} 条无效或其他 Lab 事件`);
+    dom.event_state_status.textContent = `${lab?.toUpperCase() || "未知 Lab"} · ${notes.join(" · ")}`;
+  }
+
+  function renderEventDetails() {
+    const selected = state.selectedEvent;
+    if (!selected) {
+      dom.event_detail_panel.dataset.known = "empty";
+      dom.event_detail_title.textContent = "选择一条事件查看完整解释";
+      dom.event_detail_status.textContent = "等待时间线选择";
+      dom.event_detail_explanation.textContent = "实时运行或回放时，点击任一事件即可查看代码位置、知识点、前因、状态变化和可能的后续事件。";
+      dom.event_detail_code.textContent = "尚未选择";
+      dom.event_detail_code.removeAttribute("href");
+      dom.event_detail_symbol.textContent = "—";
+      dom.event_detail_knowledge.textContent = "—";
+      dom.event_detail_cause.textContent = "—";
+      dom.event_detail_effect.textContent = "—";
+      dom.event_detail_next.textContent = "—";
+      dom.event_detail_raw.textContent = "{}";
+      renderSelectedEventState();
+      return;
+    }
+
+    const knowledge = resolveEventKnowledge(selected.event);
+    dom.event_detail_panel.dataset.known = knowledge.known ? "known" : "fallback";
+    dom.event_detail_title.textContent = knowledge.eventName;
+    dom.event_detail_status.textContent = knowledge.known
+      ? `${selected.scope} · 已登记事件`
+      : `${selected.scope} · 原始信息安全降级`;
+    dom.event_detail_explanation.textContent = knowledge.explanation;
+    if (knowledge.file && window.OsEventCatalog?.isRepositoryPath(knowledge.file)) {
+      dom.event_detail_code.textContent = knowledge.file;
+      dom.event_detail_code.href = sourceHref(knowledge.file);
+    } else {
+      dom.event_detail_code.textContent = "未登记安全源码位置";
+      dom.event_detail_code.removeAttribute("href");
+    }
+    dom.event_detail_symbol.textContent = knowledge.symbol;
+    dom.event_detail_knowledge.textContent = knowledge.known
+      ? `${knowledgeNodeTitle(knowledge.knowledgeNode)} · ${knowledge.knowledge}`
+      : knowledge.knowledge;
+    dom.event_detail_cause.textContent = knowledge.cause;
+    dom.event_detail_effect.textContent = knowledge.effect;
+    dom.event_detail_next.textContent = knowledge.nextEvents.length
+      ? knowledge.nextEvents.map((next) => `${next.name} (${next.lab}:${next.step})`).join(" → ")
+      : "当前目录没有登记后续事件。";
+    dom.event_detail_raw.textContent = knowledge.raw;
+    renderSelectedEventState();
+  }
+
+  function selectEventDetails(event, scope) {
+    state.selectedEvent = { event, scope };
+    syncEventKnowledge(event);
+    if (Object.hasOwn(stageIndexById, event?.lab)) state.stageIndex = stageIndexById[event.lab];
+    renderDimensionTabs();
+    renderStage(event);
+    renderEventFeed();
+    renderReplayTimeline();
+    renderEventDetails();
   }
 
   function statusLabel(status) {
@@ -695,6 +902,10 @@
       const related = item.labs.includes(selectedId);
       const primary = item.labs[0] === selectedId;
       if (related) button.classList.add(primary ? "current" : "related");
+      if (dimension.id === "sequence" && item.key === state.selectedKnowledgeNode) {
+        button.classList.add("event-current");
+        button.setAttribute("aria-current", "true");
+      }
       button.append(
         element("span", "framework-index", String(index + 1).padStart(2, "0")),
         element("strong", "", item.title),
@@ -793,8 +1004,12 @@
     recordEvent(event);
     state.stageIndex = index;
     if (shouldRender) {
+      state.selectedEvent = { event, scope: "实时运行" };
+      syncEventKnowledge(event);
+      renderDimensionTabs();
       renderEventFeed();
       renderStage(event);
+      renderEventDetails();
     }
   }
 
@@ -807,13 +1022,21 @@
     state.recentEvents.forEach((event) => {
       const item = element("li", "runtime-event");
       item.dataset.status = event.status || "running";
+      if (state.selectedEvent?.scope === "实时运行" && state.selectedEvent.event === event) {
+        item.dataset.selected = "true";
+      }
       const stage = stages[stageIndexById[event.lab]];
-      item.append(
+      const knowledge = resolveEventKnowledge(event);
+      const button = element("button", "event-row-button");
+      button.type = "button";
+      button.append(
         element("span", "event-sequence", event.sequence ? `#${event.sequence}` : "manual"),
         element("strong", "", stage?.label || event.lab),
         element("span", "", event.detail || event.step),
-        element("small", "", event.source === "tagged" ? "显式遥测" : "串口兼容解析")
+        element("small", "", `${knowledge.eventName} · ${event.source === "tagged" ? "显式遥测" : "串口兼容解析"}`)
       );
+      button.addEventListener("click", () => selectEventDetails(event, "实时运行"));
+      item.appendChild(button);
       dom.runtime_feed.appendChild(item);
     });
   }
@@ -836,14 +1059,61 @@
     dom.console_output.scrollTop = dom.console_output.scrollHeight;
   }
 
+  function availablePredictionEvents(lab) {
+    if (!lab || !window.OsEventCatalog?.EVENT_CATALOG) return [];
+    return Object.values(window.OsEventCatalog.EVENT_CATALOG)
+      .filter((entry) => entry.lab === lab && entry.step !== "pass");
+  }
+
+  function renderPredictionEventOptions(selectedKeys = []) {
+    dom.prediction_event_options.innerHTML = "";
+    const entries = availablePredictionEvents(state.context?.lab);
+    if (!entries.length) {
+      dom.prediction_event_options.appendChild(element("span", "", "当前分支没有可选择的 Lab 事件。"));
+      return;
+    }
+    const selected = new Set(selectedKeys);
+    entries.forEach((entry, index) => {
+      const label = element("label", "prediction-event-option");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "prediction-events";
+      input.value = entry.key;
+      input.id = `prediction-event-${index}`;
+      input.checked = selected.has(entry.key);
+      const detail = element("span", "", entry.eventName);
+      detail.appendChild(element("code", "", entry.step));
+      label.htmlFor = input.id;
+      label.append(input, detail);
+      dom.prediction_event_options.appendChild(label);
+    });
+  }
+
+  function setPredictionForm(prediction) {
+    dom.prediction_build.value = prediction?.expectedBuild || "";
+    dom.prediction_run.value = prediction?.expectedRun || "";
+    dom.prediction_pass.value = typeof prediction?.expectedPass === "boolean"
+      ? String(prediction.expectedPass)
+      : "";
+    dom.prediction_reasoning.value = prediction?.reasoning || "";
+    renderPredictionEventOptions(prediction?.expectedEvents || []);
+  }
+
+  function selectedPredictionEvents() {
+    return Array.from(
+      dom.prediction_event_options.querySelectorAll('input[name="prediction-events"]:checked'),
+      (input) => input.value
+    );
+  }
+
   function applyContext(context, jumpToTarget = true) {
     const previous = state.context;
     state.context = context;
     if (!previous || previous.branch !== context?.branch || previous.commit !== context?.commit) {
       state.prediction = loadStoredPrediction(context);
       state.lastPredictionAssessment = "";
-      dom.prediction_result.value = state.prediction?.expectedResult || "";
-      dom.prediction_reasoning.value = state.prediction?.reasoning || "";
+      setPredictionForm(state.prediction);
+      renderPredictionComparison(null);
     }
     dom.branch_name.textContent = context?.branch || "unknown";
     dom.branch_variant.textContent = context?.variantLabel || "未知";
@@ -872,12 +1142,20 @@
       pass: "出现 PASS",
       todo: "停在 TODO",
       fail: "构建或运行失败",
+      timeout: "QEMU 超时",
       finished: "正常退出但没有目标 PASS",
       stopped: "被手动停止"
     }[result] || result;
   }
 
   function loadStoredPrediction(context) {
+    if (window.OsPredictionModel?.loadPrediction) {
+      return window.OsPredictionModel.loadPrediction(
+        window.localStorage,
+        context,
+        PREDICTION_STORAGE_KEY
+      );
+    }
     try {
       const prediction = JSON.parse(window.localStorage.getItem(PREDICTION_STORAGE_KEY) || "null");
       if (prediction?.branch !== context?.branch || prediction?.commit !== context?.commit) return null;
@@ -890,6 +1168,14 @@
   }
 
   function storePrediction(prediction) {
+    if (window.OsPredictionModel?.storePrediction) {
+      window.OsPredictionModel.storePrediction(
+        window.localStorage,
+        prediction,
+        PREDICTION_STORAGE_KEY
+      );
+      return;
+    }
     try {
       if (prediction) {
         window.localStorage.setItem(PREDICTION_STORAGE_KEY, JSON.stringify(prediction));
@@ -902,6 +1188,9 @@
   }
 
   function predictionMatchesContext() {
+    if (window.OsPredictionModel?.predictionMatchesContext) {
+      return window.OsPredictionModel.predictionMatchesContext(state.prediction, state.context);
+    }
     return Boolean(
       state.prediction
       && state.context
@@ -913,7 +1202,15 @@
   function renderPredictionGate() {
     const ready = predictionMatchesContext();
     if (ready) {
-      dom.prediction_status.textContent = `已保存：${resultLabel(state.prediction.expectedResult)}。现在可以运行。`;
+      const expectedRun = {
+        todo: "停在 TODO",
+        complete: "完成实验",
+        failure: "运行失败",
+        timeout: "QEMU 超时"
+      }[state.prediction.expectedRun];
+      dom.prediction_status.textContent = state.prediction.migratedFrom === 1 && !expectedRun
+        ? `已读取旧版预测：${resultLabel(state.prediction.expectedResult)}。现在可以运行或重新填写结构化预测。`
+        : `已保存结构化预测：${expectedRun || resultLabel(state.prediction.expectedResult)}。现在可以运行。`;
       dom.prediction_status.dataset.status = "ready";
     } else if (state.lastPredictionAssessment) {
       dom.prediction_status.textContent = state.lastPredictionAssessment;
@@ -962,25 +1259,82 @@
     );
   }
 
+  function renderPredictionComparisonList(container, items, kind, emptyText) {
+    container.innerHTML = "";
+    if (!items?.length) {
+      container.appendChild(element("li", "empty-state", emptyText));
+      return;
+    }
+    items.forEach((item) => {
+      const row = element("li", "prediction-comparison-item", item.text || String(item));
+      row.dataset.kind = kind;
+      container.appendChild(row);
+    });
+  }
+
+  function renderPredictionComparison(assessment) {
+    if (!assessment) {
+      dom.prediction_comparison_summary.textContent = "运行结束后根据真实构建和 QEMU 证据自动核对。";
+      dom.prediction_comparison_summary.dataset.status = "waiting";
+      renderPredictionComparisonList(dom.prediction_correct_list, [], "correct", "尚未完成运行。");
+      renderPredictionComparisonList(dom.prediction_omission_list, [], "omission", "尚未完成运行。");
+      renderPredictionComparisonList(dom.prediction_missing_list, [], "missing", "尚未完成运行。");
+      renderPredictionComparisonList(dom.prediction_opposite_list, [], "opposite", "尚未完成运行。");
+      renderPredictionComparisonList(dom.prediction_extra_list, [], "extra", "尚未完成运行。");
+      renderPredictionComparisonList(dom.prediction_unknown_list, [], "unknown", "尚未完成运行。");
+      return;
+    }
+    dom.prediction_comparison_summary.textContent = `${assessment.overallLabel} · ${assessment.actual.evidenceCount} 条有效 QEMU 事件证据`;
+    dom.prediction_comparison_summary.dataset.status = assessment.overall;
+    renderPredictionComparisonList(dom.prediction_correct_list, assessment.correct, "correct", "没有可确认的一致项。");
+    renderPredictionComparisonList(dom.prediction_omission_list, assessment.omissions, "omission", "没有发现预测遗漏。");
+    renderPredictionComparisonList(dom.prediction_missing_list, assessment.missing, "missing", "没有预计后未出现的事件。");
+    renderPredictionComparisonList(dom.prediction_opposite_list, assessment.opposites, "opposite", "没有发现相反结果。");
+    renderPredictionComparisonList(dom.prediction_extra_list, assessment.extraEvents, "extra", "没有额外关键事件。");
+    renderPredictionComparisonList(dom.prediction_unknown_list, assessment.unknown, "unknown", "没有无法判断的项目。");
+  }
+
+  function updateActiveRunLifecycle(message = {}) {
+    if (!state.activeRun) return;
+    const lifecycle = state.activeRun.lifecycle || (
+      state.activeRun.lifecycle = { buildResult: null, runResult: null, completed: false }
+    );
+    if (["success", "failure"].includes(message.buildResult)) {
+      lifecycle.buildResult = message.buildResult;
+    }
+    if (["running", "finished", "failure", "timeout", "stopped"].includes(message.runResult)) {
+      lifecycle.runResult = message.runResult;
+    }
+    if (message.phase === "running") {
+      lifecycle.buildResult = "success";
+      lifecycle.runResult = "running";
+    }
+    if (["finished", "error", "stopped"].includes(message.phase)) lifecycle.completed = true;
+  }
+
   function beginActiveRun(message) {
     state.replay = { run: null, index: -1 };
+    state.selectedEvent = null;
+    state.selectedKnowledgeNode = null;
     const prediction = predictionMatchesContext() ? state.prediction : null;
     state.activeRun = {
       id: message.runId || `run-${message.timestamp || Date.now()}`,
       context: message.context || state.context,
       prediction,
       events: [],
+      lifecycle: { buildResult: null, runResult: null, completed: false },
       startedAt: message.timestamp || Date.now()
     };
     state.prediction = null;
     storePrediction(null);
-    dom.prediction_result.value = "";
-    dom.prediction_reasoning.value = "";
+    setPredictionForm(null);
     state.completedRun = null;
     state.lastPredictionAssessment = "预测已锁定，正在等待真实运行结果。";
     dom.save_run.disabled = true;
     renderPredictionGate();
     renderReplayTimeline();
+    renderEventDetails();
+    renderPredictionComparison(null);
   }
 
   function captureRunEvent(event) {
@@ -996,10 +1350,22 @@
       context: message.context || state.context,
       prediction: null,
       events: [...state.recentEvents].reverse(),
+      lifecycle: { buildResult: null, runResult: null, completed: false },
       startedAt: message.startedAt || message.timestamp || Date.now()
+    };
+    const lifecycle = {
+      ...(active.lifecycle || {}),
+      buildResult: ["success", "failure"].includes(message.buildResult)
+        ? message.buildResult
+        : active.lifecycle?.buildResult || null,
+      runResult: ["running", "finished", "failure", "timeout", "stopped"].includes(message.runResult)
+        ? message.runResult
+        : active.lifecycle?.runResult || null,
+      completed: true
     };
     state.completedRun = window.OsRunHistory.createRunRecord({
       ...active,
+      lifecycle,
       endedAt: message.timestamp || Date.now(),
       exitCode: message.exitCode,
       stopped: message.stopped,
@@ -1007,15 +1373,13 @@
     });
     state.activeRun = null;
     dom.save_run.disabled = false;
-    if (state.completedRun.prediction) {
-      const expected = resultLabel(state.completedRun.prediction.expectedResult);
-      const actual = resultLabel(state.completedRun.result);
-      state.lastPredictionAssessment = state.completedRun.predictionMatches
-        ? `预测与结果一致：${actual}。请结合时间线解释原因。`
-        : `预测为“${expected}”，实际为“${actual}”。请回放时间线定位差异。`;
+    const assessment = state.completedRun.predictionAssessment;
+    if (assessment) {
+      state.lastPredictionAssessment = `${assessment.overallLabel}：已根据真实构建状态和 ${assessment.actual.evidenceCount} 条 QEMU 事件核对。`;
     } else {
       state.lastPredictionAssessment = `本次结果：${resultLabel(state.completedRun.result)}。此次运行没有保存学生预测。`;
     }
+    renderPredictionComparison(assessment);
     renderPredictionGate();
     renderRunState();
   }
@@ -1041,11 +1405,18 @@
       const item = element("li", "replay-event");
       if (index < state.replay.index) item.dataset.status = "played";
       if (index === state.replay.index) item.dataset.status = "current";
-      item.append(
+      if (state.selectedEvent?.scope === "时间线回放" && state.selectedEvent.event === event) {
+        item.dataset.selected = "true";
+      }
+      const button = element("button", "event-row-button");
+      button.type = "button";
+      button.append(
         element("span", "event-sequence", `#${index + 1}`),
-        element("strong", "", event.step.replaceAll("-", " → ")),
+        element("strong", "", resolveEventKnowledge(event).eventName),
         element("span", "", event.detail)
       );
+      button.addEventListener("click", () => replayTo(index));
+      item.appendChild(button);
       dom.replay_timeline.appendChild(item);
     });
     dom.replay_previous.disabled = state.replay.index < 0;
@@ -1065,9 +1436,16 @@
       applyRuntimeEvent(run.events[eventIndex], false);
     }
     state.replay.index = nextIndex;
+    state.selectedEvent = nextIndex >= 0
+      ? { event: run.events[nextIndex], scope: "时间线回放", index: nextIndex }
+      : null;
+    if (state.selectedEvent) syncEventKnowledge(state.selectedEvent.event);
+    else state.selectedKnowledgeNode = null;
+    renderDimensionTabs();
     renderEventFeed();
     renderConsole();
     renderStage(nextIndex >= 0 ? run.events[nextIndex] : null);
+    renderEventDetails();
     dom.replay_status.textContent = nextIndex < 0
       ? `${run.context.branch}：预测已加载，等待播放第一个事件。`
       : `${run.context.branch}：第 ${nextIndex + 1} / ${run.events.length} 个事件。`;
@@ -1081,7 +1459,59 @@
       return;
     }
     state.replay = { run, index: -1 };
+    const assessment = run.predictionAssessment
+      || window.OsPredictionModel?.comparePrediction(run.prediction, run)
+      || null;
+    renderPredictionComparison(assessment);
     replayTo(-1);
+  }
+
+  function renderStateDiffList(container, rows, scope, emptyText) {
+    container.innerHTML = "";
+    if (!rows?.length || !window.OsStateModel?.formatField) {
+      container.appendChild(element("li", "empty-state", emptyText));
+      return;
+    }
+    rows.forEach((row) => {
+      const item = element("li", "state-diff-item");
+      item.dataset.scope = scope;
+      const field = row.starter || row.solution;
+      item.appendChild(element("strong", "", field.label));
+      if (scope === "same") {
+        item.appendChild(element("span", "", window.OsStateModel.formatField(row.starter)));
+      } else if (scope === "changed") {
+        item.append(
+          element("span", "", `starter：${window.OsStateModel.formatField(row.starter)}`),
+          element("span", "", `solution：${window.OsStateModel.formatField(row.solution)}`)
+        );
+      } else if (scope === "starter-only") {
+        item.appendChild(element("span", "", `starter：${window.OsStateModel.formatField(row.starter)}`));
+      } else {
+        item.appendChild(element("span", "", `solution：${window.OsStateModel.formatField(row.solution)}`));
+      }
+    });
+  }
+
+  function renderStateComparison(comparison) {
+    if (!comparison) {
+      dom.state_comparison_status.textContent = "请选择同一 Lab 的 starter 与 solution 运行。";
+      renderStateFieldList(dom.starter_state_list, null, "尚未选择 starter 运行。");
+      renderStateFieldList(dom.solution_state_list, null, "尚未选择 solution 运行。");
+      renderStateDiffList(dom.same_state_list, [], "same", "比较后显示相同状态。");
+      renderStateDiffList(dom.changed_state_list, [], "changed", "比较后显示发生变化的状态。");
+      renderStateDiffList(dom.starter_only_state_list, [], "starter-only", "比较后显示仅 starter 有证据的状态。");
+      renderStateDiffList(dom.solution_only_state_list, [], "solution-only", "比较后显示仅 solution 有证据的状态。");
+      return;
+    }
+
+    const oneSided = comparison.starterOnly.length + comparison.solutionOnly.length;
+    dom.state_comparison_status.textContent = `${comparison.lab.toUpperCase()}：相同 ${comparison.same.length} 项，变化 ${comparison.changed.length} 项，单侧有证据 ${oneSided} 项。`;
+    renderStateFieldList(dom.starter_state_list, comparison.starterState);
+    renderStateFieldList(dom.solution_state_list, comparison.solutionState);
+    renderStateDiffList(dom.same_state_list, comparison.same, "same", "没有可确认的相同状态。");
+    renderStateDiffList(dom.changed_state_list, comparison.changed, "changed", "没有发生变化的状态。");
+    renderStateDiffList(dom.starter_only_state_list, comparison.starterOnly, "starter-only", "没有仅 starter 有证据的状态。");
+    renderStateDiffList(dom.solution_only_state_list, comparison.solutionOnly, "solution-only", "没有仅 solution 有证据的状态。");
   }
 
   function renderComparison() {
@@ -1091,9 +1521,14 @@
     const comparison = window.OsRunHistory?.compareRuns(starter, solution);
     if (!comparison) {
       dom.comparison_summary.textContent = "请选择同一 Lab 的 starter 与 solution 运行。";
+      renderStateComparison(null);
       return;
     }
-    dom.comparison_summary.textContent = `${comparison.lab.toUpperCase()}：共同 ${comparison.shared}，仅 starter ${comparison.starterOnly}，仅 solution ${comparison.solutionOnly}。`;
+    const stateComparison = window.OsStateDiff?.compareRuns(starter, solution) || null;
+    dom.comparison_summary.textContent = stateComparison
+      ? `${comparison.lab.toUpperCase()}：事件共同 ${comparison.shared}、仅 starter ${comparison.starterOnly}、仅 solution ${comparison.solutionOnly}；状态相同 ${stateComparison.same.length}、变化 ${stateComparison.changed.length}、单侧 ${stateComparison.starterOnly.length + stateComparison.solutionOnly.length}。`
+      : `${comparison.lab.toUpperCase()}：共同 ${comparison.shared}，仅 starter ${comparison.starterOnly}，仅 solution ${comparison.solutionOnly}；状态模型暂不可用。`;
+    renderStateComparison(stateComparison);
     comparison.rows.forEach((row) => {
       const event = row.starter || row.solution;
       const item = element("li", "comparison-event");
@@ -1139,8 +1574,11 @@
     state.progress = {};
     state.recentEvents = [];
     state.consoleLines = [];
+    state.selectedEvent = null;
+    state.selectedKnowledgeNode = null;
     renderEventFeed();
     renderConsole();
+    renderEventDetails();
   }
 
   function handleSocketMessage(message) {
@@ -1155,8 +1593,10 @@
           context: message.activeRun.context || message.context,
           prediction: predictionMatchesContext() ? state.prediction : null,
           events: [...(message.events || [])],
+          lifecycle: { buildResult: null, runResult: null, completed: false },
           startedAt: message.activeRun.startedAt || Date.now()
         };
+        updateActiveRunLifecycle(message.runState || {});
       }
       (message.events || []).forEach((event) => applyRuntimeEvent(event, false));
       renderEventFeed();
@@ -1170,6 +1610,7 @@
       applyContext(message.context, true);
       dom.last_event.textContent = `已检测到分支切换：${message.previous.branch} → ${message.context.branch}`;
       renderReplayTimeline();
+      renderPredictionComparison(null);
       renderRunState();
     }
     if (message.type === "run-start") {
@@ -1180,6 +1621,7 @@
     }
     if (message.type === "run-state") {
       state.runState = message.state;
+      updateActiveRunLifecycle(message.state);
       renderRunState();
     }
     if (message.type === "console") appendConsole(message);
@@ -1189,12 +1631,14 @@
     }
     if (message.type === "run-error") {
       dom.last_event.textContent = `运行失败：${message.message}`;
+      updateActiveRunLifecycle({ ...message, phase: "error" });
       finishActiveRun(message);
     }
     if (message.type === "run-end") {
       dom.last_event.textContent = message.stopped
         ? `已停止 ${message.context.branch}，可以切换或重新运行分支`
         : `QEMU 运行结束：exit code ${message.exitCode}`;
+      updateActiveRunLifecycle({ ...message, phase: message.stopped ? "stopped" : "finished" });
       finishActiveRun(message);
     }
   }
@@ -1300,25 +1744,42 @@
 
   function savePrediction(event) {
     event.preventDefault();
-    const expectedResult = dom.prediction_result.value;
+    const expectedBuild = dom.prediction_build.value;
+    const expectedRun = dom.prediction_run.value;
+    const expectedPass = dom.prediction_pass.value;
+    const expectedEvents = selectedPredictionEvents();
     const reasoning = dom.prediction_reasoning.value.trim();
     if (!state.context) {
       dom.prediction_status.textContent = "尚未识别当前 Git 分支，请先连接本地桥接器。";
       return;
     }
-    if (!expectedResult || !reasoning) {
-      dom.prediction_status.textContent = "请选择预期结果，并写下关键事件或原因。";
+    if (!expectedBuild || !expectedRun || !expectedPass || !reasoning) {
+      dom.prediction_status.textContent = "请完整填写构建、运行、PASS 预测和预测依据。";
       return;
     }
-    state.prediction = {
-      expectedResult,
+    const eventOptionCount = dom.prediction_event_options.querySelectorAll('input[name="prediction-events"]').length;
+    if (eventOptionCount > 0 && expectedEvents.length === 0) {
+      dom.prediction_status.textContent = "请至少选择一个预计出现的关键事件。";
+      return;
+    }
+    state.prediction = window.OsPredictionModel?.createPrediction({
+      expectedBuild,
+      expectedRun,
+      expectedEvents,
+      expectedPass: expectedPass === "true",
       reasoning,
       branch: state.context.branch,
       commit: state.context.commit,
+      lab: state.context.lab,
       savedAt: Date.now()
-    };
+    }, state.context) || null;
+    if (!state.prediction) {
+      dom.prediction_status.textContent = "预测内容格式无效，请检查后重试。";
+      return;
+    }
     storePrediction(state.prediction);
     state.lastPredictionAssessment = "";
+    renderPredictionComparison(null);
     renderPredictionGate();
     renderRunState();
   }
@@ -1330,7 +1791,11 @@
   dom.stop_current.addEventListener("click", stopCurrentRun);
   dom.clear_events.addEventListener("click", () => {
     state.recentEvents = [];
+    state.selectedEvent = null;
+    state.selectedKnowledgeNode = null;
     renderEventFeed();
+    renderEventDetails();
+    renderFramework();
   });
   dom.prediction_form.addEventListener("submit", savePrediction);
   dom.save_run.addEventListener("click", saveCompletedRun);
@@ -1342,10 +1807,12 @@
   window.OsFeedback?.initFeedbackCenter();
   renderDimensionTabs();
   renderEventFeed();
+  renderEventDetails();
   renderConsole();
   renderSavedRuns();
   renderReplayTimeline();
   renderPredictionGate();
+  renderPredictionComparison(null);
   renderRunState();
   setStage(0);
   connectTelemetry();

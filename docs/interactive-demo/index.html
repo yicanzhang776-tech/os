@@ -41,16 +41,44 @@
         </dl>
         <form class="prediction-gate" id="prediction-form">
           <p><strong>先预测，再运行</strong><span>预测只保存在当前浏览器。</span></p>
-          <label for="prediction-result">你预计本次运行最终会</label>
-          <select id="prediction-result" required>
-            <option value="">请选择</option>
-            <option value="pass">出现当前 Lab 的 PASS</option>
-            <option value="todo">停在 starter 的 TODO</option>
-            <option value="fail">构建或运行失败</option>
-          </select>
-          <label for="prediction-reasoning">写下你判断的关键事件或原因</label>
-          <textarea id="prediction-reasoning" rows="2" maxlength="1000" placeholder="例如：预计安装 stvec 后会触发 breakpoint，并在 sepc 前进后返回。" required></textarea>
-          <button class="button" id="save-prediction" type="submit">保存预测并解锁运行</button>
+          <div class="prediction-structure-grid">
+            <div>
+              <label for="prediction-build">预计构建结果</label>
+              <select id="prediction-build" required>
+                <option value="">请选择</option>
+                <option value="success">构建成功</option>
+                <option value="failure">构建失败</option>
+              </select>
+            </div>
+            <div>
+              <label for="prediction-run">预计运行结果</label>
+              <select id="prediction-run" required>
+                <option value="">请选择</option>
+                <option value="todo">停在 TODO</option>
+                <option value="complete">完成实验</option>
+                <option value="failure">运行失败</option>
+                <option value="timeout">QEMU 超时</option>
+              </select>
+            </div>
+            <div>
+              <label for="prediction-pass">预计最终 PASS 标志</label>
+              <select id="prediction-pass" required>
+                <option value="">请选择</option>
+                <option value="true">会出现</option>
+                <option value="false">不会出现</option>
+              </select>
+            </div>
+          </div>
+          <fieldset class="prediction-event-fieldset">
+            <legend>预计出现的关键事件</legend>
+            <p>选项来自当前 Lab 的事件知识目录。</p>
+            <div class="prediction-event-options" id="prediction-event-options">
+              <span>连接并识别实验分支后显示。</span>
+            </div>
+          </fieldset>
+          <label for="prediction-reasoning">预测依据文字</label>
+          <textarea id="prediction-reasoning" rows="3" maxlength="1000" placeholder="例如：预计安装 stvec 后会触发 breakpoint，并在 sepc 前进后返回。" required></textarea>
+          <button class="button" id="save-prediction" type="submit">保存结构化预测并解锁运行</button>
           <output class="prediction-status" id="prediction-status" aria-live="polite">尚未保存当前分支的预测。</output>
         </form>
         <div class="runtime-run-controls">
@@ -182,6 +210,71 @@
         </div>
         <pre class="console-output" id="console-output" tabindex="0"><code>等待本地桥接器输出…</code></pre>
       </article>
+      <article class="event-detail-panel card" id="event-detail-panel" aria-labelledby="event-detail-title">
+        <div class="subpanel-heading">
+          <div>
+            <p class="eyebrow">事件—代码—知识联动</p>
+            <h3 id="event-detail-title">选择一条事件查看完整解释</h3>
+          </div>
+          <span class="event-detail-status" id="event-detail-status">等待时间线选择</span>
+        </div>
+        <p class="event-detail-explanation" id="event-detail-explanation">实时运行或回放时，点击任一事件即可查看代码位置、知识点、前因、状态变化和可能的后续事件。</p>
+        <div class="event-detail-grid">
+          <dl class="event-detail-list">
+            <div>
+              <dt>对应代码</dt>
+              <dd><a id="event-detail-code">尚未选择</a><code id="event-detail-symbol">—</code></dd>
+            </div>
+            <div>
+              <dt>所属知识节点</dt>
+              <dd id="event-detail-knowledge">—</dd>
+            </div>
+            <div>
+              <dt>事件前因</dt>
+              <dd id="event-detail-cause">—</dd>
+            </div>
+            <div>
+              <dt>状态变化</dt>
+              <dd id="event-detail-effect">—</dd>
+            </div>
+            <div>
+              <dt>可能的后续事件</dt>
+              <dd id="event-detail-next">—</dd>
+            </div>
+          </dl>
+          <div class="event-raw-block">
+            <span>协议原始信息</span>
+            <pre id="event-detail-raw" tabindex="0">{}</pre>
+          </div>
+        </div>
+        <section class="event-state-snapshot" aria-labelledby="event-state-heading">
+          <div class="state-heading-row">
+            <h4 id="event-state-heading">该时刻的系统状态</h4>
+            <output id="event-state-status" aria-live="polite">选择事件后由事件序列重建。</output>
+          </div>
+          <ul class="state-field-list" id="event-state-list">
+            <li class="empty-state">尚未选择运行事件。</li>
+          </ul>
+        </section>
+      </article>
+      <article class="prediction-comparison-panel card" aria-labelledby="prediction-comparison-heading">
+        <div class="subpanel-heading">
+          <div>
+            <p class="eyebrow">预测—实际联动</p>
+            <h3 id="prediction-comparison-heading">预测与实际对照</h3>
+          </div>
+          <output class="prediction-comparison-summary" id="prediction-comparison-summary" aria-live="polite">运行结束后根据真实构建和 QEMU 证据自动核对。</output>
+        </div>
+        <p class="prediction-comparison-note">这里用于帮助理解实验过程，不计算成绩，也不进行排名。</p>
+        <div class="prediction-comparison-grid">
+          <section><h4>预测正确</h4><ul id="prediction-correct-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+          <section><h4>预测遗漏</h4><ul id="prediction-omission-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+          <section><h4>实际未出现</h4><ul id="prediction-missing-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+          <section><h4>结果相反</h4><ul id="prediction-opposite-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+          <section><h4>额外关键事件</h4><ul id="prediction-extra-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+          <section><h4>无法判断</h4><ul id="prediction-unknown-list"><li class="empty-state">尚未完成运行。</li></ul></section>
+        </div>
+      </article>
       <article class="run-lab-panel card" aria-labelledby="run-lab-heading">
         <div class="subpanel-heading">
           <div>
@@ -211,8 +304,40 @@
             <select id="starter-run-select"></select>
             <label for="solution-run-select">Solution 运行</label>
             <select id="solution-run-select"></select>
-            <button class="button" id="compare-runs" type="button">比较事件差异</button>
+            <button class="button" id="compare-runs" type="button">比较事件与系统状态</button>
             <output id="comparison-summary" class="run-lab-status" aria-live="polite">需要同一 Lab 的两次已保存运行。</output>
+            <div class="state-comparison" id="state-comparison">
+              <output id="state-comparison-status" class="state-comparison-status" aria-live="polite">比较后显示由结构化事件计算的最终状态。</output>
+              <div class="state-final-grid">
+                <section aria-labelledby="starter-state-heading">
+                  <h5 id="starter-state-heading">starter 最终状态</h5>
+                  <ul class="state-field-list state-field-list-compact" id="starter-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+                <section aria-labelledby="solution-state-heading">
+                  <h5 id="solution-state-heading">solution 最终状态</h5>
+                  <ul class="state-field-list state-field-list-compact" id="solution-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+              </div>
+              <div class="state-diff-grid">
+                <section aria-labelledby="same-state-heading">
+                  <h5 id="same-state-heading">相同状态</h5>
+                  <ul class="state-diff-list" id="same-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+                <section aria-labelledby="changed-state-heading">
+                  <h5 id="changed-state-heading">发生变化的状态</h5>
+                  <ul class="state-diff-list" id="changed-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+                <section aria-labelledby="starter-only-state-heading">
+                  <h5 id="starter-only-state-heading">只在 starter 出现</h5>
+                  <ul class="state-diff-list" id="starter-only-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+                <section aria-labelledby="solution-only-state-heading">
+                  <h5 id="solution-only-state-heading">只在 solution 出现</h5>
+                  <ul class="state-diff-list" id="solution-only-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+              </div>
+            </div>
+            <h5 class="event-comparison-heading">事件序列差异（保留原有比较）</h5>
             <ol class="comparison-list" id="comparison-list"></ol>
           </section>
         </div>
@@ -382,6 +507,10 @@
 
   <script src="feedback-questions.js"></script>
   <script src="feedback.js"></script>
+  <script src="event-catalog.js"></script>
+  <script src="prediction-model.js"></script>
+  <script src="state-model.js"></script>
+  <script src="state-diff.js"></script>
   <script src="run-history.js"></script>
   <script src="app.js"></script>
 </body>
