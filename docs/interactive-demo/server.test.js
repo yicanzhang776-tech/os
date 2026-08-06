@@ -86,14 +86,47 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /OS实验可视化展示/);
   assert.match(html, /停止当前运行/);
   assert.match(html, /先预测，再运行/);
+  assert.match(html, /预计构建结果/);
+  assert.match(html, /预计运行结果/);
+  assert.match(html, /预计出现的关键事件/);
+  assert.match(html, /预计最终 PASS 标志/);
+  assert.match(html, /预测与实际对照/);
+  assert.match(html, /预测正确/);
+  assert.match(html, /预测遗漏/);
+  assert.match(html, /实际未出现/);
+  assert.match(html, /结果相反/);
+  assert.match(html, /额外关键事件/);
+  assert.match(html, /无法判断/);
+  assert.match(html, /不计算成绩，也不进行排名/);
+  assert.match(html, /确定性规则检查/);
+  assert.match(html, /运行错误诊断/);
+  assert.match(html, /诊断只使用本地构建结果、结构化事件和稳定输出/);
+  assert.match(html, /id="diagnostics-summary"/);
+  assert.match(html, /id="diagnostics-list"/);
   assert.match(html, /完整时间线与分支差异/);
+  assert.match(html, /事件状态/);
+  assert.match(html, /事件来源/);
+  assert.match(html, /关键词搜索/);
+  assert.match(html, /0\.5×/);
+  assert.match(html, /4×/);
+  assert.match(html, /第一个失败事件/);
+  assert.match(html, /第一个分支差异/);
+  assert.match(html, /键盘：空格播放\/暂停/);
+  assert.match(html, /导出 JSON/);
+  assert.match(html, /导出 Markdown/);
+  assert.match(html, /导入 JSON/);
+  assert.match(html, /只在当前浏览器处理，不上传文件，也不会切换 Git 分支/);
   assert.match(html, /starter \/ solution 对比/);
   assert.match(html, /教学评价与反馈/);
   assert.match(html, /前往 GitLab 确认提交/);
   assert.doesNotMatch(html, /这套实验是否真的帮助了你/);
   assert.match(html, /当前实验教学评价五题/);
   assert.match(html, /补充反馈/);
-  assert.match(html, /<script src="feedback-questions\.js"><\/script>[\s\S]*<script src="feedback\.js"><\/script>[\s\S]*<script src="run-history\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
+  assert.match(html, /事件—代码—知识联动/);
+  assert.match(html, /starter 最终状态/);
+  assert.match(html, /发生变化的状态/);
+  assert.match(html, /事件序列差异（保留原有比较）/);
+  assert.match(html, /<script src="feedback-questions\.js"><\/script>[\s\S]*<script src="feedback\.js"><\/script>[\s\S]*<script src="event-catalog\.js"><\/script>[\s\S]*<script src="prediction-model\.js"><\/script>[\s\S]*<script src="state-model\.js"><\/script>[\s\S]*<script src="state-diff\.js"><\/script>[\s\S]*<script src="run-history\.js"><\/script>[\s\S]*<script src="run-transfer\.js"><\/script>[\s\S]*<script src="timeline-controller\.js"><\/script>[\s\S]*<script src="diagnostics\.js"><\/script>[\s\S]*<script src="app\.js"><\/script>/);
 
   const feedbackQuestions = await fetch(`${url}/feedback-questions.js`);
   assert.equal(feedbackQuestions.status, 200);
@@ -103,9 +136,66 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(feedbackModule.status, 200);
   assert.match(await feedbackModule.text(), /buildFeedbackMarkdown/);
 
+  const eventCatalogModule = await fetch(`${url}/event-catalog.js`);
+  assert.equal(eventCatalogModule.status, 200);
+  assert.match(await eventCatalogModule.text(), /resolveEventKnowledge/);
+
+  const predictionModelModule = await fetch(`${url}/prediction-model.js`);
+  assert.equal(predictionModelModule.status, 200);
+  assert.match(await predictionModelModule.text(), /comparePrediction/);
+
+  const stateModelModule = await fetch(`${url}/state-model.js`);
+  assert.equal(stateModelModule.status, 200);
+  assert.match(await stateModelModule.text(), /computeState/);
+
+  const stateDiffModule = await fetch(`${url}/state-diff.js`);
+  assert.equal(stateDiffModule.status, 200);
+  assert.match(await stateDiffModule.text(), /diffStates/);
+
   const runHistoryModule = await fetch(`${url}/run-history.js`);
   assert.equal(runHistoryModule.status, 200);
   assert.match(await runHistoryModule.text(), /compareRuns/);
+
+  const runTransferModule = await fetch(`${url}/run-transfer.js`);
+  assert.equal(runTransferModule.status, 200);
+  assert.match(await runTransferModule.text(), /os-demo\.run\/v1/);
+
+  const timelineControllerModule = await fetch(`${url}/timeline-controller.js`);
+  assert.equal(timelineControllerModule.status, 200);
+  const timelineControllerSource = await timelineControllerModule.text();
+  assert.match(timelineControllerSource, /createTimelineController/);
+  assert.match(timelineControllerSource, /visibleEventIndexes/);
+
+  const diagnosticsModule = await fetch(`${url}/diagnostics.js`);
+  assert.equal(diagnosticsModule.status, 200);
+  const diagnosticsSource = await diagnosticsModule.text();
+  assert.match(diagnosticsSource, /function diagnose\(value = \{\}\)/);
+  assert.match(diagnosticsSource, /window\.OsDiagnostics = api/);
+
+  const presentationModule = await fetch(`${url}/presentation-mode.js`);
+  assert.equal(presentationModule.status, 200);
+  const presentationSource = await presentationModule.text();
+  assert.match(presentationSource, /function loadPresentationState\(storage, search/);
+  assert.match(presentationSource, /window\.OsPresentationMode = api/);
+
+  const appModule = await fetch(`${url}/app.js`);
+  assert.equal(appModule.status, 200);
+  const appSource = await appModule.text();
+  assert.match(appSource, /function handleTimelineShortcut\(event\)/);
+  assert.match(appSource, /event\.key === "ArrowLeft"/);
+  assert.match(appSource, /event\.key === "ArrowRight"/);
+  assert.match(appSource, /for \(let eventIndex = 0; eventIndex <= nextIndex; eventIndex \+= 1\)/);
+  assert.match(appSource, /target\.closest\("input, textarea, select, button, a, \[tabindex\], \[contenteditable\]"\)/);
+  assert.match(appSource, /const replaying = Boolean\(state\.replay\.run\)/);
+  assert.match(appSource, /if \(message\.type === "console"\)/);
+  assert.match(appSource, /captureRunOutput\(message\)/);
+  assert.match(appSource, /if \(!state\.replay\.run\) appendConsole\(message\)/);
+  assert.match(appSource, /if \(!state\.replay\.run\) applyRuntimeEvent\(message\)/);
+  assert.match(appSource, /window\.OsDiagnostics\.diagnose\(input\)/);
+  assert.match(appSource, /function renderPreflightDiagnostics\(result\)/);
+  assert.match(appSource, /function setPresentationMode\(enabled, options = \{\}\)/);
+  assert.match(appSource, /function restorePresentationView\(\)/);
+  assert.match(appSource, /if \(presentationEnabled\(\)\) \{/);
 
   const preflight = await fetch(`${url}/api/preflight`).then((response) => response.json());
   assert.equal(preflight.target, "riscv64gc-unknown-none-elf");
