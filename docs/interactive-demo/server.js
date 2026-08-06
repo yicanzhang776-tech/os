@@ -30,13 +30,30 @@ const clients = new Set();
 const eventHistory = [];
 const consoleHistory = [];
 const staticAssets = new Map();
-const staticAssetNames = ["index.html", "styles.css", "feedback-questions.js", "feedback.js", "run-history.js", "app.js"];
+const staticAssetNames = [
+  "index.html",
+  "styles.css",
+  "feedback-questions.js",
+  "feedback.js",
+  "event-catalog.js",
+  "prediction-model.js",
+  "state-model.js",
+  "state-diff.js",
+  "run-history.js",
+  "run-transfer.js",
+  "timeline-controller.js",
+  "diagnostics.js",
+  "presentation-mode.js",
+  "app.js"
+];
 let sequence = 0;
 let currentChild = null;
 let runPromise = null;
 let activeRunContext = null;
 let activeRunId = null;
 let activeRunStartedAt = null;
+let activeBuildResult = null;
+let activeQemuResult = null;
 let stopRequested = false;
 let currentContext = readWorkspaceContext();
 let runState = {
@@ -251,6 +268,8 @@ async function runQemuAndBridge() {
   activeRunContext = currentContext;
   activeRunId = createRunId();
   activeRunStartedAt = Date.now();
+  activeBuildResult = null;
+  activeQemuResult = null;
   sequence = 0;
   eventHistory.length = 0;
   consoleHistory.length = 0;
@@ -280,8 +299,10 @@ async function runQemuAndBridge() {
     return;
   }
   if (buildCode !== 0) {
+    activeBuildResult = "failure";
     throw new Error(`cargo build failed with exit code ${buildCode}.`);
   }
+  activeBuildResult = "success";
 
   const kernel = path.join(
     repoDir,
@@ -293,7 +314,9 @@ async function runQemuAndBridge() {
   setRunState("running", `QEMU 正在运行 ${activeRunContext.branch}`, {
     branch: activeRunContext.branch,
     runId: activeRunId,
-    target: rustTarget
+    target: rustTarget,
+    buildResult: activeBuildResult,
+    runResult: "running"
   });
   console.log("[demo] Starting QEMU; serial output is now forwarded to the browser.");
   const qemuCode = await streamProcess(
@@ -307,10 +330,14 @@ async function runQemuAndBridge() {
     return;
   }
 
+  activeQemuResult = qemuCode === 0 ? "finished" : "failure";
+
   setRunState("finished", `QEMU 已退出（code ${qemuCode}）`, {
     branch: activeRunContext.branch,
     exitCode: qemuCode,
-    runId: activeRunId
+    runId: activeRunId,
+    buildResult: activeBuildResult,
+    runResult: activeQemuResult
   });
   broadcast({
     type: "run-end",
@@ -318,6 +345,8 @@ async function runQemuAndBridge() {
     runId: activeRunId,
     context: activeRunContext,
     exitCode: qemuCode,
+    buildResult: activeBuildResult,
+    runResult: activeQemuResult,
     startedAt: activeRunStartedAt,
     timestamp: Date.now()
   });
@@ -325,13 +354,18 @@ async function runQemuAndBridge() {
   activeRunContext = null;
   activeRunId = null;
   activeRunStartedAt = null;
+  activeBuildResult = null;
+  activeQemuResult = null;
 }
 
 function finishStoppedRun() {
   const context = activeRunContext || currentContext;
   const runId = activeRunId;
+  const stoppedRunResult = activeBuildResult === "success" ? "stopped" : null;
   setRunState("stopped", `已停止 ${context.branch}`, {
-    branch: context.branch
+    branch: context.branch,
+    buildResult: activeBuildResult,
+    runResult: stoppedRunResult
   });
   broadcast({
     type: "run-end",
@@ -340,6 +374,8 @@ function finishStoppedRun() {
     context,
     stopped: true,
     exitCode: null,
+    buildResult: activeBuildResult,
+    runResult: stoppedRunResult,
     startedAt: activeRunStartedAt,
     timestamp: Date.now()
   });
@@ -347,6 +383,8 @@ function finishStoppedRun() {
   activeRunContext = null;
   activeRunId = null;
   activeRunStartedAt = null;
+  activeBuildResult = null;
+  activeQemuResult = null;
 }
 
 function startRun() {
@@ -359,14 +397,22 @@ function startRun() {
         return;
       }
       const branch = activeRunContext?.branch || currentContext.branch;
+      if (activeBuildResult !== "success") activeBuildResult = "failure";
+      else activeQemuResult = "failure";
       console.error(`[demo] ${error.message}`);
-      setRunState("error", error.message, { branch });
+      setRunState("error", error.message, {
+        branch,
+        buildResult: activeBuildResult,
+        runResult: activeQemuResult
+      });
       broadcast({
         type: "run-error",
         protocol: EVENT_PROTOCOL,
         runId: activeRunId,
         context: activeRunContext || currentContext,
         message: error.message,
+        buildResult: activeBuildResult,
+        runResult: activeQemuResult,
         branch,
         startedAt: activeRunStartedAt,
         timestamp: Date.now()
@@ -374,6 +420,8 @@ function startRun() {
       activeRunContext = null;
       activeRunId = null;
       activeRunStartedAt = null;
+      activeBuildResult = null;
+      activeQemuResult = null;
     })
     .finally(() => {
       runPromise = null;
