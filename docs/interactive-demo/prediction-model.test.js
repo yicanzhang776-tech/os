@@ -114,6 +114,15 @@ test("starter TODO is a correct structured prediction when real events support i
   assert.ok(assessment.correct.some((item) => item.dimension === "最终 PASS 标志"));
 });
 
+test("conflicting PASS evidence cannot override a starter TODO", () => {
+  const assessment = comparePrediction(prediction(), run([
+    event("task-2-todo", "todo", 1),
+    event("pass", "pass", 2)
+  ]));
+  assert.equal(assessment.actual.runResult, "todo");
+  assert.equal(assessment.actual.pass, false);
+});
+
 test("comparison separates missing, opposite, omitted and extra event evidence", () => {
   const assessment = comparePrediction(prediction({
     expectedRun: "complete",

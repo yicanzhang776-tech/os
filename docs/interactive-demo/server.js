@@ -40,6 +40,10 @@ const staticAssetNames = [
   "state-model.js",
   "state-diff.js",
   "run-history.js",
+  "run-transfer.js",
+  "timeline-controller.js",
+  "diagnostics.js",
+  "presentation-mode.js",
   "app.js"
 ];
 let sequence = 0;

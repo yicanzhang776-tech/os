@@ -186,8 +186,8 @@
 
     let runResult = null;
     if (targetFail) runResult = "failure";
-    else if (targetPass) runResult = "complete";
     else if (targetTodo) runResult = "todo";
+    else if (targetPass) runResult = "complete";
     else if (["failure", "timeout"].includes(lifecycle.runResult)) runResult = lifecycle.runResult;
 
     const ended = Boolean(
@@ -196,7 +196,7 @@
       || ["finished", "failure", "timeout", "stopped"].includes(lifecycle.runResult)
       || build === "failure"
     );
-    const pass = targetPass ? true : ended ? false : null;
+    const pass = targetFail || targetTodo ? false : targetPass ? true : ended ? false : null;
     return { build, runResult, pass, events, ended };
   }
 

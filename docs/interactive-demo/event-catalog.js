@@ -2,6 +2,7 @@
   "use strict";
 
   const CATALOG_VERSION = 1;
+  const EVENT_PROTOCOL = "os-demo.event/v1";
   const VALID_LABS = new Set(["p0", "lab1", "lab2", "lab3", "lab4", "lab5", "lab6", "lab7"]);
   const catalog = Object.create(null);
 
@@ -668,9 +669,10 @@
 
   function resolveEventKnowledge(candidate) {
     const event = candidate && typeof candidate === "object" ? candidate : { raw: candidate };
+    const protocol = text(event.protocol, 40);
     const lab = text(event.lab, 20).toLowerCase();
     const step = text(event.step, 80).toLowerCase();
-    const entry = lookupCatalogEntry(lab, step);
+    const entry = protocol === EVENT_PROTOCOL ? lookupCatalogEntry(lab, step) : null;
     const original = text(event.detail || event.raw || step || "未提供事件内容", 500);
 
     if (!entry) {
@@ -726,6 +728,7 @@
   const EVENT_CATALOG = Object.freeze({ ...catalog });
   const api = {
     CATALOG_VERSION,
+    EVENT_PROTOCOL,
     EVENT_CATALOG,
     eventKey,
     isRepositoryPath,

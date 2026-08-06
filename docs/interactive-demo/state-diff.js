@@ -28,7 +28,8 @@
       const starter = starterState.fields?.[key] || null;
       const solution = solutionState.fields?.[key] || null;
       let scope = "changed";
-      if (fieldIdentity(starter) === fieldIdentity(solution)) scope = "same";
+      if (!usable(starter) && !usable(solution)) scope = "insufficient";
+      else if (fieldIdentity(starter) === fieldIdentity(solution)) scope = "same";
       else if (usable(starter) && !usable(solution)) scope = "starter-only";
       else if (!usable(starter) && usable(solution)) scope = "solution-only";
       return {
@@ -48,7 +49,8 @@
       same: rows.filter((row) => row.scope === "same"),
       changed: rows.filter((row) => row.scope === "changed"),
       starterOnly: rows.filter((row) => row.scope === "starter-only"),
-      solutionOnly: rows.filter((row) => row.scope === "solution-only")
+      solutionOnly: rows.filter((row) => row.scope === "solution-only"),
+      insufficient: rows.filter((row) => row.scope === "insufficient")
     };
   }
 
