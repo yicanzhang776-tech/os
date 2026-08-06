@@ -9,6 +9,7 @@ const {
 } = require("./event-catalog");
 const { EXPECTED_BRANCHES, parseBranchContext } = require("./protocol");
 const { createRunRecord } = require("./run-history");
+const protocol = "os-demo.event/v1";
 
 test("required Lab1-Lab7 events map to code, knowledge and causal state", () => {
   const required = {
@@ -23,7 +24,7 @@ test("required Lab1-Lab7 events map to code, knowledge and causal state", () => 
 
   for (const [lab, steps] of Object.entries(required)) {
     for (const step of steps) {
-      const result = resolveEventKnowledge({ lab, step, status: "running", detail: "runtime evidence" });
+      const result = resolveEventKnowledge({ protocol, lab, step, status: "running", detail: "runtime evidence" });
       assert.equal(result.known, true, `${lab}:${step}`);
       assert.ok(result.eventName, `${lab}:${step} name`);
       assert.ok(result.knowledge, `${lab}:${step} knowledge`);
@@ -58,7 +59,7 @@ test("events already emitted by the integrated main branch are all registered", 
 
   for (const [lab, steps] of Object.entries(emitted)) {
     for (const step of steps) {
-      assert.equal(resolveEventKnowledge({ lab, step, status: "running" }).known, true, `${lab}:${step}`);
+      assert.equal(resolveEventKnowledge({ protocol, lab, step, status: "running" }).known, true, `${lab}:${step}`);
     }
   }
 });
@@ -76,6 +77,19 @@ test("unknown and old-format events safely fall back to raw evidence", () => {
   assert.match(unknown.explanation, /old serial marker/);
   assert.match(unknown.raw, /legacy-page-event/);
   assert.match(unknown.raw, /old serial marker/);
+  const oldKnownStep = resolveEventKnowledge({
+    protocol: "os-demo.event/v0",
+    lab: "lab1",
+    step: "print-line",
+    status: "running",
+    detail: "legacy print marker"
+  });
+  assert.equal(oldKnownStep.known, false);
+  assert.equal(oldKnownStep.file, null);
+  assert.match(oldKnownStep.raw, /os-demo\.event\/v0/);
+  const missingProtocol = resolveEventKnowledge({ lab: "lab1", step: "print-line", status: "running" });
+  assert.equal(missingProtocol.known, false);
+  assert.equal(missingProtocol.file, null);
   assert.doesNotThrow(() => resolveEventKnowledge(null));
   assert.doesNotThrow(() => resolveEventKnowledge({ raw: { nested: true } }));
 });
@@ -103,7 +117,7 @@ test("event knowledge lookup does not alter any of the 17 branch contexts", () =
     const before = parseBranchContext(branch);
     const snapshot = structuredClone(before);
     const lab = before.lab || "p0";
-    resolveEventKnowledge({ lab, step: "pass", status: "pass", detail: branch });
+    resolveEventKnowledge({ protocol, lab, step: "pass", status: "pass", detail: branch });
     assert.deepEqual(before, snapshot, branch);
     assert.deepEqual(parseBranchContext(branch), snapshot, branch);
   }

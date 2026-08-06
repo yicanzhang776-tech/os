@@ -22,6 +22,7 @@
           <button class="button button-primary" id="auto-play" type="button" aria-pressed="false">自动讲解</button>
           <button class="button" id="previous-stage" type="button">← 上一实验</button>
           <button class="button" id="next-stage" type="button">下一实验 →</button>
+          <button class="button" id="presentation-mode-toggle" type="button" aria-pressed="false">进入演示模式</button>
         </div>
       </div>
 
@@ -94,7 +95,34 @@
       <span id="last-event">等待运行时证据</span>
     </div>
 
-    <section class="timeline-section" aria-labelledby="timeline-heading">
+    <nav class="presentation-toolbar" id="presentation-toolbar" aria-label="演示模式控制" hidden>
+      <div class="presentation-toolbar-heading">
+        <strong>课堂演示模式</strong>
+        <output id="presentation-status" aria-live="polite">选择推荐实验或导入本地运行记录开始讲解。</output>
+      </div>
+      <div class="presentation-toolbar-group" aria-label="推荐演示入口">
+        <span>推荐：</span>
+        <button class="button" type="button" data-presentation-lab="lab1">Lab1 输出链路</button>
+        <button class="button" type="button" data-presentation-lab="lab2">Lab2 Trap</button>
+        <button class="button" type="button" data-presentation-lab="lab4">Lab4 页表</button>
+        <button class="button" type="button" data-presentation-lab="lab5">Lab5 调度</button>
+      </div>
+      <div class="presentation-toolbar-group presentation-focus-links" aria-label="演示重点跳转">
+        <span>重点：</span>
+        <button class="button" type="button" data-presentation-target="#knowledge-section">知识地图</button>
+        <button class="button" type="button" data-presentation-target="#run-lab-panel">运行时间线</button>
+        <button class="button" type="button" data-presentation-target="#event-detail-panel">事件解释</button>
+        <button class="button" type="button" data-presentation-target="#state-comparison">状态与差异</button>
+      </div>
+      <div class="presentation-toolbar-group presentation-toolbar-actions" aria-label="演示操作">
+        <button class="button" id="presentation-import" type="button">导入本地记录</button>
+        <button class="button" id="presentation-reset" type="button">重置演示状态</button>
+        <button class="button" id="presentation-fullscreen" type="button" aria-pressed="false">进入全屏</button>
+        <button class="button" id="presentation-exit" type="button">退出演示模式</button>
+      </div>
+    </nav>
+
+    <section class="timeline-section" id="lab-timeline-section" aria-labelledby="timeline-heading">
       <div class="section-heading heading-with-note">
         <div>
           <p class="eyebrow">01 · 实验纵向递进</p>
@@ -135,7 +163,7 @@
         <div class="source-links" id="source-links" aria-label="对应源代码"></div>
       </article>
 
-      <section class="execution-panel card" aria-labelledby="execution-heading">
+      <section class="execution-panel card" id="execution-panel" aria-labelledby="execution-heading">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">02 · 动态执行与状态变化</p>
@@ -157,7 +185,7 @@
       </section>
     </section>
 
-    <section class="knowledge-section card" aria-labelledby="knowledge-heading">
+    <section class="knowledge-section card" id="knowledge-section" aria-labelledby="knowledge-heading">
       <div class="section-heading heading-with-note">
         <div>
           <p class="eyebrow">03 · 横向知识框架</p>
@@ -275,26 +303,84 @@
           <section><h4>无法判断</h4><ul id="prediction-unknown-list"><li class="empty-state">尚未完成运行。</li></ul></section>
         </div>
       </article>
-      <article class="run-lab-panel card" aria-labelledby="run-lab-heading">
+      <article class="diagnostics-panel card" id="diagnostics-panel" aria-labelledby="diagnostics-heading">
+        <div class="subpanel-heading">
+          <div>
+            <p class="eyebrow">确定性规则检查</p>
+            <h3 id="diagnostics-heading">运行错误诊断</h3>
+          </div>
+          <output class="diagnostics-summary" id="diagnostics-summary" aria-live="polite">运行结束后根据本地规则与真实证据检查。</output>
+        </div>
+        <p class="diagnostics-note">诊断只使用本地构建结果、结构化事件和稳定输出；证据不足时仅提示可能原因。</p>
+        <ol class="diagnostics-list" id="diagnostics-list">
+          <li class="empty-state">尚未完成或载入运行。</li>
+        </ol>
+      </article>
+      <article class="run-lab-panel card" id="run-lab-panel" aria-labelledby="run-lab-heading">
         <div class="subpanel-heading">
           <div>
             <h3 id="run-lab-heading">完整时间线与分支差异</h3>
             <p>分别保存同一 Lab 的 starter 与 solution 运行，即可比较真实事件。</p>
           </div>
-          <button class="button" id="save-run" type="button" disabled>保存本次运行</button>
+          <div class="run-transfer-controls" aria-label="运行记录保存与交换">
+            <button class="button" id="save-run" type="button" disabled>保存本次运行</button>
+            <button class="button" id="export-run-json" type="button">导出 JSON</button>
+            <button class="button" id="export-run-markdown" type="button">导出 Markdown</button>
+            <button class="button" id="import-run-trigger" type="button">导入 JSON</button>
+            <input id="import-run-file" type="file" accept="application/json,.json" hidden>
+          </div>
         </div>
+        <output id="run-transfer-status" class="run-transfer-status" aria-live="polite">导入与导出只在当前浏览器处理，不上传文件，也不会切换 Git 分支。</output>
 
         <div class="run-lab-grid">
           <section aria-labelledby="replay-heading">
             <h4 id="replay-heading">逐步回放</h4>
             <label for="saved-run-select">已保存运行</label>
             <select id="saved-run-select"></select>
-            <div class="replay-controls">
+            <div class="replay-load-controls">
               <button class="button" id="replay-start" type="button">载入时间线</button>
+              <button class="button button-primary" id="replay-play-pause" type="button" aria-keyshortcuts="Space">播放</button>
+              <label for="replay-speed">速度</label>
+              <select id="replay-speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </div>
+            <div class="timeline-filter-grid" aria-label="时间线筛选">
+              <label for="timeline-status-filter">事件状态
+                <select id="timeline-status-filter">
+                  <option value="">全部状态</option>
+                  <option value="running">运行中</option>
+                  <option value="todo">TODO</option>
+                  <option value="pass">通过</option>
+                  <option value="fail">失败</option>
+                </select>
+              </label>
+              <label for="timeline-source-filter">事件来源
+                <select id="timeline-source-filter"><option value="">全部来源</option></select>
+              </label>
+              <label for="timeline-lab-filter">Lab
+                <select id="timeline-lab-filter"><option value="">全部 Lab</option></select>
+              </label>
+              <label for="timeline-step-filter">步骤
+                <select id="timeline-step-filter"><option value="">全部步骤</option></select>
+              </label>
+              <label class="timeline-search-field" for="timeline-keyword-filter">关键词搜索
+                <input id="timeline-keyword-filter" type="search" maxlength="120" placeholder="步骤、说明、来源…" aria-keyshortcuts="/">
+              </label>
+              <button class="button" id="timeline-clear-filters" type="button">清除筛选</button>
+            </div>
+            <div class="replay-controls">
               <button class="button" id="replay-previous" type="button" disabled>← 上一步</button>
-              <button class="button button-primary" id="replay-next" type="button" disabled>下一步 →</button>
+              <button class="button" id="replay-next" type="button" disabled>下一步 →</button>
+              <button class="button" id="replay-first-failure" type="button">第一个失败事件</button>
+              <button class="button" id="replay-first-difference" type="button">第一个分支差异</button>
             </div>
             <output id="replay-status" class="run-lab-status" aria-live="polite">尚未选择已保存运行。</output>
+            <output id="timeline-summary" class="timeline-summary" aria-live="polite">总时长与事件数量将在载入后显示。</output>
+            <p class="timeline-keyboard-help">键盘：空格播放/暂停，←/→ 单步，Home/End 跳到首尾，F 跳到失败，D 跳到分支差异，/ 搜索，Esc 暂停。</p>
             <ol class="replay-timeline" id="replay-timeline"></ol>
           </section>
 
@@ -334,6 +420,10 @@
                 <section aria-labelledby="solution-only-state-heading">
                   <h5 id="solution-only-state-heading">只在 solution 出现</h5>
                   <ul class="state-diff-list" id="solution-only-state-list"><li class="empty-state">尚未比较。</li></ul>
+                </section>
+                <section aria-labelledby="insufficient-state-heading">
+                  <h5 id="insufficient-state-heading">双方证据不足</h5>
+                  <ul class="state-diff-list" id="insufficient-state-list"><li class="empty-state">尚未比较。</li></ul>
                 </section>
               </div>
             </div>
@@ -512,6 +602,10 @@
   <script src="state-model.js"></script>
   <script src="state-diff.js"></script>
   <script src="run-history.js"></script>
+  <script src="run-transfer.js"></script>
+  <script src="timeline-controller.js"></script>
+  <script src="diagnostics.js"></script>
+  <script src="presentation-mode.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

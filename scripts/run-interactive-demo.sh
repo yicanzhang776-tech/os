@@ -3,7 +3,7 @@ set -eu
 
 # The page includes branch-specific teaching questions and needs no extra feedback service.
 
-PORT="${OS_DEMO_PORT:-8888}"
+PORT="${OS_DEMO_PORT:-4173}"
 TARGET="${OS_DEMO_TARGET:-riscv64gc-unknown-none-elf}"
 RUN_KERNEL=0
 OPEN_BROWSER=1
@@ -11,7 +11,7 @@ CHECK_ONLY=0
 
 usage() {
     printf '%s\n' "Usage: sh scripts/run-interactive-demo.sh [--port PORT] [--run] [--check-only] [--no-browser]"
-    printf '%s\n' "  --port PORT    Set the local page port (default: 8888)."
+    printf '%s\n' "  --port PORT    Set the local page port (default: 4173)."
     printf '%s\n' "  --run          Build and run the current OS branch after startup."
     printf '%s\n' "  --check-only   Check the complete Linux build/QEMU chain, then exit."
     printf '%s\n' "  --no-browser   Do not try to open the page automatically."

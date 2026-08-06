@@ -42,7 +42,7 @@ test("starter and solution state comparison classifies state differences", () =>
   assert.ok(comparison.changed.some((row) => row.key === "completion"));
   assert.ok(comparison.solutionOnly.some((row) => row.key === "scause"));
   assert.ok(comparison.solutionOnly.some((row) => row.key === "sepc"));
-  assert.ok(comparison.same.some((row) => row.key === "stval"));
+  assert.ok(comparison.insufficient.some((row) => row.key === "stval"));
   assert.equal(comparison.starterState.completed, false);
   assert.equal(comparison.solutionState.completed, true);
 });
@@ -56,7 +56,17 @@ test("identical states compare as the same even when evidence objects are cloned
   assert.equal(comparison.changed.length, 0);
   assert.equal(comparison.starterOnly.length, 0);
   assert.equal(comparison.solutionOnly.length, 0);
-  assert.equal(comparison.same.length, 5);
+  assert.equal(comparison.same.length, 2);
+  assert.equal(comparison.insufficient.length, 3);
+});
+
+test("states without evidence are not reported as equal", () => {
+  const comparison = compareRuns(run("starter", []), run("solution", []));
+  assert.equal(comparison.same.length, 0);
+  assert.equal(comparison.changed.length, 0);
+  assert.equal(comparison.insufficient.length, 5);
+  assert.ok(comparison.insufficient.every((row) => row.starter.status === "insufficient"));
+  assert.ok(comparison.insufficient.every((row) => row.solution.status === "insufficient"));
 });
 
 test("invalid run pairs and mismatched labs safely return null", () => {
