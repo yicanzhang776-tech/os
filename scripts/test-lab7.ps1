@@ -26,13 +26,20 @@ function Assert-Marker {
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
 Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $errLog -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $kernel -ErrorAction SilentlyContinue
 
 Push-Location $repo
+$buildExitCode = $null
 try {
     cargo build -p ai-os-kernel
+    $buildExitCode = $LASTEXITCODE
 }
 finally {
     Pop-Location
+}
+
+if ($buildExitCode -ne 0) {
+    throw "cargo build failed with exit code $buildExitCode. QEMU was not started."
 }
 
 if (-not (Test-Path $kernel)) {
