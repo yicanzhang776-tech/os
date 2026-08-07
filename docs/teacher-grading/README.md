@@ -53,8 +53,8 @@ docs/teacher-grading/index.html
 
 运行记录只会自动建议以下客观检查项：
 
-- `build`：`lifecycle.buildResult=success/failure` 对应通过/失败。
-- `qemu`：只有当前 Lab 的 PASS 且没有 TODO、失败或超时证据时才建议通过。
+- `build`：`lifecycle.buildResult=success/failure` 对应通过/失败；构建失败时 QEMU 记为“未运行”。
+- `qemu`：构建成功但没有 QEMU 启动或完成证据时记为“未运行”；只有 QEMU 确实运行、出现当前 Lab 的 PASS 且没有 TODO、失败或超时证据时才建议通过。QEMU 已结束但没有当前 Lab PASS 时建议失败。
 
 它不会自动填写或增加任何分项分数，也不会自动填写代码质量、设计解释、实验报告或口试分数。其他 Lab 的 PASS 不能代替当前 Lab PASS。评分记录只保存经过长度限制和净化的 branch、commit、runId 与结论摘要，不保存完整事件、稳定输出或终端日志。
 
@@ -96,12 +96,13 @@ cargo clippy -p ai-os-kernel --target riscv64gc-unknown-none-elf -- -D warnings
 
 评分 JSON 导入会校验顶层对象、协议、Lab、字符串长度、分项分数、证据对象和检查状态。未知分项/检查项会忽略；缺失字段恢复默认值；越界分数会限制到 0 与该项满分之间；损坏的 `scores`、`checks` 或 `evidence` 会安全恢复，不会导致页面崩溃。评分文件上限为 256 KiB，Demo 运行文件继续遵循其 1 MiB 和 512 事件上限。
 
-## 导出与脱敏
+## 导出、内容净化与人工匿名化
 
 - Markdown 和 JSON 都包含关联运行证据的 branch、commit、runId 和结论摘要。
 - 导出不会自动上传，文件只保存到教师选择的本地位置。
-- JSON 可能包含学生姓名、教师姓名、自由文本评语和口试记录；共享前应改用匿名编号，并删除不必要的个人信息。
-- 不要把真实成绩、学号、个人信息或未脱敏评语提交到公开 Git 仓库。
+- 内容净化会清理常见访问令牌、本机用户路径、HTML 和危险控制字符，但不等于身份匿名化。
+- 工具不会自动匿名化姓名和自由文本。Markdown 与 JSON 仍可能包含学生姓名、教师姓名、提交标识、教师总评和口试记录。
+- 共享前应由教师手工使用匿名编号并删除不必要的个人信息；不要把真实成绩、学号、个人信息或未人工脱敏的评语提交到公开 Git 仓库。
 
 ## Starter 防泄露检查
 

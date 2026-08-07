@@ -361,13 +361,13 @@
         syncFieldsToState();
         const record = Object.assign({}, state, { updatedAt: new Date().toISOString() });
         download(state.labId + "-grading-" + state.recordId + ".json", core.serializeRecordJson(record, rubricData, { crypto: window.crypto }), "application/json");
-        elements.saveStatus.textContent = "已导出脱敏评分 JSON；不会自动上传。";
+        elements.saveStatus.textContent = "已导出本地评分 JSON；已清理常见令牌和本机路径，但未自动匿名化姓名与评语，共享前请人工脱敏。";
     }
 
     function exportMarkdown() {
         syncFieldsToState();
         download(state.labId + "-grading-" + state.recordId + ".md", core.buildMarkdown(state, currentLab(), rubricData.commonChecks), "text/markdown");
-        elements.saveStatus.textContent = "已导出 Markdown；关联运行证据只包含有限摘要，不含完整终端日志。";
+        elements.saveStatus.textContent = "已导出本地评分 Markdown；已清理常见令牌和本机路径，但未自动匿名化姓名与评语，共享前请人工脱敏。";
     }
 
     async function readJsonFile(file, maxBytes, label) {
@@ -422,7 +422,7 @@
         const summary = core.summarizeRunEvidence(run, lab);
         const overwritten = ["build", "qemu"].filter(function (checkId) {
             const proposed = summary.objectiveChecks[checkId];
-            return (proposed === "pass" || proposed === "fail") &&
+            return core.CHECK_STATUSES.has(proposed) &&
                 state.checks[checkId] !== "not-run" && state.checks[checkId] !== proposed;
         });
         if (overwritten.length && !window.confirm(
