@@ -3,8 +3,9 @@
 
     const rubricData = window.OS_TEACHER_RUBRICS;
     const core = window.OS_TEACHER_GRADING_CORE;
-    const storagePrefix = "os-teacher-grading/v1/";
-    const lastLabKey = storagePrefix + "last-lab";
+    const runTransfer = window.OsRunTransfer;
+    const lastLabKey = core.STORAGE_PREFIX + "last-lab";
+    const lastRecordKey = core.STORAGE_PREFIX + "last-record";
 
     const elements = {
         labSelect: document.getElementById("labSelect"),
@@ -14,11 +15,16 @@
         date: document.getElementById("dateInput"),
         estimatedHours: document.getElementById("estimatedHours"),
         objectives: document.getElementById("objectives"),
+        recordSelect: document.getElementById("recordSelect"),
+        currentRecordId: document.getElementById("currentRecordId"),
+        recordStatus: document.getElementById("recordStatus"),
         checksBody: document.getElementById("checksBody"),
         applyCap: document.getElementById("applyCapInput"),
         capNotice: document.getElementById("capNotice"),
         logInput: document.getElementById("logInput"),
         logResult: document.getElementById("logResult"),
+        runEvidencePanel: document.getElementById("runEvidencePanel"),
+        runEvidenceDetails: document.getElementById("runEvidenceDetails"),
         rubricRows: document.getElementById("rubricRows"),
         codeChecks: document.getElementById("codeChecks"),
         commonErrors: document.getElementById("commonErrors"),
@@ -31,7 +37,7 @@
         saveStatus: document.getElementById("saveStatus")
     };
 
-    let state = blankState(rubricData.labs[0]);
+    let state;
 
     function today() {
         const date = new Date();
@@ -40,52 +46,11 @@
     }
 
     function blankState(lab) {
-        const scores = {};
-        const evidence = {};
-        const checks = {};
-        lab.criteria.forEach(function (criterion) {
-            scores[criterion.id] = 0;
-            evidence[criterion.id] = "";
-        });
-        rubricData.commonChecks.forEach(function (check) { checks[check.id] = "not-run"; });
-        return {
-            schema: rubricData.schema,
-            labId: lab.id,
-            student: "",
-            submission: "",
-            teacher: "",
-            date: today(),
-            scores,
-            evidence,
-            checks,
-            applyCap: true,
-            notes: "",
-            oralNotes: "",
-            logText: "",
-            updatedAt: null
-        };
+        return core.createBlankRecord(lab, rubricData, { crypto: window.crypto, date: today() });
     }
 
     function currentLab() {
         return rubricData.labs.find(function (lab) { return lab.id === state.labId; }) || rubricData.labs[0];
-    }
-
-    function storageKey(labId) { return storagePrefix + labId; }
-
-    function loadState(labId) {
-        const lab = rubricData.labs.find(function (entry) { return entry.id === labId; });
-        const fallback = blankState(lab);
-        try {
-            const saved = JSON.parse(localStorage.getItem(storageKey(labId)) || "null");
-            if (!saved || saved.schema !== rubricData.schema) return fallback;
-            return Object.assign(fallback, saved, {
-                scores: Object.assign(fallback.scores, saved.scores || {}),
-                evidence: Object.assign(fallback.evidence, saved.evidence || {}),
-                checks: Object.assign(fallback.checks, saved.checks || {})
-            });
-        } catch (_error) {
-            return fallback;
-        }
     }
 
     function syncFieldsToState() {
@@ -96,7 +61,6 @@
         state.applyCap = elements.applyCap.checked;
         state.notes = elements.notes.value.trim();
         state.oralNotes = elements.oralNotes.value.trim();
-        state.logText = elements.logInput.value;
     }
 
     function populateLabSelect() {
@@ -118,8 +82,10 @@
         elements.applyCap.checked = state.applyCap !== false;
         elements.notes.value = state.notes;
         elements.oralNotes.value = state.oralNotes;
-        elements.logInput.value = state.logText || "";
+        elements.logInput.value = "";
+        elements.logResult.replaceChildren();
         elements.estimatedHours.textContent = "建议时长：" + lab.estimatedHours;
+        elements.currentRecordId.textContent = "当前 recordId：" + state.recordId;
 
         elements.objectives.replaceChildren();
         lab.objectives.forEach(function (objective) {
@@ -128,12 +94,30 @@
             elements.objectives.appendChild(item);
         });
 
+        renderRecordList();
         renderChecks();
+        renderRunEvidence();
         renderRubric();
         renderManualReview();
         updateScore();
-        if (state.logText) parseLog();
-        else elements.logResult.replaceChildren();
+    }
+
+    function renderRecordList(selectedId) {
+        const records = core.loadRecordIndex(localStorage, rubricData);
+        elements.recordSelect.replaceChildren();
+        const empty = document.createElement("option");
+        empty.value = "";
+        empty.textContent = records.length ? "请选择本机评分记录" : "暂无本机评分记录";
+        elements.recordSelect.appendChild(empty);
+        records.forEach(function (record) {
+            const option = document.createElement("option");
+            option.value = record.recordId;
+            option.textContent = record.labId.toUpperCase() + " · " + (record.student || "未命名学生") +
+                " · " + record.finalScore + " 分 · " + (record.updatedAt ? new Date(record.updatedAt).toLocaleString() : "时间未知");
+            elements.recordSelect.appendChild(option);
+        });
+        const preferred = selectedId || state.recordId;
+        if (records.some(function (record) { return record.recordId === preferred; })) elements.recordSelect.value = preferred;
     }
 
     function renderChecks() {
@@ -145,16 +129,12 @@
             const typeCell = document.createElement("td");
             const type = document.createElement("span");
             type.className = "evidence-type";
-            type.textContent = check.kind === "automatic" ? "自动证据" : "人工证据";
+            type.textContent = check.kind === "automatic" ? "客观/自动证据" : "人工证据";
             typeCell.appendChild(type);
             const resultCell = document.createElement("td");
             const select = document.createElement("select");
             select.dataset.checkId = check.id;
-            [
-                ["not-run", "未执行"],
-                ["pass", "通过"],
-                ["fail", "失败"]
-            ].forEach(function (entry) {
+            [["not-run", "未执行"], ["pass", "通过"], ["fail", "失败"]].forEach(function (entry) {
                 const option = document.createElement("option");
                 option.value = entry[0];
                 option.textContent = entry[1];
@@ -169,6 +149,33 @@
             row.append(labelCell, typeCell, resultCell);
             elements.checksBody.appendChild(row);
         });
+    }
+
+    function appendEvidenceDetail(label, value) {
+        const term = document.createElement("dt");
+        term.textContent = label;
+        const detail = document.createElement("dd");
+        detail.textContent = value || "未提供";
+        elements.runEvidenceDetails.append(term, detail);
+    }
+
+    function renderRunEvidence() {
+        const evidence = core.normalizeLinkedRunEvidence(state.linkedRunEvidence);
+        elements.runEvidenceDetails.replaceChildren();
+        elements.runEvidencePanel.hidden = !evidence;
+        if (!evidence) return;
+        appendEvidenceDetail("Lab / 角色", evidence.lab + " / " + evidence.role);
+        appendEvidenceDetail("branch", evidence.branch);
+        appendEvidenceDetail("commit", evidence.commit);
+        appendEvidenceDetail("runId", evidence.runId);
+        appendEvidenceDetail("构建结果", evidence.buildResult);
+        appendEvidenceDetail("QEMU 结果", evidence.qemuCheck === "pass" ? "通过" : evidence.qemuCheck === "fail" ? "未通过" : "无结论");
+        appendEvidenceDetail("当前 Lab PASS", evidence.passFound ? "已出现" : "未出现");
+        appendEvidenceDetail("TODO", evidence.todoFound ? "已出现" : "未出现");
+        appendEvidenceDetail("缺少前置 PASS", evidence.missingPrevious.length ? evidence.missingPrevious.join("、") : "无");
+        appendEvidenceDetail("失败 / 超时", (evidence.failureFound ? "有失败证据" : "无失败证据") + "；" +
+            (evidence.timeoutFound ? "有超时证据" : "无超时证据"));
+        appendEvidenceDetail("结论摘要", evidence.conclusion);
     }
 
     function renderRubric() {
@@ -189,6 +196,7 @@
             evidenceLabel.textContent = "验收证据与评语";
             const evidence = document.createElement("textarea");
             evidence.rows = 3;
+            evidence.maxLength = core.STRING_LIMITS.evidence;
             evidence.value = state.evidence[criterion.id] || "";
             evidence.placeholder = criterion.evidence;
             evidence.addEventListener("input", function () { state.evidence[criterion.id] = evidence.value; });
@@ -288,15 +296,53 @@
         if (result.buildError) addChip("检测到构建错误", "bad");
         if (result.timeout) addChip("检测到超时", "bad");
         if (result.qemuMissing) addChip("未找到 QEMU", "bad");
-        addChip(result.lineCount + " 行日志", "");
+        addChip(result.lineCount + " 行日志（不会保存完整日志）", "");
     }
 
-    function saveDraft() {
+    function saveCurrentRecord(message) {
         syncFieldsToState();
-        state.updatedAt = new Date().toISOString();
-        localStorage.setItem(storageKey(state.labId), JSON.stringify(state));
+        state = core.saveRecord(localStorage, state, rubricData, { crypto: window.crypto });
         localStorage.setItem(lastLabKey, state.labId);
-        elements.saveStatus.textContent = "草稿已保存在当前浏览器：" + new Date().toLocaleString();
+        localStorage.setItem(lastRecordKey, state.recordId);
+        renderRecordList(state.recordId);
+        elements.currentRecordId.textContent = "当前 recordId：" + state.recordId;
+        elements.recordStatus.textContent = (message || "当前记录已保存") + "：" + new Date(state.updatedAt).toLocaleString();
+        return state;
+    }
+
+    function newRecord() {
+        state = blankState(currentLab());
+        render();
+        elements.recordStatus.textContent = "已新建空白记录；保存后才会写入本机记录索引。";
+    }
+
+    function loadSelectedRecord() {
+        const recordId = elements.recordSelect.value;
+        state = core.loadRecord(localStorage, recordId, rubricData, { crypto: window.crypto });
+        localStorage.setItem(lastLabKey, state.labId);
+        localStorage.setItem(lastRecordKey, state.recordId);
+        render();
+        elements.recordStatus.textContent = "已加载本机评分记录。";
+    }
+
+    function saveAsNewRecord() {
+        syncFieldsToState();
+        state.recordId = core.createUniqueRecordId(localStorage, window.crypto);
+        state.updatedAt = "";
+        saveCurrentRecord("已另存为新记录");
+    }
+
+    function deleteSelectedRecord() {
+        const recordId = elements.recordSelect.value;
+        if (!recordId) throw new Error("请先选择要删除的本机评分记录。");
+        const item = core.loadRecordIndex(localStorage, rubricData).find(function (record) { return record.recordId === recordId; });
+        const label = item ? item.labId.toUpperCase() + " / " + (item.student || "未命名学生") : recordId;
+        if (!window.confirm("确定删除本机评分记录 “" + label + "” 吗？删除后无法从本页面恢复。")) return;
+        core.deleteRecord(localStorage, recordId, rubricData);
+        if (state.recordId === recordId) state = blankState(currentLab());
+        localStorage.removeItem(lastRecordKey);
+        render();
+        elements.recordStatus.textContent = "所选本机评分记录已删除。";
     }
 
     function download(filename, text, type) {
@@ -308,66 +354,159 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
-        URL.revokeObjectURL(url);
+        window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
     }
 
     function exportJson() {
         syncFieldsToState();
         const record = Object.assign({}, state, { updatedAt: new Date().toISOString() });
-        download(state.labId + "-grading.json", JSON.stringify(record, null, 2), "application/json");
+        download(state.labId + "-grading-" + state.recordId + ".json", core.serializeRecordJson(record, rubricData, { crypto: window.crypto }), "application/json");
+        elements.saveStatus.textContent = "已导出脱敏评分 JSON；不会自动上传。";
     }
 
     function exportMarkdown() {
         syncFieldsToState();
-        const markdown = core.buildMarkdown(state, currentLab(), rubricData.commonChecks);
-        download(state.labId + "-grading.md", markdown, "text/markdown");
+        download(state.labId + "-grading-" + state.recordId + ".md", core.buildMarkdown(state, currentLab(), rubricData.commonChecks), "text/markdown");
+        elements.saveStatus.textContent = "已导出 Markdown；关联运行证据只包含有限摘要，不含完整终端日志。";
     }
 
-    async function importJson(file) {
-        if (!file) return;
-        if (file.size > 256 * 1024) throw new Error("评分记录超过 256 KiB。" );
-        const record = core.validateRecord(JSON.parse(await file.text()), rubricData);
-        state = Object.assign(blankState(rubricData.labs.find(function (lab) { return lab.id === record.labId; })), record);
+    async function readJsonFile(file, maxBytes, label) {
+        if (!file) return null;
+        if (file.size > maxBytes) throw new Error(label + "超过 " + Math.floor(maxBytes / 1024) + " KiB 限制。");
+        return file.text();
+    }
+
+    function previewJson(source) {
+        let value;
+        try {
+            value = JSON.parse(source);
+        } catch (_error) {
+            throw new Error("导入文件不是有效 JSON。");
+        }
+        if (!core.isPlainObject(value)) throw new Error("导入 JSON 顶层必须是普通对象。");
+        return value;
+    }
+
+    async function importGradingRecord(file) {
+        const source = await readJsonFile(file, core.MAX_IMPORT_BYTES, "评分记录");
+        if (source == null) return;
+        const preview = previewJson(source);
+        if (preview.schemaVersion === "os-demo.run/v1") {
+            throw new Error("这是 os-demo.run/v1 运行记录，请使用“导入 Demo 运行证据”。");
+        }
+        state = core.parseRecordJson(source, rubricData, { crypto: window.crypto });
         render();
-        elements.saveStatus.textContent = "已导入本地评分记录，尚未覆盖浏览器草稿。";
+        elements.saveStatus.textContent = "已导入 os-teacher-grading/v1 评分记录；尚未保存到本机索引，可选择保存或另存为。";
+    }
+
+    async function importRunRecord(file) {
+        if (!runTransfer || typeof runTransfer.parseRunJson !== "function") {
+            throw new Error("Demo 运行记录校验模块未加载，请确认以完整目录直接打开本页面。");
+        }
+        const source = await readJsonFile(file, runTransfer.MAX_IMPORT_BYTES, "运行记录");
+        if (source == null) return;
+        const preview = previewJson(source);
+        if (preview.schema === rubricData.schema) {
+            throw new Error("这是 os-teacher-grading/v1 评分记录，请使用“导入评分记录”。");
+        }
+        if (preview.schemaVersion !== runTransfer.RUN_SCHEMA_VERSION) {
+            throw new Error("运行记录协议不兼容；当前仅支持 os-demo.run/v1。");
+        }
+        const run = runTransfer.parseRunJson(source);
+        const lab = rubricData.labs.find(function (entry) { return entry.id === run.context.lab; });
+        if (!lab) throw new Error("评分工具不支持运行记录中的实验：" + run.context.lab + "。");
+        if (state.labId !== lab.id) {
+            if (!window.confirm("运行记录属于 " + lab.id.toUpperCase() + "。是否新建该 Lab 的空白评分记录并关联证据？")) return;
+            state = blankState(lab);
+        }
+        const summary = core.summarizeRunEvidence(run, lab);
+        const overwritten = ["build", "qemu"].filter(function (checkId) {
+            const proposed = summary.objectiveChecks[checkId];
+            return (proposed === "pass" || proposed === "fail") &&
+                state.checks[checkId] !== "not-run" && state.checks[checkId] !== proposed;
+        });
+        if (overwritten.length && !window.confirm(
+            "导入将覆盖教师已填写的客观状态：" + overwritten.join("、") + "。是否继续？主观分数和主观评语不会改变。"
+        )) return;
+        state = core.applyRunEvidence(state, summary);
+        render();
+        elements.saveStatus.textContent = "已关联 os-demo.run/v1：仅更新有结论的 build/qemu 客观状态，未修改任何分项分数。";
     }
 
     function resetCurrent() {
-        if (!window.confirm("确定清空当前实验的评分记录吗？")) return;
-        localStorage.removeItem(storageKey(state.labId));
+        if (!window.confirm("确定重置当前表单吗？已保存的本机记录不会被删除，未保存修改会丢失。")) return;
         state = blankState(currentLab());
         render();
-        elements.saveStatus.textContent = "当前实验记录已清空。";
+        elements.saveStatus.textContent = "当前表单已重置；本机已保存记录仍可从记录列表加载。";
+    }
+
+    function reportError(error, target) {
+        target.textContent = "操作失败：" + (error && error.message ? error.message : "未知错误。");
     }
 
     populateLabSelect();
+    const migration = core.migrateLegacyDrafts(localStorage, rubricData, { crypto: window.crypto });
     const savedLabId = localStorage.getItem(lastLabKey);
-    const initialLabId = rubricData.labs.some(function (lab) { return lab.id === savedLabId; })
-        ? savedLabId
-        : rubricData.labs[0].id;
-    state = loadState(initialLabId);
+    const initialLab = rubricData.labs.find(function (lab) { return lab.id === savedLabId; }) || rubricData.labs[0];
+    const savedRecordId = localStorage.getItem(lastRecordKey);
+    try {
+        state = savedRecordId ? core.loadRecord(localStorage, savedRecordId, rubricData, { crypto: window.crypto }) : blankState(initialLab);
+    } catch (_error) {
+        state = blankState(initialLab);
+    }
     render();
+    if (migration.migrated.length) {
+        elements.recordStatus.textContent = "已将 " + migration.migrated.length + " 份旧版按 Lab 保存的草稿迁移为独立本机记录。";
+    } else if (migration.errors.length) {
+        elements.recordStatus.textContent = "旧版草稿迁移有异常：" + migration.errors.join("；");
+    }
 
     elements.labSelect.addEventListener("change", function () {
-        syncFieldsToState();
         localStorage.setItem(lastLabKey, elements.labSelect.value);
-        state = loadState(elements.labSelect.value);
+        const lab = rubricData.labs.find(function (entry) { return entry.id === elements.labSelect.value; });
+        state = blankState(lab);
         render();
+        elements.recordStatus.textContent = "已为 " + lab.id.toUpperCase() + " 新建空白记录。";
     });
     elements.applyCap.addEventListener("change", updateScore);
     [elements.student, elements.submission, elements.teacher, elements.date, elements.notes, elements.oralNotes]
         .forEach(function (element) { element.addEventListener("input", updateScore); });
     document.getElementById("parseLogButton").addEventListener("click", parseLog);
-    document.getElementById("saveButton").addEventListener("click", saveDraft);
-    document.getElementById("exportJsonButton").addEventListener("click", exportJson);
-    document.getElementById("exportMarkdownButton").addEventListener("click", exportMarkdown);
+    document.getElementById("newRecordButton").addEventListener("click", newRecord);
+    document.getElementById("loadRecordButton").addEventListener("click", function () {
+        try { loadSelectedRecord(); } catch (error) { reportError(error, elements.recordStatus); }
+    });
+    document.getElementById("saveButton").addEventListener("click", function () {
+        try { saveCurrentRecord(); } catch (error) { reportError(error, elements.recordStatus); }
+    });
+    document.getElementById("saveAsButton").addEventListener("click", function () {
+        try { saveAsNewRecord(); } catch (error) { reportError(error, elements.recordStatus); }
+    });
+    document.getElementById("deleteRecordButton").addEventListener("click", function () {
+        try { deleteSelectedRecord(); } catch (error) { reportError(error, elements.recordStatus); }
+    });
+    document.getElementById("exportJsonButton").addEventListener("click", function () {
+        try { exportJson(); } catch (error) { reportError(error, elements.saveStatus); }
+    });
+    document.getElementById("exportMarkdownButton").addEventListener("click", function () {
+        try { exportMarkdown(); } catch (error) { reportError(error, elements.saveStatus); }
+    });
     document.getElementById("printButton").addEventListener("click", function () { window.print(); });
     document.getElementById("resetButton").addEventListener("click", resetCurrent);
     document.getElementById("importInput").addEventListener("change", async function (event) {
         try {
-            await importJson(event.target.files[0]);
+            await importGradingRecord(event.target.files[0]);
         } catch (error) {
-            elements.saveStatus.textContent = "导入失败：" + error.message;
+            reportError(error, elements.saveStatus);
+        } finally {
+            event.target.value = "";
+        }
+    });
+    document.getElementById("runImportInput").addEventListener("change", async function (event) {
+        try {
+            await importRunRecord(event.target.files[0]);
+        } catch (error) {
+            reportError(error, elements.saveStatus);
         } finally {
             event.target.value = "";
         }

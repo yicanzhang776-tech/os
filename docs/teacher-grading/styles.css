@@ -155,6 +155,7 @@ summary { cursor: pointer; font-weight: 650; }
 details ul { margin-bottom: 0; }
 
 .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.compact-actions { margin-top: 12px; }
 button, .file-button {
     display: inline-flex;
     align-items: center;
@@ -173,6 +174,20 @@ button, .file-button {
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 button:hover, .file-button:hover { filter: brightness(0.94); }
 
+.run-import {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+    gap: 28px;
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+}
+.run-import h3 { margin-top: 0; }
+.evidence-summary { padding: 18px; border-radius: 10px; background: var(--primary-soft); }
+.evidence-summary dl { display: grid; grid-template-columns: 130px 1fr; gap: 7px 14px; margin: 0; }
+.evidence-summary dt { color: var(--muted); font-weight: 650; }
+.evidence-summary dd { margin: 0; overflow-wrap: anywhere; }
+
 footer { padding: 24px; text-align: center; color: var(--muted); font-size: 0.85rem; }
 
 @media (max-width: 900px) {
@@ -180,6 +195,7 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: 0.85
     .score-summary { min-width: 0; }
     .form-grid { grid-template-columns: repeat(2, 1fr); }
     .split-panel { grid-template-columns: 1fr; }
+    .run-import { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -191,6 +207,8 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: 0.85
     .rubric-row { grid-template-columns: 1fr; gap: 10px; }
     .rubric-score { text-align: left; }
     .score-summary div { padding: 12px 8px; }
+    .evidence-summary dl { grid-template-columns: 1fr; gap: 2px; }
+    .evidence-summary dd { margin-bottom: 8px; }
 }
 
 @media print {
@@ -201,6 +219,6 @@ footer { padding: 24px; text-align: center; color: var(--muted); font-size: 0.85
     .score-summary div + div { border-left-color: #aaa; }
     main { width: 100%; margin: 16px 0; }
     .panel { box-shadow: none; break-inside: avoid; }
-    .action-row, #parseLogButton, .file-button { display: none !important; }
+    .action-row, #parseLogButton, .file-button, #recordSelect, #runImportInput { display: none !important; }
     textarea { min-height: 80px; }
 }
