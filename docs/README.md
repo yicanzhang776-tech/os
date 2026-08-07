@@ -14,6 +14,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 - [系统架构](architecture.md)
 - [开发计划与当前进度](development-plan.md)
 - [测试设计](testing.md)
+- [教师验收与评分工具](teacher-grading/README.md)
 - [AI 协作记录](ai-collaboration.md)
 - [教学实验路线](labs/README.md)
 - [官方资料整理](references/problem-statement.md)
