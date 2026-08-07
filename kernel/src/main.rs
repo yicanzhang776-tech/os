@@ -19,6 +19,7 @@ use crate::memory::FrameAllocator;
 
 extern "C" fn kernel_main() -> ! {
     telemetry::event("p0", "kernel-main");
+    console::print_line("[P0] PASS");
     console::print_line("[Lab2] start");
     console::print_line("[Lab1] console is available");
     telemetry::event("lab1", "console-available");

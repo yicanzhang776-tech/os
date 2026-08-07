@@ -4,9 +4,9 @@ use core::{
 };
 
 use crate::{
-    console, fs, sbi, telemetry,
+    console, fs, sbi,
     syscall::{self, SyscallError, SyscallOutcome, SyscallRequest},
-    user,
+    telemetry, user,
 };
 
 const SCAUSE_INTERRUPT_BIT: usize = 1usize << (usize::BITS - 1);
