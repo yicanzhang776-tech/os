@@ -441,21 +441,31 @@
         const finalResult = ["pass", "todo", "fail", "timeout", "finished", "stopped"].includes(run.result)
             ? run.result
             : "finished";
-        const passFound = eventPass || parsed.passFound;
-        const todoFound = eventTodo || parsed.todoFound || finalResult === "todo";
-        const timeoutFound = runResult === "timeout" || finalResult === "timeout" || parsed.timeout;
-        const failureFound = buildResult === "failure" || runResult === "failure" || finalResult === "fail" || eventFail || Boolean(run.error) || parsed.buildError;
         const buildCheck = buildResult === "success" ? "pass" : buildResult === "failure" ? "fail" : "not-run";
+        const qemuEvidenceFound = buildResult === "success" && (
+            runResult !== "unknown" ||
+            events.some(function (event) { return event.protocol === "os-demo.event/v1"; }) ||
+            stableOutput.length > 0
+        );
+        const passFound = eventPass || parsed.passFound;
+        const todoFound = qemuEvidenceFound && (eventTodo || parsed.todoFound || finalResult === "todo");
+        const timeoutFound = qemuEvidenceFound && (runResult === "timeout" || finalResult === "timeout" || parsed.timeout);
+        const qemuFailureFound = qemuEvidenceFound && (
+            runResult === "failure" || finalResult === "fail" || eventFail || Boolean(run.error)
+        );
+        const failureFound = buildResult === "failure" || qemuFailureFound || parsed.buildError;
+        const qemuEnded = ["finished", "failure", "timeout", "stopped"].includes(runResult) || lifecycle.completed === true;
+        const missingPrevious = qemuEvidenceFound ? parsed.missingPrevious : [];
         let qemuCheck = "not-run";
-        if (passFound && !todoFound && !timeoutFound && !failureFound) qemuCheck = "pass";
-        else if (todoFound || timeoutFound || failureFound || runResult === "finished" || lifecycle.completed === true) qemuCheck = "fail";
+        if (qemuEvidenceFound && passFound && !todoFound && !timeoutFound && !qemuFailureFound) qemuCheck = "pass";
+        else if (qemuEvidenceFound && (todoFound || timeoutFound || qemuFailureFound || (qemuEnded && !passFound))) qemuCheck = "fail";
         const conclusions = [
             "构建" + (buildCheck === "pass" ? "通过" : buildCheck === "fail" ? "失败" : "无结论"),
-            "QEMU " + (qemuCheck === "pass" ? "通过" : qemuCheck === "fail" ? "未通过" : "无结论"),
-            passFound ? "出现当前 Lab PASS" : "未出现当前 Lab PASS"
+            "QEMU " + (qemuCheck === "pass" ? "通过" : qemuCheck === "fail" ? "未通过" : qemuEvidenceFound ? "尚无结论" : "未运行或无运行证据")
         ];
+        if (qemuEvidenceFound) conclusions.push(passFound ? "出现当前 Lab PASS" : "未出现当前 Lab PASS");
         if (todoFound) conclusions.push("出现 TODO");
-        if (parsed.missingPrevious.length) conclusions.push("缺少 " + parsed.missingPrevious.length + " 个前置 PASS");
+        if (missingPrevious.length) conclusions.push("缺少 " + missingPrevious.length + " 个前置 PASS");
         if (failureFound) conclusions.push("出现失败证据");
         if (timeoutFound) conclusions.push("出现超时证据");
         return {
@@ -471,7 +481,7 @@
             qemuCheck,
             passFound,
             todoFound,
-            missingPrevious: parsed.missingPrevious,
+            missingPrevious,
             failureFound,
             timeoutFound,
             conclusion: conclusions.join("；") + "。",
@@ -488,7 +498,7 @@
         });
         ["build", "qemu"].forEach(function (checkId) {
             const status = summary.objectiveChecks && summary.objectiveChecks[checkId];
-            if (status === "pass" || status === "fail") next.checks[checkId] = status;
+            if (CHECK_STATUSES.has(status)) next.checks[checkId] = status;
         });
         const evidence = Object.assign({}, summary);
         delete evidence.objectiveChecks;

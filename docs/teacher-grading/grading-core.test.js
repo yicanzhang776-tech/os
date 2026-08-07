@@ -182,23 +182,43 @@ test("未知检查项被忽略，未知检查状态恢复为 not-run", function 
     assert.equal(Object.hasOwn(normalized.checks, "invented"), false);
 });
 
-test("构建成功的 os-demo.run/v1 会建议 build=pass", function () {
-    const summary = core.summarizeRunEvidence(demoRun({ buildResult: "success" }), labById("lab2"));
+test("构建成功但没有 QEMU 证据时 build=pass、qemu=not-run", function () {
+    const summary = core.summarizeRunEvidence(demoRun({ buildResult: "success", runResult: null }), labById("lab2"));
     assert.equal(summary.objectiveChecks.build, "pass");
+    assert.equal(summary.objectiveChecks.qemu, "not-run");
 });
 
-test("构建失败的 os-demo.run/v1 会建议 build=fail", function () {
-    const summary = core.summarizeRunEvidence(demoRun({ buildResult: "failure", runResult: "failure", fail: true }), labById("lab2"));
+test("构建失败时 build=fail、qemu=not-run", function () {
+    const summary = core.summarizeRunEvidence(demoRun({ buildResult: "failure", runResult: "failure" }), labById("lab2"));
     assert.equal(summary.objectiveChecks.build, "fail");
+    assert.equal(summary.objectiveChecks.qemu, "not-run");
+    assert.doesNotMatch(summary.conclusion, /QEMU 未通过/);
+    const record = blank("lab2");
+    record.checks.qemu = "pass";
+    const updated = core.applyRunEvidence(record, summary);
+    assert.equal(updated.checks.build, "fail");
+    assert.equal(updated.checks.qemu, "not-run");
 });
 
-test("当前 Lab 的 QEMU PASS 会建议 qemu=pass", function () {
+test("构建失败且没有串口输出时不报告前置 PASS 回归", function () {
+    const summary = core.summarizeRunEvidence(demoRun({ lab: "lab7", buildResult: "failure", runResult: "failure" }), labById("lab7"));
+    assert.deepEqual(summary.missingPrevious, []);
+    assert.doesNotMatch(summary.conclusion, /缺少.*前置 PASS/);
+});
+
+test("构建成功且 QEMU 完成但没有当前 Lab PASS 时 qemu=fail", function () {
+    const summary = core.summarizeRunEvidence(demoRun({ buildResult: "success", runResult: "finished" }), labById("lab2"));
+    assert.equal(summary.objectiveChecks.build, "pass");
+    assert.equal(summary.objectiveChecks.qemu, "fail");
+});
+
+test("构建成功且当前 Lab PASS 时 qemu=pass", function () {
     const summary = core.summarizeRunEvidence(demoRun({ pass: true }), labById("lab2"));
     assert.equal(summary.passFound, true);
     assert.equal(summary.objectiveChecks.qemu, "pass");
 });
 
-test("TODO、超时和失败证据都不能被误判为 qemu=pass", function () {
+test("构建成功但 TODO、fail、timeout 时 qemu=fail", function () {
     const runs = [
         demoRun({ todo: true }),
         demoRun({ runResult: "timeout" }),
@@ -206,7 +226,7 @@ test("TODO、超时和失败证据都不能被误判为 qemu=pass", function () 
     ];
     runs.forEach(function (run) {
         const summary = core.summarizeRunEvidence(run, labById("lab2"));
-        assert.notEqual(summary.objectiveChecks.qemu, "pass");
+        assert.equal(summary.objectiveChecks.qemu, "fail");
     });
 });
 
@@ -214,19 +234,23 @@ test("其他 Lab 的 PASS 不能代替当前 Lab PASS", function () {
     const run = demoRun({ lab: "lab7", otherLabPass: "lab6", pass: false });
     const summary = core.summarizeRunEvidence(run, labById("lab7"));
     assert.equal(summary.passFound, false);
-    assert.notEqual(summary.objectiveChecks.qemu, "pass");
+    assert.equal(summary.objectiveChecks.qemu, "fail");
 });
 
-test("导入运行记录只改变客观检查，不会增加主观评分", function () {
+test("应用运行证据不会改变 scores、主观 evidence、教师评语和口试记录", function () {
     const record = blank("lab2");
     record.scores = { stage1: 7, stage2: 8, stage3: 9, explanation: 3 };
     record.evidence.stage1 = "教师主观证据";
+    record.notes = "教师总评";
+    record.oralNotes = "口试记录";
     const beforeScores = structuredClone(record.scores);
     const beforeEvidence = structuredClone(record.evidence);
     const summary = core.summarizeRunEvidence(demoRun({ pass: true }), labById("lab2"));
     const updated = core.applyRunEvidence(record, summary);
     assert.deepEqual(updated.scores, beforeScores);
     assert.deepEqual(updated.evidence, beforeEvidence);
+    assert.equal(updated.notes, "教师总评");
+    assert.equal(updated.oralNotes, "口试记录");
     assert.equal(updated.checks.build, "pass");
     assert.equal(updated.checks.qemu, "pass");
 });
