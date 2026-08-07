@@ -12,6 +12,8 @@
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
 - 演示视频与答辩讲解脚本：[docs/demo-script.md](docs/demo-script.md)
 - AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
+- 完整实验教学资料（评委/教师入口）：[docs/labs/README.md](docs/labs/README.md)
+- 教师验收与评分工具：[docs/teacher-grading/README.md](docs/teacher-grading/README.md)
 
 ## 如何阅读当前分支
 
@@ -25,7 +27,7 @@
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
 
-如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整教学参考实现请查看 `lab7-solution`，包含可视化遥测和最新展示材料的集成版本请查看 `main`。
+`main` 是评委和教师的完整成果入口：汇总 P0-Lab7 的教学说明、参考实现说明、教师指南与评分工具。学生应切换到对应 `labN-starter` 分支完成练习；需要按分支历史查看某个实验的完整参考代码时，可切换到对应 `labN-solution` 分支。包含可视化遥测和最新展示材料的集成版本同样位于 `main`。
 
 ## 当前项目状态
 
