@@ -8,6 +8,7 @@
 
 - **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
 - **OS实验可视化展示**：[介绍与启动说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)；[GitHub 最新目录](https://github.com/yicanzhang776-tech/os/tree/main/docs/interactive-demo)）
+- **教师验收与评分工具**：[docs/teacher-grading/index.html](docs/teacher-grading/index.html)（[使用说明](docs/teacher-grading/README.md)）
 - **答辩汇报 PPT**：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
