@@ -68,7 +68,23 @@ Starter 分支使用对应脚本的 `-ExpectIncomplete` 模式，例如:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
 ```
 
-## 文档索引
+## 评委与教师完整材料
+
+`main` 汇总了每个实验 solution 分支中的说明材料，便于评委和教师在默认分支查看课程设计与验收方法。学生完成实验时仍应切换到对应 `labN-starter` 分支，避免提前接触参考实现。
+
+| 实验 | 教学入口 | 参考解法说明 | 教师验收指南 |
+|---|---|---|---|
+| Lab1 | [README](lab1/README.md) | [SOLUTION](lab1/SOLUTION.md) | [TEACHER_GUIDE](lab1/TEACHER_GUIDE.md) |
+| Lab2 | [README](lab2/README.md) | [SOLUTION](lab2/SOLUTION.md) | [TEACHER_GUIDE](lab2/TEACHER_GUIDE.md) |
+| Lab3 | [README](lab3/README.md) | [SOLUTION](lab3/SOLUTION.md) | [TEACHER_GUIDE](lab3/TEACHER_GUIDE.md) |
+| Lab4 | [README](lab4/README.md) | [SOLUTION](lab4/SOLUTION.md) | [TEACHER_GUIDE](lab4/TEACHER_GUIDE.md) |
+| Lab5 | [README](lab5/README.md) | [SOLUTION](lab5/SOLUTION.md) | [TEACHER_GUIDE](lab5/TEACHER_GUIDE.md) |
+| Lab6 | [README](lab6/README.md) | [SOLUTION](lab6/SOLUTION.md) | [TEACHER_GUIDE](lab6/TEACHER_GUIDE.md) |
+| Lab7 | [README](lab7/README.md) | [SOLUTION](lab7/SOLUTION.md) | [TEACHER_GUIDE](lab7/TEACHER_GUIDE.md) |
+
+每个实验目录还包含 `TASKS.md`、`HINTS.md` 与 `TESTING.md`，分别说明学生任务、分级提示和验收命令。
+
+## 原始实验概览
 
 - [Lab1: Boot and SBI Console](lab1.md)
 - [Lab2: Trap and Exception Handling](lab2.md)
