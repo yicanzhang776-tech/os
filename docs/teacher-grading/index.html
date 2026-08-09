@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OS 教学实验教师验收与评分工具</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">AI 合作的操作系统教学实验环境</p>
+            <h1>教师验收与评分工具</h1>
+            <p class="lead">完全离线、零服务器、零数据库：只整理客观运行证据、代码审查和口试记录，不执行学生代码，也不会自动上传成绩。</p>
+        </div>
+        <div class="score-summary" aria-live="polite">
+            <div><span>原始分</span><strong id="rawScore">0</strong></div>
+            <div><span>最终分</span><strong id="finalScore">0</strong></div>
+            <div><span>等级</span><strong id="scoreBand">未通过</strong></div>
+        </div>
+    </header>
+
+    <main>
+        <section class="panel metadata-panel" aria-labelledby="submissionTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="step">01 · 选择实验与提交</p>
+                    <h2 id="submissionTitle">评阅信息</h2>
+                </div>
+                <span id="estimatedHours" class="quiet"></span>
+            </div>
+            <div class="form-grid">
+                <label>实验
+                    <select id="labSelect"></select>
+                </label>
+                <label>学生或小组
+                    <input id="studentInput" type="text" autocomplete="off" placeholder="选填">
+                </label>
+                <label>提交标识
+                    <input id="submissionInput" type="text" autocomplete="off" placeholder="分支、提交号或作业编号">
+                </label>
+                <label>评阅教师
+                    <input id="teacherInput" type="text" autocomplete="off" placeholder="选填">
+                </label>
+                <label>评阅日期
+                    <input id="dateInput" type="date">
+                </label>
+            </div>
+            <div id="objectives" class="objective-list"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="recordsTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="step">02 · 管理独立本机记录</p>
+                    <h2 id="recordsTitle">本机评分记录</h2>
+                </div>
+                <span id="currentRecordId" class="quiet"></span>
+            </div>
+            <p class="section-note">每位学生或小组使用独立 recordId。记录只保存在当前浏览器的 localStorage 中，不含账号、班级、排名或云同步。</p>
+            <label>选择已保存记录
+                <select id="recordSelect"><option value="">暂无本机记录</option></select>
+            </label>
+            <div class="action-row compact-actions">
+                <button id="newRecordButton" type="button" class="secondary-button">新建记录</button>
+                <button id="loadRecordButton" type="button" class="secondary-button">加载记录</button>
+                <button id="saveButton" type="button">保存当前记录</button>
+                <button id="saveAsButton" type="button" class="secondary-button">另存为新记录</button>
+                <button id="deleteRecordButton" type="button" class="danger-button">删除所选记录</button>
+            </div>
+            <p id="recordStatus" class="save-status" aria-live="polite"></p>
+        </section>
+
+        <section class="panel" aria-labelledby="checksTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="step">03 · 建立可核验证据</p>
+                    <h2 id="checksTitle">自动测试与人工检查</h2>
+                </div>
+                <label class="switch-label"><input id="applyCapInput" type="checkbox" checked> 应用建议封顶</label>
+            </div>
+            <p class="section-note">自动测试只能证明构建、输出和部分行为；代码边界、安全前提和解释能力仍需人工检查。</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>检查项</th><th>证据类型</th><th>结果</th></tr></thead>
+                    <tbody id="checksBody"></tbody>
+                </table>
+            </div>
+            <div id="capNotice" class="notice" hidden></div>
+        </section>
+
+        <section class="panel" aria-labelledby="logTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="step">04 · 辅助读取运行结果</p>
+                    <h2 id="logTitle">QEMU / 构建日志解析</h2>
+                </div>
+                <button id="parseLogButton" type="button" class="secondary-button">解析日志</button>
+            </div>
+            <textarea id="logInput" rows="8" placeholder="粘贴构建输出或 QEMU 串口日志。日志只在本机浏览器中处理，不会上传。"></textarea>
+            <div id="logResult" class="log-result" aria-live="polite"></div>
+            <div class="run-import">
+                <div>
+                    <h3>导入 Demo 运行证据</h3>
+                    <p class="section-note">仅接受 <code>os-demo.run/v1</code>。页面复用 Demo 的真实校验协议，只自动建议 build 和 qemu 两项状态，不会自动增加任何主观分数。</p>
+                    <label class="file-button">导入 os-demo.run/v1<input id="runImportInput" type="file" accept="application/json,.json"></label>
+                </div>
+                <div id="runEvidencePanel" class="evidence-summary" hidden>
+                    <h3>已关联的运行证据摘要</h3>
+                    <dl id="runEvidenceDetails"></dl>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="rubricTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="step">05 · 按证据评分</p>
+                    <h2 id="rubricTitle">100 分评分量表</h2>
+                </div>
+                <span class="quiet">分数会限制在各项满分以内</span>
+            </div>
+            <div id="rubricRows" class="rubric-list"></div>
+        </section>
+
+        <section class="panel split-panel" aria-labelledby="manualTitle">
+            <div>
+                <p class="step">06 · 人工审查</p>
+                <h2 id="manualTitle">代码检查位置</h2>
+                <ul id="codeChecks" class="code-list"></ul>
+                <h3>常见错误与扣分依据</h3>
+                <div id="commonErrors"></div>
+            </div>
+            <div>
+                <p class="step">07 · 口试抽查</p>
+                <h2>问题与回答要点</h2>
+                <p class="section-note">回答要点用于保证评分一致，不是要求学生逐字背诵；口试计入量表中原有的“代码清晰度、解释或实验报告”项，不另设权重。</p>
+                <div id="oralQuestions"></div>
+                <label>口试记录
+                    <textarea id="oralNotesInput" rows="6" placeholder="记录学生的解释、追问和关键误区"></textarea>
+                </label>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="summaryTitle">
+            <p class="step">08 · 形成评阅记录</p>
+            <h2 id="summaryTitle">教师总评</h2>
+            <textarea id="notesInput" rows="6" placeholder="概括完成情况、主要问题和改进建议"></textarea>
+            <div class="action-row">
+                <button id="exportMarkdownButton" type="button" class="secondary-button">导出 Markdown</button>
+                <button id="exportJsonButton" type="button" class="secondary-button">导出 JSON</button>
+                <label class="file-button">导入 os-teacher-grading/v1<input id="importInput" type="file" accept="application/json,.json"></label>
+                <button id="printButton" type="button" class="secondary-button">打印</button>
+                <button id="resetButton" type="button" class="danger-button">重置当前表单</button>
+            </div>
+            <p id="saveStatus" class="save-status" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <footer>
+        <p>PASS 只代表观察到部分客观运行证据，不等于学生完全掌握。最终成绩仍由教师结合代码审查、实验说明和口试确认。</p>
+    </footer>
+
+    <script src="../interactive-demo/run-history.js"></script>
+    <script src="../interactive-demo/run-transfer.js"></script>
+    <script src="rubric-data.js"></script>
+    <script src="grading-core.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
