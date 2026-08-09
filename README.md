@@ -112,3 +112,12 @@ lab4: complete Sv39 virtual memory exercise
 
 - `docs/labs/lab4/SOLUTION.md`
 - `docs/labs/lab4/TEACHER_GUIDE.md`
+
+## 本轮文档与验收说明（2026-08-09）
+
+- 当前分支是 Lab4 学生起点，不包含参考答案或教师指南。
+- 学生使用 `-Stage 1`、`-Stage 2`、`-Stage 3` 逐步验证；教师使用 `-ExpectIncomplete` 检查原始 starter 能启动、保留 TODO 且没有 `[Lab4] PASS`。
+- `-Stage` 与 `-ExpectIncomplete` 不能同时使用；默认命令等价于 Stage 3，未完成时失败是正式验收结果，不应改写为通过。
+- 可视化页面支持预测、真实运行、时间线回放、starter/solution 对比和运行证据导出；不会自动切换分支或上传代码、日志。
+- 教师评分工具只放在 `main`；运行证据导出为 `os-demo.run/v1` 后，由教师在 `main` 人工导入和复核。
+- 本轮未在此工作分支触发远程 CI；分支本地验收结果见最终交付报告。
