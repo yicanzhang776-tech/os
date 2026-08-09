@@ -40,19 +40,6 @@
 - `docs/demo-script.md`：演示视频与答辩讲解脚本。
 - `docs/ai-collaboration.md`：AI 协作记录。
 
-## OS 实验可视化与教学反馈
-
-可视化页面位于 [docs/interactive-demo/index.html](docs/interactive-demo/index.html)。它把 P0–Lab7 放入同一张知识地图，实时识别当前 Git 分支，并用构建与 QEMU 串口证据展示实验进度。Ubuntu 中可运行：
-
-```sh
-sh scripts/check-env.sh
-sh scripts/run-interactive-demo.sh
-```
-
-目前页面底部提供学生、教师和其他学习者使用的教学评价表。评价允许如实选择“理解加深”“没有明显变化”“没有帮助”或“更加困惑”。页面还会根据 P0、Lab1–Lab7 以及 starter/solution 分支显示五道针对实验内容的教学评价题，用来评价讲解、任务、提示、可视化和运行反馈，而不是考查知识答案；随后再填写补充反馈。结果可以保存在本机或导出 Markdown/JSON；使用账号提交时，反馈者用自己的 GitLab 账号检查并发布预填 Issue。
-
-当前不足是没有独立数据库、匿名在线问卷、班级统计页面和统一登录系统，草稿也不会跨设备同步。没有 GitLab 项目权限的使用者需要导出 Markdown 后交给教师或项目负责人。现阶段先用真实试用反馈验证教学价值；未来在服务器、维护人员和有效样本具备后，再考虑匿名收集、集中统计、处理状态跟踪与更完整的分支事件标记。详细说明见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
-
 ## 实验路线
 
 ```mermaid
@@ -67,6 +54,34 @@ flowchart LR
 ```
 
 从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
+
+## OS实验可视化展示
+
+可视化页面把 P0 和 Lab1-Lab7 放入同一张操作系统知识地图，将实验代码、当前 Git 分支以及 QEMU/OpenSBI 串口输出联系起来。学生既可以沿实验顺序理解知识的递进关系，也可以从执行流程、系统层次、资源状态和保护边界等维度观察同一知识点。
+
+### 当前分支入口
+
+- [可视化介绍与使用说明](docs/interactive-demo/README.md)
+- [可视化页面源码](docs/interactive-demo/index.html)
+
+以上链接均为相对路径。在 GitLab 中从哪个分支打开 README，就会进入该分支自己的可视化目录。仓库页面只能查看页面源码；实时分支识别、构建和 QEMU 事件需要在本机启动桥接服务。
+
+### 启动实时模式
+
+Windows PowerShell：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
+```
+
+Ubuntu：
+
+```sh
+sh scripts/check-env.sh
+node docs/interactive-demo/server.js --port 8888
+```
+
+启动后访问 `http://127.0.0.1:8888`。需要立即构建并运行当前分支时，Windows 可去掉 `-ServeOnly`，Ubuntu 可在 Node 命令末尾添加 `--run`。
 
 ## P0 与 Lab1-Lab7 的区别
 
