@@ -8,16 +8,38 @@ P0 是工程运行基线，不计入正式教学实验。P0 只负责 Rust 裸�
 
 Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概念逐步展开，并配套 starter code、学生任务、参考实现和自动测试。
 
-## 文档索引
+## 按读者进入
+
+### 学生
+
+- [教学实验路线](labs/README.md)
+- [OS 实验可视化、预测与回放](interactive-demo/README.md)
+- 当前 `labN-starter` 根目录 `README.md` 及对应 `TASKS.md`、`HINTS.md`、`TESTING.md`
+
+### 教师与助教
+
+- [完整实验教学资料](labs/README.md)
+- [教师验收与评分工具](teacher-grading/README.md)
+- 各实验 `TEACHER_GUIDE.md` 与 `SOLUTION.md`
+
+### 评委与项目维护者
+
+- [设计方案](../DESIGN.md)
+- [赛题要求映射](requirements.md)
+- [系统架构](architecture.md)
+- [最终验收记录](final-acceptance-report.md)
+- [答辩与视频演示脚本](demo-script.md)
+
+## 主题索引
 
 - [赛题要求映射](requirements.md)
 - [系统架构](architecture.md)
 - [开发计划与当前进度](development-plan.md)
 - [测试设计](testing.md)
 - [AI 协作记录](ai-collaboration.md)
-- [教学实验路线](labs/README.md)
-- [完整实验教学资料与教师入口](labs/README.md)
+- [教学实验路线与完整材料](labs/README.md)
 - [教师验收与评分工具](teacher-grading/README.md)
+- [可视化学习地图与运行证据](interactive-demo/README.md)
 - [官方资料整理](references/problem-statement.md)
 - [最终设计方案与开发文档](final-report.md)
 - [比赛提交检查清单](submission-checklist.md)

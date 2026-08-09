@@ -50,12 +50,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 ```
 
+### 分阶段 QEMU 验收
+
+Lab1-Lab7 的 PowerShell 脚本支持 `-Stage 1/2/3`。Stage 1/2 检查当前任务阶段的稳定证据，Stage 3 检查端到端行为并作为默认值：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1 -Stage 3
+```
+
+`-Stage` 与 `-ExpectIncomplete` 互斥。后者只用于未完成的 starter 起点，不能作为学生完成功能后的最终验收。
+
+### 可视化与教师评分测试
+
+使用 Node.js 18 或更新版本执行：
+
+```powershell
+node --test docs/interactive-demo/*.test.js docs/teacher-grading/grading-core.test.js
+node --check docs/interactive-demo/server.js
+node --check docs/interactive-demo/app.js
+node --check docs/teacher-grading/grading-core.js
+node --check docs/teacher-grading/app.js
+```
+
+这些测试覆盖 17 种仓库分支上下文、事件协议、预测、回放、导入导出、本地诊断、教学反馈、七套评分量表和运行证据导入。测试数量会随功能变化，正式材料只记录同一提交上实际执行得到的数字。
+
 ## Starter 与 Solution 验收策略
 
 每个实验分支有两类验收：
 
 - `labN-starter`：必须能构建、能启动 QEMU、不能输出 `[LabN] PASS`，并且必须输出清晰的 `[LabN] TODO` 或等价未完成提示。
 - `labN-solution`：必须输出对应 `[LabN] PASS`，并保持之前实验的回归输出。
+
+正式开课前还必须确认 starter 不包含 `SOLUTION.md`、`TEACHER_GUIDE.md`、完整答案函数体或可直接复制的补丁。
 
 PowerShell starter 验收示例：
 

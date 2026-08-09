@@ -1,8 +1,14 @@
 param(
+    [ValidateSet(1, 2, 3)]
+    [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
+    throw "Use either -ExpectIncomplete or -Stage, not both."
+}
 
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
@@ -19,7 +25,7 @@ Remove-Item -LiteralPath $kernel -ErrorAction SilentlyContinue
 Push-Location $repo
 $buildExitCode = $null
 try {
-    cargo build -p ai-os-kernel
+    cargo build -p ai-os-kernel --target riscv64gc-unknown-none-elf
     $buildExitCode = $LASTEXITCODE
 }
 finally {
@@ -74,20 +80,70 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-$markerPattern = "\[Lab3\] PASS"
+function Assert-Contains {
+    param(
+        [string]$Text,
+        [string]$Pattern,
+        [string]$Message
+    )
+    if ($Text -notmatch $Pattern) {
+        throw $Message
+    }
+}
+
+function Assert-Ordered {
+    param(
+        [string]$Text,
+        [string[]]$Markers
+    )
+    $position = -1
+    foreach ($marker in $Markers) {
+        $next = $Text.IndexOf($marker, [Math]::Max($position + 1, 0), [StringComparison]::Ordinal)
+        if ($next -lt 0) {
+            throw "Expected marker '$marker' after previous Lab3 marker."
+        }
+        $position = $next
+    }
+}
 
 if ($ExpectIncomplete) {
-    if ($output -match $markerPattern) {
+    if ($output -match "\[Lab3\] PASS") {
         throw "Unexpected Lab3 success marker [Lab3] PASS was found in starter output."
     }
-    if ($output -notmatch "\[Lab3\] TODO") {
+    Assert-Contains $output "\[Lab2\] PASS" "Lab2 regression marker was not found."
+    Assert-Contains $output "\[Lab3\] start" "Lab3 start marker was not found."
+    if ($output -notmatch "TODO\(LAB3-|Lab3.*TODO") {
         throw "Expected Lab3 starter TODO output was not found in QEMU output."
     }
     Write-Output "Lab3 QEMU starter incomplete test passed."
 }
 else {
-    if ($output -notmatch $markerPattern) {
-        throw "Expected Lab3 success marker [Lab3] PASS was not found in QEMU output."
+    $stage1Markers = @("[Lab3] start")
+    $stage2Markers = $stage1Markers + @("[OS_DEMO] lab=lab3 step=frame-checks-start")
+    $stage3Markers = $stage2Markers + @("[Lab3] PASS")
+
+    if ($Stage -eq 1) {
+        foreach ($marker in $stage1Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 1 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage1Markers
+        Write-Output "Lab3 Stage 1 test passed."
     }
-    Write-Output "Lab3 QEMU smoke test passed."
+    elseif ($Stage -eq 2) {
+        foreach ($marker in $stage2Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 2 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage2Markers
+        Write-Output "Lab3 Stage 2 test passed."
+    }
+    else {
+        foreach ($marker in $stage3Markers) {
+            Assert-Contains $output ([regex]::Escape($marker)) "Expected Stage 3 marker '$marker' was not found."
+        }
+        Assert-Ordered $output $stage3Markers
+        if ($output -match "\[Lab3.*TODO") {
+            throw "Lab3 final output still contains a TODO marker."
+        }
+        Write-Output "Lab3 Stage 3 test passed."
+    }
 }

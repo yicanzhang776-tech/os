@@ -1,5 +1,7 @@
 # Lab2: Trap and Exception Handling
 
+> 验收约定：学生按 `-Stage 1/2/3` 逐步验证；教师只用 `-ExpectIncomplete` 检查原始 starter 未泄露答案。运行记录可从可视化页面导出，供 `main` 的教师评分工具人工复核。
+
 ## 实验背景
 
 Lab2 在 Lab1 的启动和控制台基础上引入 RISC-V S-mode trap。学生将观察一个受控的 breakpoint 异常如何进入内核 trap 入口、如何由 Rust handler 识别原因、如何修正返回地址并回到原执行流。
@@ -138,7 +140,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
 [Lab2] TODO: configure stvec and handle the demo trap
 ```
 
-`scripts/test-lab2.ps1` 应明确失败，失败原因应是没有找到 Lab2 成功标志。
+原始 starter 应使用 `scripts/test-lab2.ps1 -ExpectIncomplete` 验收；学生完成后改用 `-Stage 1/2/3`。
 
 ## Solution 预期输出
 
@@ -196,7 +198,7 @@ Lab2 QEMU smoke test passed.
 ## 教师验收说明
 
 - 教师应分别检查 `lab2-starter` 和 `lab2-solution`。
-- starter 分支的“预期失败”是教学设计的一部分，但 CI 不应直接把正式 solution 测试失败显示为仓库失败。
+- starter 起点使用 `-ExpectIncomplete`，避免把按设计未完成的分支显示为基础设施失败。
 - solution 分支必须看到 Lab2 成功标志，且日志中应能看出 breakpoint 异常确实进入 handler。
 - 代码审查时应重点看 `sepc` 推进、寄存器保存/恢复和 `unsafe` 注释。
 

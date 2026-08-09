@@ -27,8 +27,9 @@ P0 与 Lab1-Lab7 的 starter/solution 分支均已推送到官方 GitLab。`lab7
 
 1. P0 与 Lab1-Lab7 已形成构建、运行、主机测试和 QEMU 系统测试闭环。
 2. `docs/final-report.md`、`docs/submission-checklist.md` 和 `docs/demo-script.md` 已作为最终提交材料加入仓库。
-3. 后续可根据比赛提交格式制作演示视频、答辩 PPT 和最终版报告 PDF。
-4. 若希望所有历史 starter/solution 分支都单独运行最新 CI，可将最终 CI 配置同步到对应分支；当前集成展示入口为 `main`，教学最终解答分支为 `lab7-solution`。
+3. 已加入 OS 实验可视化、预测回放、本地规则诊断、教学反馈和教师评分工具。
+4. 正式答辩 PPT 已纳入仓库；演示视频是否录制完成仍需项目成员按实际情况确认。
+5. P0 与 Lab1-Lab7 的远程教学分支均已包含当前 CI 配置。文档和 Stage 接口仍需在各分支受控同步并逐分支复验。
 
 ## 最终验收建议
 
@@ -49,5 +50,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
 ## 风险与后续材料
 
 - GitLab runner 可能缺少 QEMU 或 Rust target，需要根据 CI 日志补安装命令。
-- 由于 `.gitlab-ci.yml` 只在包含该文件的分支生效，若希望旧 starter/solution 分支也自动跑最新 CI，需要将最终 CI 配置同步到对应分支。
-- 仓库内已提供最终设计方案与开发文档、提交清单、演示脚本和 AI 协作记录；比赛视频和答辩 PPT 仍需按现场提交要求制作。
+- CI 配置存在不代表远程流水线已实际成功；仍应以对应分支最新流水线记录为准。
+- 仓库已包含答辩 PPT。比赛视频和最终报告 PDF 的实际状态需要项目成员确认，不能仅凭仓库文件推断。

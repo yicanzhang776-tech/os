@@ -43,6 +43,8 @@ docs/teacher-grading/index.html
 
 可视化 Demo 会导出 `os-demo.run/v1`。评分页面复用 `docs/interactive-demo/run-transfer.js` 的真实协议校验，不猜测字段，也不会自行启动 Cargo、QEMU 或 shell。
 
+推荐课堂闭环是：学生在对应 starter 分支完成任务并使用[可视化页面](../interactive-demo/README.md)预测、运行和回放；教师保存或接收其 `os-demo.run/v1`，回到 `main` 打开本评分页面导入证据，再完成人工代码审查、实验报告和口试。页面中的“实验教学评价”属于学习体验反馈，不会进入本工具的成绩计算。
+
 导入步骤：
 
 1. 在 Demo 中完成一次运行并导出 JSON。

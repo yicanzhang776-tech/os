@@ -14,13 +14,17 @@
 | Markdown 文档 | 已建立并持续更新需求、架构、计划、测试、AI协作和实验文档 | 检查 `docs/` 和根 `README.md` |
 | Mermaid 图 | 已在实验路线和部分实验文档中使用 Mermaid | Markdown 渲染检查 |
 | 创新性 | 已体现：AI 协作记录、starter/solution 分支、自动化 QEMU 验收、三段式本科教学任务设计 | 查看 `docs/ai-collaboration.md` 和 `docs/labs/` |
+| 过程可视化 | 已实现。内核遥测和稳定串口输出经本地桥接器转换为知识地图、时间线、事件解释与系统状态 | 启动 `scripts/run-interactive-demo.*`；检查真实 QEMU 事件 |
+| 学习闭环 | 已实现运行前预测、预测与实际对照、时间线回放、starter/solution 差异和本地规则诊断 | `docs/interactive-demo/README.md`；Node 自动测试 |
+| 教学评价 | 已实现分支相关的五题教学反馈；仅本地保存或由使用者主动导出/提交，不计算成绩 | 可视化页面反馈区；`feedback.test.js` |
+| 教师评分 | 已实现七套 100 分量表、多学生本机记录、运行证据导入、人工复核与导出 | `docs/teacher-grading/README.md`；`grading-core.test.js` |
 | 完整性 | 已完成 P0 和 Lab1-Lab7 闭环；最终设计方案与开发文档、提交检查清单和演示脚本已加入仓库 | 全量验收命令和最终材料审查 |
 | 代码质量 | 已执行格式化、Clippy、主机单测和 QEMU 回归；unsafe 边界在实验文档中说明 | `cargo fmt --all -- --check`；`cargo clippy -p ai-os-kernel -- -D warnings` |
 | 文档完整性 | 已覆盖实验目标、任务边界、测试方法、常见错误、教师验收和最终设计方案与开发文档 | 检查 `docs/labs/*.md`、`docs/testing.md`、`docs/final-report.md` |
 
 ## 评分维度对齐
 
-- 创新性：通过 AI 协作过程记录、递进式教学分支和自动反馈脚本体现。
+- 创新性：通过 AI 协作记录、递进式教学分支、真实运行可视化、预测回放和双层评价体系体现。
 - 完整性：P0 与 Lab1-Lab7 已形成构建、运行、测试闭环；仓库已补充最终设计方案与开发文档、提交检查清单和演示脚本。
 - 代码质量：当前要求持续通过 fmt、build、Clippy、主机单元测试和 QEMU 系统测试。
 - 文档完整性：实验文档已经覆盖 starter/solution、学生任务、测试和教师验收；最终设计方案与开发文档已整理到 `docs/final-report.md`。

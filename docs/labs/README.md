@@ -68,6 +68,22 @@ Starter 分支使用对应脚本的 `-ExpectIncomplete` 模式，例如:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
 ```
 
+学生完成任务时应使用 `-Stage 1/2/3` 逐步验收；`-ExpectIncomplete` 只验证发布给学生的原始 starter 没有泄露最终答案：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 3
+```
+
+## 可视化学习与教师证据
+
+1. 在当前教学分支启动 [OS 实验可视化](../interactive-demo/README.md)。
+2. 先保存对构建、运行结果和关键事件的预测，再启动真实 QEMU。
+3. 保存运行记录，回放事件并与同一 Lab 的 starter/solution 记录比较。
+4. 学习者可填写教学反馈；反馈不计算成绩。
+5. 教师可导出 `os-demo.run/v1`，在 `main` 的[教师评分工具](../teacher-grading/README.md)中导入客观证据，再结合代码审查、报告和口试评分。
+
 ## 评委与教师完整材料
 
 `main` 汇总了每个实验 solution 分支中的说明材料，便于评委和教师在默认分支查看课程设计与验收方法。学生完成实验时仍应切换到对应 `labN-starter` 分支，避免提前接触参考实现。

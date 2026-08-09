@@ -1,5 +1,7 @@
 # Lab1: Boot and SBI Console
 
+> 验收约定：学生按 `-Stage 1/2/3` 逐步验证；教师只用 `-ExpectIncomplete` 检查原始 starter 未泄露答案。运行记录可从可视化页面导出，供 `main` 的教师评分工具人工复核。
+
 ## 实验背景
 
 Lab1 是 P0 之后的第一个正式教学实验。P0 只证明工程能够在 QEMU/OpenSBI 上运行；Lab1 将这条最小启动路径拆成适合学生阅读和补全的 `boot`、`sbi`、`console` 和 `main` 模块。
@@ -101,7 +103,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
 [Lab1] TODO: replace this placeholder with the success marker
 ```
 
-`scripts/test-lab1.ps1` 应明确失败，失败原因应是没有找到 Lab1 成功标志，而不是编译错误、QEMU 错误或脚本错误。
+原始 starter 应使用 `scripts/test-lab1.ps1 -ExpectIncomplete` 验收；学生完成后改用 `-Stage 1/2/3`，不把“正式测试失败”当作完成证据。
 
 ## Solution 预期输出
 
@@ -151,7 +153,7 @@ Lab1 QEMU smoke test passed.
 ## 教师验收说明
 
 - 教师应分别检查 `lab1-starter` 和 `lab1-solution`。
-- starter 分支的“预期失败”是教学设计的一部分，但如果接入 CI，应使用教师专用脚本或模式参数将“未包含成功标志”判定为 starter 验收通过。
+- starter 起点使用 `-ExpectIncomplete`，该模式成功表示“可构建、可启动、保留 TODO 且没有最终 PASS”。
 - solution 分支必须运行正式测试脚本，并且只有看到 Lab1 成功标志时才通过。
 
 ## 预计完成时间

@@ -258,16 +258,26 @@ starter 分支可使用 `-ExpectIncomplete` 验证“能启动但未泄露答案
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
 ```
 
+每个 Lab 还支持分阶段验收。`-Stage 1/2/3` 分别检查当前实验从基础机制到端到端行为的阶段证据；`-Stage` 与 `-ExpectIncomplete` 不能同时使用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 3
+```
+
+`main` 使用集成运行中的稳定事件作为阶段证据；各 `labN-solution` 使用任务书约定的 `[LabN-T1]`、`[LabN-T2]` 与最终 `[LabN] PASS`。教师评分工具只随 `main` 发布，教学分支可从可视化页面导出 `os-demo.run/v1`，再回到 `main` 导入评分页面。
+
 主机单元测试：
 
 ```powershell
 cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
 ```
 
-可视化事件知识目录与本地桥接器测试：
+可视化、协议交换、本地桥接器与教师评分工具测试：
 
 ```powershell
-node --test docs/interactive-demo/diagnostics.test.js docs/interactive-demo/event-catalog.test.js docs/interactive-demo/feedback.test.js docs/interactive-demo/prediction-model.test.js docs/interactive-demo/presentation-mode.integration.test.js docs/interactive-demo/presentation-mode.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/run-history.test.js docs/interactive-demo/run-transfer.test.js docs/interactive-demo/server.test.js docs/interactive-demo/state-model.test.js docs/interactive-demo/state-diff.test.js docs/interactive-demo/timeline-controller.test.js
+node --test docs/interactive-demo/diagnostics.test.js docs/interactive-demo/event-catalog.test.js docs/interactive-demo/feedback.test.js docs/interactive-demo/prediction-model.test.js docs/interactive-demo/presentation-mode.integration.test.js docs/interactive-demo/presentation-mode.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/run-history.test.js docs/interactive-demo/run-transfer.test.js docs/interactive-demo/server.test.js docs/interactive-demo/state-model.test.js docs/interactive-demo/state-diff.test.js docs/interactive-demo/timeline-controller.test.js docs/teacher-grading/grading-core.test.js
 node --check docs/interactive-demo/event-catalog.js
 node --check docs/interactive-demo/prediction-model.js
 node --check docs/interactive-demo/presentation-mode.js
@@ -279,6 +289,8 @@ node --check docs/interactive-demo/timeline-controller.js
 node --check docs/interactive-demo/server.js
 node --check docs/interactive-demo/app.js
 node --check docs/interactive-demo/diagnostics.js
+node --check docs/teacher-grading/grading-core.js
+node --check docs/teacher-grading/app.js
 ```
 
 ## 成功输出示例
