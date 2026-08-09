@@ -70,6 +70,7 @@ fi
 
 mkdir -p "$(dirname "$log")"
 rm -f "$log" "$err_log"
+rm -f "$kernel"
 
 cd "$repo"
 cargo build -p ai-os-kernel

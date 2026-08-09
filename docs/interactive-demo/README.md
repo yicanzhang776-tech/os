@@ -35,7 +35,7 @@ sh scripts/run-interactive-demo.sh --check-only
 sh scripts/run-interactive-demo.sh
 ```
 
-`--check-only` 会检查 Node.js、Git、Cargo、`riscv64gc-unknown-none-elf` 和 QEMU 的完整 Linux 运行链路。脚本会启动本地页面并尝试打开 `http://127.0.0.1:4173`。只想启动服务而不打开浏览器时使用：
+`--check-only` 会检查 Node.js、Git、Cargo、`riscv64gc-unknown-none-elf` 和 QEMU 的完整 Linux 运行链路。脚本会启动本地页面并尝试打开 `http://127.0.0.1:8888`。只想启动服务而不打开浏览器时使用：
 
 ```sh
 sh scripts/run-interactive-demo.sh --no-browser
@@ -59,10 +59,10 @@ Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
-node docs/interactive-demo/server.js --port 4173
+node docs/interactive-demo/server.js --port 8888
 ```
 
-Ubuntu 中再打开 `http://127.0.0.1:4173`。若希望启动页面时立即构建并运行当前分支，在 Node 命令末尾添加 `--run`。
+Ubuntu 中再打开 `http://127.0.0.1:8888`。若希望启动页面时立即构建并运行当前分支，在 Node 命令末尾添加 `--run`。
 
 保持这个终端运行，然后让学生正常切换分支：
 
@@ -90,7 +90,7 @@ git switch lab3-starter
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1
 ```
 
-可选参数包括 `-Port 4173` 与 `-NoBrowser`。关闭终端或按 `Ctrl+C` 会停止本地服务和它启动的子进程。服务只监听 `127.0.0.1`，不会向网络发送代码或实验输出。
+可选参数包括 `-Port 8888` 与 `-NoBrowser`。关闭终端或按 `Ctrl+C` 会停止本地服务和它启动的子进程。服务只监听 `127.0.0.1`，不会向网络发送代码或实验输出。
 
 ## 演示模式（课堂与答辩）
 
@@ -104,11 +104,11 @@ sh scripts/run-interactive-demo.sh
 
 不要为演示启动命令添加 `--run`。服务启动后，可以通过普通页面的“进入演示模式”按钮切换，也可以直接打开：
 
-- 通用入口：<http://127.0.0.1:4173/?mode=presentation>
-- Lab1（控制台与 SBI）：<http://127.0.0.1:4173/?mode=presentation&lab=lab1>
-- Lab2（Trap 与异常）：<http://127.0.0.1:4173/?mode=presentation&lab=lab2>
-- Lab4（Sv39 页表）：<http://127.0.0.1:4173/?mode=presentation&lab=lab4>
-- Lab5（任务调度）：<http://127.0.0.1:4173/?mode=presentation&lab=lab5>
+- 通用入口：<http://127.0.0.1:8888/?mode=presentation>
+- Lab1（控制台与 SBI）：<http://127.0.0.1:8888/?mode=presentation&lab=lab1>
+- Lab2（Trap 与异常）：<http://127.0.0.1:8888/?mode=presentation&lab=lab2>
+- Lab4（Sv39 页表）：<http://127.0.0.1:8888/?mode=presentation&lab=lab4>
+- Lab5（任务调度）：<http://127.0.0.1:8888/?mode=presentation&lab=lab5>
 
 工具栏支持全屏、退出演示和一键重置。需要讲解已有实验过程时，可以在演示模式中选择或导入本地 `os-demo.run/v1` 运行记录，再使用播放、暂停、四档速度、上一步、下一步、失败/差异跳转以及空格、方向键、Home/End、F、D、`/`、Esc 等原有键盘操作。导入仍只由浏览器本地读取，不会上传文件。
 

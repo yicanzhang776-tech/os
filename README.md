@@ -53,6 +53,7 @@
 ## 文档入口
 
 - 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
+- OS实验可视化展示：[使用说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)，自动进入当前 GitLab 分支）
 - [实验总览](docs/labs/lab1/README.md)
 - [任务书](docs/labs/lab1/TASKS.md)
 - [分级提示](docs/labs/lab1/HINTS.md)
@@ -61,10 +62,6 @@
 - [教师指南](docs/labs/lab1/TEACHER_GUIDE.md)
 
 旧版单页说明 [docs/labs/lab1.md](docs/labs/lab1.md) 只保留跳转说明。请优先阅读 `docs/labs/lab1/` 目录下的教学文档。
-
-## 教学评价
-
-运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab1 solution 分支。在原有问题之后，还会显示五道针对启动入口、启动栈、SBI 控制台和正常关机实验的教学评价题，用来评价讲解、可视化、运行反馈及参考说明，不要求填写知识答案；第 5 题关注参考实现的说明是否真正帮助理解。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
 
 ## 学生分支允许修改
 
