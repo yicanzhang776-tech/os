@@ -21,7 +21,7 @@ const repoDir = path.resolve(__dirname, "..", "..");
 const runKernelOnStart = process.argv.includes("--run");
 const readSerialFromStdin = process.argv.includes("--stdin");
 const portFlag = process.argv.indexOf("--port");
-const port = portFlag >= 0 ? Number(process.argv[portFlag + 1]) : 4173;
+const port = portFlag >= 0 ? Number(process.argv[portFlag + 1]) : 8888;
 const host = "127.0.0.1";
 const rustTarget = process.env.OS_DEMO_TARGET || "riscv64gc-unknown-none-elf";
 const cargoCommand = process.env.CARGO || "cargo";
