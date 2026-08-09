@@ -80,3 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
 - [Lab5: 任务管理与协作式调度](lab5.md)
 - [Lab6: 用户态与系统调用](lab6.md)
 - [Lab7: 设备与简化文件系统](lab7.md)
+
+## 分阶段学习、可视化与评价（2026-08-09）
+
+学生在当前 Lab 使用 `-Stage 1/2/3` 逐步验证任务标志；教师只在原始 starter 上使用 `-ExpectIncomplete` 检查答案隔离。可视化学习流程为“预测 → 真实运行 → 时间线回放 → starter/solution 对比 → 解释证据”。教学反馈不计分；正式评分只在 `main` 的 `docs/teacher-grading/index.html` 中进行，导入运行证据后仍需人工复核。
