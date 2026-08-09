@@ -1,266 +1,155 @@
-# AI 合作的操作系统教学实验环境
+# OS 实验可视化展示
 
-本项目参加 2026 年全国大学生计算机系统能力大赛，赛项为操作系统设计赛，题目为 OS 功能挑战赛道第 20 题：AI 合作的操作系统教学实验环境。
+这个 HTML 页面把 P0–Lab7 放进同一张学习地图，并同时提供三类视角：
 
-项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
+- 纵向实验链：启动、控制台、Trap、物理内存、虚拟内存、调度、用户态、文件系统怎样逐层组合；
+- 横向知识维度：执行链、系统层次、资源管理、保护边界和实验事实；
+- 当前实验现场：Git 分支、任务进度、动态结构、结构化事件和原始串口证据。
 
-## 提交文档入口
+页面可以直接打开用于离线讲解；通过本地桥接器启动后，会跟踪工作区分支并由真实构建/QEMU 输出驱动。页面下方还提供教学评价表，让学生、教师或其他学习者把真实感受交给项目负责人。
 
-- **设计方案与开发文档**：[DESIGN.md](DESIGN.md)
-- **交互式执行过程 Demo**：[docs/interactive-demo/index.html](docs/interactive-demo/index.html)（实时模式见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)）
-- **答辩汇报 PPT**：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
-- 同步备份位置：[docs/final-report.md](docs/final-report.md)
-- 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
-- 演示视频与答辩讲解脚本：[docs/demo-script.md](docs/demo-script.md)
-- AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
+## 目前已经实现
 
-## 如何阅读当前分支
+- P0–Lab7 的纵向实验路线与五种横向知识观察维度；
+- 当前 Git 分支、starter/solution 角色、实验任务和提交编号的实时识别；
+- `os-demo.event/v1` 版本化事件协议，以及 GitHub/GitLab 前缀下 17 个现有分支的统一映射；
+- 构建、QEMU 串口与结构化实验事件的本地展示；
+- 学生保存预测后才能从页面启动当前分支，并在运行结束后对照预测与真实结果；
+- 一次运行最多保存 512 个有序结构化事件，可在当前浏览器中保存并逐步回放；
+- 对同一 Lab 已保存的 starter/solution 运行进行事件差异比较；
+- 包含“有帮助、没有变化、没有帮助、更加困惑”的教学效果评价；
+- 根据 P0、Lab1–Lab7 和 starter/solution 分支自动切换五道针对实验内容的教学评价题；
+- 评价草稿保存在当前浏览器，并可导出 Markdown 或 JSON；
+- 生成 GitLab Issue 预填页面，由反馈者使用自己的 GitLab 账号检查后提交。
 
-本仓库使用 P0 基线分支和 Lab1-Lab7 的 starter/solution 分支组织教学内容。GitLab 页面显示哪个阶段，取决于左上角当前选择的分支。
+## 推荐课堂工作流
 
-| 分支 | 含义 | 验收方式 |
-|---|---|---|
-| `main` | 默认集成展示入口，包含可视化遥测和最新材料 | 查看完整项目、文档和展示材料 |
-| `p0-minimal-qemu-baseline` | P0 工程运行基线，不计入正式教学实验 | `scripts/test-qemu.ps1` 输出 `[P0] PASS` |
-| `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
-| `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
-| `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
-
-如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整教学参考实现请查看 `lab7-solution`，包含可视化遥测和最新展示材料的集成版本请查看 `main`。
-
-## 当前项目状态
-
-仓库已经建立 P0 工程基线，并完成 Lab1 到 Lab7 的 starter/solution 分支：
-
-- P0：Rust 裸机内核可交叉编译，并能在 QEMU `virt` + OpenSBI 下启动。
-- Lab1：启动与 SBI 控制台。
-- Lab2：Trap 与异常处理。
-- Lab3：物理内存管理。
-- Lab4：RISC-V Sv39 虚拟内存。
-- Lab5：单核内核态协作式调度。
-- Lab6：最小用户态与系统调用。
-- Lab7：设备抽象与教学版内存文件系统。
-
-所有实验使用独立成功标志，例如 `[Lab7] PASS`。starter 分支保留学生任务边界和 TODO，solution 分支提供教师参考实现。
-
-在 `main` / `lab7-solution` 中还包含：
-
-- `DESIGN.md`：设计方案与开发文档，便于在 GitLab 根目录直接查看。
-- `docs/final-report.md`：设计方案与开发文档的 docs 目录备份。
-- `docs/submission-checklist.md`：提交前检查清单。
-- `docs/demo-script.md`：演示视频与答辩讲解脚本。
-- `docs/ai-collaboration.md`：AI 协作记录。
-
-## OS 实验可视化与教学反馈
-
-可视化页面位于 [docs/interactive-demo/index.html](docs/interactive-demo/index.html)。它把 P0–Lab7 放入同一张知识地图，实时识别当前 Git 分支，并用构建与 QEMU 串口证据展示实验进度。Ubuntu 中可运行：
+准备 Node.js、Rust 的 `riscv64gc-unknown-none-elf` target 和 `qemu-system-riscv64`，在包含新版 Demo 的分支启动一次桥接器。项目主要面向 Ubuntu/VMware 环境，推荐先运行：
 
 ```sh
 sh scripts/check-env.sh
+sh scripts/run-interactive-demo.sh --check-only
 sh scripts/run-interactive-demo.sh
 ```
 
-运行前，学生需要先预测当前分支可能出现的结果并写下判断依据，再由页面启动真实构建与 QEMU。一次运行的结构化事件可以保存在当前浏览器中逐步回放；分别保存同一 Lab 的 starter 与 solution 运行后，还可以比较两者的共同事件和分支独有事件。Linux 运行链路、事件协议、分支映射和具体操作见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
+`--check-only` 会检查 Node.js、Git、Cargo、`riscv64gc-unknown-none-elf` 和 QEMU 的完整 Linux 运行链路。脚本会启动本地页面并尝试打开 `http://127.0.0.1:8888`。只想启动服务而不打开浏览器时使用：
 
-目前页面底部提供学生、教师和其他学习者使用的教学评价表。评价允许如实选择“理解加深”“没有明显变化”“没有帮助”或“更加困惑”。页面还会根据 P0、Lab1–Lab7 以及 starter/solution 分支显示五道针对实验内容的教学评价题，用来评价讲解、任务、提示、可视化和运行反馈，而不是考查知识答案；随后再填写补充反馈。结果可以保存在本机或导出 Markdown/JSON；使用账号提交时，反馈者用自己的 GitLab 账号检查并发布预填 Issue。
-
-当前不足是没有独立数据库、匿名在线问卷、班级统计页面和统一登录系统，草稿也不会跨设备同步。没有 GitLab 项目权限的使用者需要导出 Markdown 后交给教师或项目负责人。现阶段先用真实试用反馈验证教学价值；未来在服务器、维护人员和有效样本具备后，再考虑匿名收集、集中统计、处理状态跟踪与更完整的分支事件标记。详细说明见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
-
-## 实验路线
-
-```mermaid
-flowchart LR
-    P0["P0 最小运行基线"] --> L1["Lab1 启动与SBI控制台"]
-    L1 --> L2["Lab2 Trap与异常处理"]
-    L2 --> L3["Lab3 物理内存管理"]
-    L3 --> L4["Lab4 Sv39虚拟内存"]
-    L4 --> L5["Lab5 协作式调度"]
-    L5 --> L6["Lab6 用户态与系统调用"]
-    L6 --> L7["Lab7 设备与简化文件系统"]
+```sh
+sh scripts/run-interactive-demo.sh --no-browser
 ```
 
-从 Lab5 开始，每个实验拆分为约 3 个循序渐进的小任务，面向普通本科生教学，整体难度控制在中等水平。
+希望页面启动后立即构建并运行当前分支时使用：
 
-## P0 与 Lab1-Lab7 的区别
-
-P0 是工程运行基线，不计入正式教学实验。P0 只负责：
-
-- Rust 裸机工程能够编译。
-- 目标架构为 `riscv64gc-unknown-none-elf`。
-- 能够在 QEMU `virt` 机器上运行。
-- 使用 OpenSBI 进入 S-mode 内核。
-- 内核能够输出最小启动信息。
-- 提供可重复执行的构建、运行和测试命令。
-
-Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 分支、solution 分支、实验文档和自动测试脚本。
-
-## 目录结构
-
-不同阶段分支的文件树会随实验进度逐步增加。集成展示分支 `main` 与教学最终解答分支 `lab7-solution` 的主要结构如下：
-
-```text
-.
-├── .cargo/                 # Rust 目标配置
-├── docs/                   # 需求、架构、测试、AI协作和实验文档
-├── kernel/                 # RISC-V 教学内核 crate
-│   ├── linker.ld
-│   └── src/
-│       ├── drivers/        # Lab7 内存设备抽象
-│       ├── fs/             # Lab7 简化文件系统
-│       ├── memory/         # Lab3/Lab4 内存管理
-│       ├── task/           # Lab5 协作式调度
-│       ├── syscall.rs      # Lab6/Lab7 系统调用分发
-│       ├── trap.rs         # Lab2 及后续 trap/syscall 路径
-│       └── user.rs         # Lab6/Lab7 内置用户程序
-├── scripts/                # 环境检查、QEMU运行和实验测试脚本
-├── AGENTS.md
-├── Cargo.toml
-├── Cargo.lock
-├── Makefile
-└── README.md
+```sh
+sh scripts/run-interactive-demo.sh --run
 ```
 
-## 环境依赖
+也可以使用原始 Node 命令：
 
-必需依赖：
-
-- Rust 编译器 `rustc`。
-- Cargo 构建工具。
-- rustup 工具链管理器。
-- Rust target：`riscv64gc-unknown-none-elf`。
-- QEMU RISC-V 64：`qemu-system-riscv64`。
-- OpenSBI：当前通过 QEMU `-bios default` 使用 QEMU 自带 OpenSBI 固件。
-
-Windows PowerShell 环境检查：
+Windows PowerShell：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-env.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
 ```
 
-WSL2/Ubuntu 环境检查：
+Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
+node docs/interactive-demo/server.js --port 8888
 ```
 
-## 构建与运行
+Ubuntu 中再打开 `http://127.0.0.1:8888`。若希望启动页面时立即构建并运行当前分支，在 Node 命令末尾添加 `--run`。
+
+保持这个终端运行，然后让学生正常切换分支：
+
+```sh
+git switch lab3-starter
+```
+
+页面会在约 1.2 秒内识别 `main`、`interactive-demo-learning-map`、`p0-minimal-qemu-baseline`、`lab1-starter` 至 `lab7-solution` 共 17 个现有分支，自动定位实验和分支角色。学生需要先选择预期结果并写下关键事件或原因，保存预测后才能点击“构建并运行当前分支”。页面会清空上一轮证据并跟随本次实验；starter 停在 TODO 时会显示“停在 TODO”，不会伪装成已完成。若 QEMU 在 TODO 后保持运行，可先点“停止当前运行”，再切换或重跑。
+
+桥接器固定使用 `riscv64gc-unknown-none-elf` 构建目标，不依赖用户目录中的 Cargo 默认 target。页面启动的每次运行都有独立 `runId`，事件同时记录协议版本、分支、提交、顺序和时间。运行结束后可以保存时间线；切换到同一 Lab 的另一个分支再运行并保存，即可比较 starter 与 solution 的共同事件和分支独有事件。回放只重建可视化状态，不会重新执行内核或修改 Git 分支。
+
+桥接器在启动时把新版 HTML/CSS/JS 保存在内存中。因此，即使切到尚未同步新版页面的自定义或历史分支，正在运行的页面也不会退回旧版；源码链接则始终读取当前分支，便于对照实验代码。P0 和 Lab1–Lab7 的 starter/solution 均包含同一版桥接器，也可以先切换到目标教学分支，再从该分支独立启动页面。
+
+不加 `-ServeOnly` 时，脚本会在启动桥接器后立即构建并运行当前分支：
 
 ```powershell
-cargo build -p ai-os-kernel
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qemu.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1
 ```
 
-或使用 Makefile：
+可选参数包括 `-Port 8888` 与 `-NoBrowser`。关闭终端或按 `Ctrl+C` 会停止本地服务和它启动的子进程。服务只监听 `127.0.0.1`，不会向网络发送代码或实验输出。
 
-```powershell
-make build
-make run
-```
+## 教学评价使用方式
 
-## 自动测试命令
+1. 完成或体验一个实验后，在页面底部先填写学习背景和使用前后理解程度。
+2. 页面根据当前分支显示五道教学评价题。题目会涉及该实验的真实知识点，但评价的是讲解是否清晰、任务难度是否合适、提示和可视化是否有帮助、运行反馈是否有效，不要求填写知识答案。
+3. 五道题必须全部选择 1–5 分，1 分表示负面评价，5 分表示正面评价。starter 的第 5 题关注 TODO、Stage 和提示，solution 的第 5 题关注参考实现及说明。
+4. 五道教学评价题后可以继续填写最有帮助的内容、仍然困惑的内容和改进建议。
+5. 页面自动显示当前分支、Lab、提交编号和运行状态；不愿附带时可以取消勾选。
+6. 临时填写可点“保存本机草稿”，无需登录，也不需要网络。
+7. 没有 GitLab 提交权限时导出 Markdown；有权限时前往 GitLab，用自己的账号检查后发布。
 
-早期分支可能尚未包含后续实验脚本。若当前分支没有某个 `scripts/test-labN.ps1`，请切换到对应的 `labN-starter`、`labN-solution` 或最终成果分支。
+可视化服务不会自动上传评价、代码、源文件或终端日志。只有使用者主动打开 GitLab 并确认提交时，评价文字和勾选的简要实验上下文才会离开本机。文本中的常见本机用户目录和访问令牌形式还会在生成反馈时被隐藏。
 
-P0：
+## 目前不足
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1
-```
+- 草稿只保存在当前浏览器，清理浏览器数据或更换电脑后不会自动同步；
+- 目前没有独立数据库、匿名在线问卷和项目负责人后台，反馈主要通过 GitLab Issue 或导出文件整理；
+- 页面不会自动汇总班级数据，也不能直接生成教学效果统计图；
+- GitLab Issue 需要反馈者拥有该项目的可见和提交权限，没有权限时只能使用离线导出；
+- 分支与运行状态可以实时跟踪，但不同实验原有输出不完全一致，细粒度动态效果仍取决于已有事件标记；
+- 当前评价是自愿反馈，样本数量较少时不能代表所有学生的学习效果。
+- 五道教学评价题目前由项目组根据实验任务书设计，仍需通过同学和教师试用来检查措辞是否容易理解、评价维度是否合理。
+- 运行时间线和预测目前只保存在当前浏览器，最多保留最近 12 次；清理浏览器数据后无法恢复；
+- starter/solution 对比需要使用者分别切换分支、真实运行并保存，页面不会自动执行 `git switch`；
+- 时间线保存的是经过协议校验的教学事件，不保存完整原始终端日志，也不自动上传到服务器。
 
-Lab1 到 Lab7：
+这些限制符合当前学生团队的设备和维护能力：只依赖浏览器、Node.js、Git、Rust 与 QEMU，不要求额外服务器、数据库或校园统一身份认证。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
-```
+## 未来期望
 
-starter 分支可使用 `-ExpectIncomplete` 验证“能启动但未泄露答案”：
+- 先邀请同学、助教和教师实际试用，比较使用前后理解程度并整理典型问题；
+- 根据真实反馈改进知识地图、实验提示和失败示例，而不是一次加入大量复杂功能；
+- 在有稳定服务器和维护人员后，再评估匿名反馈接口、统一数据存储与简单统计页面；
+- 为 GitLab Issue 增加“已收到、处理中、已解决”等整理规则，让反馈者能看到改进进度；
+- 逐步补充各 Lab 的一致事件标记，提高不同分支下动态过程的精度。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
-```
+## 事件兼容策略
 
-主机单元测试：
-
-```powershell
-cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
-```
-
-## 成功输出示例
-
-最终 `lab7-solution` 的 QEMU 输出会包含：
+桥接器使用稳定协议 `os-demo.event/v1`。推荐的显式标记为：
 
 ```text
-[Lab1] PASS
-[Lab2] PASS
-[Lab3] PASS
-[Lab4] PASS
-[Lab5] PASS
-[Lab6] PASS
-[Lab7] PASS
+[OS_DEMO] v=1 lab=lab4 step=satp-activated status=running
 ```
 
-Lab7 关键输出：
+为兼容已有内核，旧格式 `[OS_DEMO] lab=lab4 step=satp-activated` 仍按 v1 处理。未知协议版本、未知 Lab、非法状态和非法步骤会被忽略。`main` 中已有的结构化标记能提供最细粒度的动态步骤。15 个教学分支没有一致、可达的 `[OS_DEMO]` 埋点，因此桥接器还会识别各分支原有且稳定的实验输出，例如 `[Lab5] scheduler initialized`、`[Lab6] syscall write`、任务级 `TODO/PASS` 和最终 `PASS/FAIL`。这样无需改写学生实验逻辑，也能在 starter/solution 间实时展示可信进度。
 
-```text
-[Lab7] start
-[Lab7] file opened
-[Lab7] write/read verified
-[Lab7] PASS
-```
+归一化事件至少包含 `protocol`、`lab`、`step`、`status`、`source`。本地桥接器再补充 `runId`、`branch`、`commit`、`sequence` 和 `timestamp`，从而使保存、比较和回放不依赖页面动画的当前状态。
 
-## 常见错误和排查方法
+事件只在对应动作已经输出证据后更新。例如 `stvec` 安装、breakpoint 处理、页帧分配、`satp` 激活、任务切换、用户态 `ecall` 和文件读写。未完成的 TODO、构建失败和运行失败均不会被当作通过。
 
-### `rustc`、`cargo` 或 `rustup` 不存在
+## 接入已有 QEMU 命令
 
-运行：
+如果需要保留自己的 QEMU 参数，可将串口输出交给桥接器标准输入：
 
 ```powershell
-winget install --id Rustlang.Rustup -e
+qemu-system-riscv64 ... | node docs/interactive-demo/server.js --stdin
 ```
 
-重新打开终端后再执行环境检查。
+此时页面仍使用相同的分支识别、事件归一化和知识地图。
 
-### 缺少 `riscv64gc-unknown-none-elf`
+## 自动化检查
 
-运行：
+分支与串口协议使用 Node 内置测试，无第三方依赖：
 
 ```powershell
-rustup target add riscv64gc-unknown-none-elf
+node --test docs/interactive-demo/feedback.test.js docs/interactive-demo/protocol.test.js docs/interactive-demo/run-history.test.js docs/interactive-demo/server.test.js
+node --check docs/interactive-demo/feedback-questions.js
+node --check docs/interactive-demo/feedback.js
+node --check docs/interactive-demo/protocol.js
+node --check docs/interactive-demo/run-history.js
+node --check docs/interactive-demo/server.js
+node --check docs/interactive-demo/app.js
 ```
-
-### `qemu-system-riscv64` 不存在
-
-Windows 可运行：
-
-```powershell
-winget install --id SoftwareFreedomConservancy.QEMU -e
-```
-
-安装后重新打开终端，或确认 QEMU 安装目录已加入 `PATH`。
-
-### QEMU 启动后没有对应 `[LabN] PASS`
-
-请先确认当前分支是否为对应的 solution 分支。starter 分支不会输出本实验的 PASS 标志，应使用 `-ExpectIncomplete` 进行教师侧验证。
-
-### QEMU 测试超时
-
-测试脚本会在超时后终止 QEMU。若发生超时，请检查内核是否卡在死循环、panic、异常重复触发或未执行 SBI system reset。
-
-## Cargo.lock 提交策略
-
-当前仓库包含可执行内核 crate，且比赛验收需要可重复构建。因此建议提交 `Cargo.lock`，用于锁定依赖版本并提升复现性。若后续拆出单独发布到 crates.io 的纯库 crate，可再按 Rust 库发布惯例单独评估。
-
-## 教学版边界与扩展方向
-
-- 统一的 `scripts/test-lab.ps1 all` 测试入口。
-- 高地址内核映射。
-- 抢占式调度、多核调度和优先级调度。
-- ELF 加载、多用户程序、多进程地址空间。
-- virtio-block、真实磁盘文件系统和复杂路径解析。
-- 更完整的演示视频和答辩 PPT 可基于 `docs/demo-script.md` 与 `docs/final-report.md` 继续制作。
