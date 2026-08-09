@@ -53,6 +53,7 @@
 ## 文档入口
 
 - 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
+- OS实验可视化展示：[使用说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)，自动进入当前 GitLab 分支）
 - [实验总览](docs/labs/lab2/README.md)
 - [任务书](docs/labs/lab2/TASKS.md)
 - [分级提示](docs/labs/lab2/HINTS.md)
@@ -61,10 +62,6 @@
 - [教师指南](docs/labs/lab2/TEACHER_GUIDE.md)
 
 旧版单页说明 [docs/labs/lab2.md](docs/labs/lab2.md) 只保留跳转说明。请优先阅读 `docs/labs/lab2/` 目录下的教学文档。
-
-## 教学评价
-
-运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab2 solution 分支。在原有问题之后，还会显示五道针对 `stvec`、breakpoint、异常寄存器和返回路径实验的教学评价题，用来评价讲解、可视化、运行反馈及参考说明，不要求填写知识答案；第 5 题关注参考实现是否帮助理解 Trap 思路如何用于系统调用。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
 
 ## 学生分支允许修改
 
