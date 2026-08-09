@@ -43,16 +43,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
 ## 文档入口
 
 - 最终设计方案与开发文档：[docs/final-report.md](docs/final-report.md)
+- OS实验可视化展示：[使用说明](docs/interactive-demo/README.md)（[页面源码](docs/interactive-demo/index.html)，自动进入当前 GitLab 分支）
 - [Lab6 总览](docs/labs/lab6/README.md)
 - [任务书](docs/labs/lab6/TASKS.md)
 - [分级提示](docs/labs/lab6/HINTS.md)
 - [测试说明](docs/labs/lab6/TESTING.md)
 - [参考答案说明](docs/labs/lab6/SOLUTION.md)
 - [教师指南](docs/labs/lab6/TEACHER_GUIDE.md)
-
-## 教学评价
-
-运行 `sh scripts/run-interactive-demo.sh` 后，页面会识别当前 Lab6 solution 分支，并显示五道针对用户态切换、UserContext、系统调用 ABI 和 ecall 路径实验的教学评价题，用来评价流程图、运行轨迹及参考说明，不要求填写知识答案；第 5 题关注用户页、用户栈和用户指针安全边界的说明是否清晰。详细用法见 [可视化使用说明](docs/interactive-demo/README.md)。
 
 ## 参考实现边界
 
