@@ -6,6 +6,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
+    throw "Use either -ExpectIncomplete or -Stage, not both."
+}
+
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
 $qemu = "qemu-system-riscv64"
@@ -31,7 +35,7 @@ Remove-Item -LiteralPath $kernel -ErrorAction SilentlyContinue
 Push-Location $repo
 $buildExitCode = $null
 try {
-    cargo build -p ai-os-kernel
+    cargo build -p ai-os-kernel --target riscv64gc-unknown-none-elf
     $buildExitCode = $LASTEXITCODE
 }
 finally {
