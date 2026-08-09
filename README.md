@@ -266,3 +266,10 @@ winget install --id SoftwareFreedomConservancy.QEMU -e
 - ELF 加载、多用户程序、多进程地址空间。
 - virtio-block、真实磁盘文件系统和复杂路径解析。
 - 更完整的演示视频和答辩 PPT 可基于 `docs/demo-script.md` 与 `docs/final-report.md` 继续制作。
+
+## 本轮文档与验收说明（2026-08-09）
+
+- 当前分支是 P0 最小启动基线；使用 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1` 验收。
+- 可视化页面用于学习启动链和导出本地运行证据；它不会自动运行 QEMU 或切换分支。
+- 教师评分工具只放在 `main`。需要评分时切换到 `main`，打开 `docs/teacher-grading/index.html`。
+- 本轮未在此工作分支触发远程 CI；构建、QEMU 与链接状态以最终验收报告中的实际命令为准。
