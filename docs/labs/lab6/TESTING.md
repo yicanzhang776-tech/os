@@ -1,5 +1,7 @@
 # Lab6 测试说明
 
+`-Stage 1/2/3` 分别验证三个任务阶段；`-ExpectIncomplete` 只验证原始 starter。两者互斥。
+
 ## 环境检查
 
 ```powershell

@@ -1,13 +1,10 @@
 param(
+    [ValidateSet(1, 2, 3)]
     [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
 $ErrorActionPreference = "Stop"
-
-if ($Stage -lt 1 -or $Stage -gt 3) {
-    throw "Stage must be 1, 2, or 3."
-}
 
 if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
     throw "Use either -ExpectIncomplete or -Stage, not both."
@@ -28,7 +25,7 @@ Remove-Item -LiteralPath $kernel -ErrorAction SilentlyContinue
 Push-Location $repo
 $buildExitCode = $null
 try {
-    cargo build -p ai-os-kernel
+    cargo build -p ai-os-kernel --target riscv64gc-unknown-none-elf
     $buildExitCode = $LASTEXITCODE
 }
 finally {
