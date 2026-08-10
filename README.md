@@ -4,6 +4,26 @@
 
 项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
 
+> 当前分支：`teacher-grading-tools`
+>
+> 本分支面向教师验收与评分，提供本地运行的评分页面、统一量表和实验运行证据导入工具。学生应在对应的 `labN-starter` 分支完成实验；完整项目展示与可视化入口位于 `main`。
+
+## 教师验收快速入口
+
+- 评分页面：[docs/teacher-grading/index.html](docs/teacher-grading/index.html)
+- 详细使用说明：[docs/teacher-grading/README.md](docs/teacher-grading/README.md)
+- 各实验教师指南：对应 `labN-solution` 分支中的 `docs/labs/labN/TEACHER_GUIDE.md`
+- 各实验参考实现：对应的 `labN-solution` 分支
+
+推荐验收流程：
+
+1. 选择待验收的 Lab，并打开对应教师指南与 `labN-solution` 参考实现。
+2. 导入学生从可视化页面导出的 `os-demo.run/v1` 运行记录，核对构建、QEMU、PASS、TODO、失败和超时证据。
+3. 结合代码审查、实验说明和口试，填写量表；自动证据不能代替教师判断。
+4. 将评分记录保存在当前浏览器，必要时手动导出 JSON 或 Markdown 备份。
+
+评分工具只在本地浏览器中处理数据，不上传学生代码、运行日志或评分记录，也不会自动执行 Cargo、QEMU 或 Shell 命令。
+
 ## 提交文档入口
 
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
@@ -25,6 +45,7 @@
 | `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+| `teacher-grading-tools` | 教师验收与评分专用入口 | 导入运行证据，结合代码审查、实验说明和口试完成评分 |
 
 如果正在浏览 `lab1-starter`、`lab2-starter` 等分支，README 中的项目总览仍描述整个仓库的教学体系；该分支本身只保留到对应实验的学生起点。完整教学参考实现请查看 `lab7-solution`，包含可视化遥测和最新展示材料的集成版本请查看 `main`。
 
