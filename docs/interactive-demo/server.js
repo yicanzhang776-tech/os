@@ -15,6 +15,7 @@ const {
   parseBranchContext,
   parseKernelLine
 } = require("./protocol");
+const { createGetContextTool } = require("./agent/tools");
 
 const publicDir = __dirname;
 const repoDir = path.resolve(__dirname, "..", "..");
@@ -64,6 +65,12 @@ let runState = {
 };
 let lastEventKey = "";
 let lastEventTime = 0;
+const getContextTool = createGetContextTool({
+  repoDir,
+  target: rustTarget,
+  readWorkspaceContext,
+  getTaskSnapshot: readCurrentTaskSnapshot
+});
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("--port must be an integer from 1 to 65535.");
@@ -95,6 +102,18 @@ function readWorkspaceContext() {
     || gitValue(["rev-parse", "--abbrev-ref", "HEAD"], "unknown");
   const commit = gitValue(["rev-parse", "--short", "HEAD"], "unknown");
   return { ...parseBranchContext(branch), commit };
+}
+
+function readCurrentTaskSnapshot() {
+  const running = Boolean(runPromise);
+  return {
+    running,
+    kind: running ? "interactive-run" : null,
+    phase: running ? runState.phase : "idle",
+    runId: running ? activeRunId || runState.runId || null : null,
+    startedAt: running ? activeRunStartedAt : null,
+    canStop: running
+  };
 }
 
 function createRunId() {
@@ -505,11 +524,26 @@ const server = http.createServer((request, response) => {
   }
 
   if (requestPath === "/api/context" && request.method === "GET") {
+    const toolResult = getContextTool({});
+    if (toolResult.ok) {
+      currentContext = {
+        branch: toolResult.data.branch,
+        commit: toolResult.data.commit,
+        lab: toolResult.data.lab,
+        stageIndex: toolResult.data.stageIndex,
+        variant: toolResult.data.variant,
+        variantLabel: toolResult.data.variantLabel,
+        expectedBranch: toolResult.data.expectedBranch
+      };
+    }
     writeJson(response, 200, {
       protocol: EVENT_PROTOCOL,
       target: rustTarget,
       context: currentContext,
-      runState
+      runState,
+      workspace: toolResult.ok ? toolResult.data.workspace : null,
+      task: toolResult.ok ? toolResult.data.task : readCurrentTaskSnapshot(),
+      contextError: toolResult.ok ? null : toolResult.error
     });
     return;
   }
