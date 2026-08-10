@@ -2,15 +2,25 @@
 
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const { TextDecoder } = require("node:util");
 const {
   TOOL_CONTRACT_VERSION,
   protectedContextOverride,
   resolveTeachingContext,
   validateInvocationContext,
+  validateReadCodePath,
   validateRequestId
 } = require("./policy");
 
 const CONFLICT_CODES = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+const READ_CODE_DEFAULT_LINES = 200;
+const READ_CODE_MAX_LINES = 400;
+const READ_CODE_DEFAULT_BYTES = 32 * 1024;
+const READ_CODE_MAX_BYTES = 64 * 1024;
+const READ_CODE_MAX_FILE_BYTES = 256 * 1024;
+const READ_CODE_INPUT_FIELDS = new Set(["path", "startLine", "endLine", "maxBytes"]);
 
 class SafeToolError extends Error {
   constructor(code, message, retryable = false, details = {}) {
@@ -171,6 +181,159 @@ function defaultRequestId() {
   return `tool-${crypto.randomUUID()}`;
 }
 
+function isPathInside(parentPath, candidatePath) {
+  const relative = path.relative(parentPath, candidatePath);
+  return relative === ""
+    || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+function isAllowedRealReadPath(repoRealPath, relativePath, realFilePath) {
+  if (relativePath === "Cargo.toml" || relativePath === "kernel/Cargo.toml") {
+    return realFilePath === path.join(repoRealPath, ...relativePath.split("/"));
+  }
+
+  const allowedRoot = relativePath.startsWith("kernel/src/")
+    ? path.join(repoRealPath, "kernel", "src")
+    : path.join(repoRealPath, "docs", "labs");
+  return isPathInside(allowedRoot, realFilePath) && realFilePath !== allowedRoot;
+}
+
+function splitTextLineRecords(text) {
+  if (text.length === 0) return [];
+
+  const records = [];
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "\n" && text[index] !== "\r") continue;
+    if (text[index] === "\r" && text[index + 1] === "\n") index += 1;
+    records.push(text.slice(start, index + 1));
+    start = index + 1;
+  }
+  if (start < text.length) records.push(text.slice(start));
+  return records;
+}
+
+function utf8Prefix(text, maxBytes) {
+  let usedBytes = 0;
+  let endOffset = 0;
+  for (const character of text) {
+    const characterBytes = Buffer.byteLength(character, "utf8");
+    if (usedBytes + characterBytes > maxBytes) break;
+    usedBytes += characterBytes;
+    endOffset += character.length;
+  }
+  return text.slice(0, endOffset);
+}
+
+function selectTextLines(records, startLine, requestedEndLine, maxBytes) {
+  const selected = records.slice(startLine - 1, requestedEndLine);
+  const parts = [];
+  let returnedBytes = 0;
+  let returnedLineCount = 0;
+  let byteTruncated = false;
+
+  for (const record of selected) {
+    const recordBytes = Buffer.byteLength(record, "utf8");
+    if (returnedBytes + recordBytes <= maxBytes) {
+      parts.push(record);
+      returnedBytes += recordBytes;
+      returnedLineCount += 1;
+      continue;
+    }
+
+    if (parts.length === 0) {
+      const prefix = utf8Prefix(record, maxBytes);
+      if (prefix) {
+        parts.push(prefix);
+        returnedBytes = Buffer.byteLength(prefix, "utf8");
+        returnedLineCount = 1;
+      }
+    }
+    byteTruncated = true;
+    break;
+  }
+
+  return {
+    content: parts.join(""),
+    returnedBytes,
+    returnedLineCount,
+    byteTruncated: byteTruncated || returnedLineCount < selected.length
+  };
+}
+
+function decodeUtf8Text(buffer) {
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch {
+    throw new SafeToolError("binary_file", "The requested file is not valid UTF-8 text.");
+  }
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
+    throw new SafeToolError("binary_file", "The requested file contains binary data.");
+  }
+  return text;
+}
+
+function validateReadCodeInput(args) {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw new SafeToolError("invalid_tool_input", "read_code input must be an object.");
+  }
+
+  const protectedField = protectedContextOverride(args);
+  if (protectedField) {
+    throw new SafeToolError(
+      "context_override_forbidden",
+      "Tool input cannot override the real branch or commit.",
+      false,
+      { field: protectedField }
+    );
+  }
+  const unknownField = Object.keys(args).find((field) => !READ_CODE_INPUT_FIELDS.has(field));
+  if (unknownField) {
+    throw new SafeToolError(
+      "invalid_tool_input",
+      "read_code input contains an unknown field.",
+      false,
+      { field: unknownField }
+    );
+  }
+
+  const pathCheck = validateReadCodePath(args.path);
+  if (!pathCheck.ok) throw pathCheck.error;
+
+  const startLine = args.startLine === undefined ? 1 : args.startLine;
+  const hasEndLine = args.endLine !== undefined;
+  const endLine = hasEndLine ? args.endLine : startLine + READ_CODE_DEFAULT_LINES - 1;
+  if (!Number.isSafeInteger(startLine)
+    || !Number.isSafeInteger(endLine)
+    || startLine < 1
+    || endLine < startLine
+    || endLine - startLine + 1 > READ_CODE_MAX_LINES) {
+    throw new SafeToolError(
+      "invalid_line_range",
+      `Line ranges must contain between 1 and ${READ_CODE_MAX_LINES} lines.`
+    );
+  }
+
+  const maxBytes = args.maxBytes === undefined ? READ_CODE_DEFAULT_BYTES : args.maxBytes;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > READ_CODE_MAX_BYTES) {
+    throw new SafeToolError(
+      "invalid_tool_input",
+      `maxBytes must be an integer between 1 and ${READ_CODE_MAX_BYTES}.`,
+      false,
+      { field: "maxBytes" }
+    );
+  }
+
+  return {
+    path: pathCheck.value,
+    startLine,
+    endLine,
+    hasEndLine,
+    maxBytes
+  };
+}
+
 function createGetContextTool(options = {}) {
   if (typeof options.readWorkspaceContext !== "function") {
     throw new TypeError("readWorkspaceContext is required.");
@@ -270,9 +433,194 @@ function createGetContextTool(options = {}) {
   };
 }
 
+function createReadCodeTool(options = {}) {
+  if (typeof options.readWorkspaceContext !== "function") {
+    throw new TypeError("readWorkspaceContext is required.");
+  }
+  if (typeof options.repoDir !== "string" || !options.repoDir) {
+    throw new TypeError("repoDir is required.");
+  }
+
+  const fileSystem = options.fileSystem || fs;
+  const makeRequestId = options.requestIdFactory || defaultRequestId;
+  const now = options.now || Date.now;
+
+  return function readCode(args = {}, invocationContext = {}) {
+    const tool = "read_code";
+    let actual = { branch: "unknown", commit: "unknown" };
+    let requestId = makeRequestId();
+    const meta = () => ({
+      requestId,
+      branch: actual.branch,
+      commit: actual.commit,
+      generatedAt: new Date(now()).toISOString()
+    });
+
+    try {
+      const rawContext = options.readWorkspaceContext();
+      if (!rawContext || typeof rawContext !== "object") {
+        throw new SafeToolError("context_unavailable", "The workspace context is unavailable.", true);
+      }
+      actual = {
+        branch: typeof rawContext.branch === "string" && rawContext.branch
+          ? rawContext.branch
+          : "unknown",
+        commit: typeof rawContext.commit === "string" && rawContext.commit
+          ? rawContext.commit
+          : "unknown"
+      };
+
+      const requestIdCheck = validateRequestId(invocationContext?.requestId);
+      if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
+      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+
+      const invocationCheck = validateInvocationContext(invocationContext);
+      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+
+      const expectedBranch = invocationCheck.value.expectedBranch;
+      const expectedCommit = invocationCheck.value.expectedCommit;
+      if ((expectedBranch && expectedBranch !== actual.branch)
+        || (expectedCommit && expectedCommit !== actual.commit)) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed before the tool executed.",
+          true,
+          {
+            expectedBranch: expectedBranch || null,
+            expectedCommit: expectedCommit || null,
+            actualBranch: actual.branch,
+            actualCommit: actual.commit
+          }
+        );
+      }
+
+      const input = validateReadCodeInput(args);
+      let repoRealPath;
+      let realFilePath;
+      try {
+        repoRealPath = fileSystem.realpathSync(options.repoDir);
+        const candidatePath = path.resolve(options.repoDir, ...input.path.split("/"));
+        realFilePath = fileSystem.realpathSync(candidatePath);
+      } catch (error) {
+        if (error && ["ENOENT", "ENOTDIR"].includes(error.code)) {
+          throw new SafeToolError(
+            "file_not_found",
+            "The requested file does not exist.",
+            false,
+            { path: input.path }
+          );
+        }
+        throw new SafeToolError("forbidden_path", "The requested path could not be safely resolved.");
+      }
+
+      if (!isAllowedRealReadPath(repoRealPath, input.path, realFilePath)) {
+        throw new SafeToolError(
+          "forbidden_path",
+          "The resolved file is outside the read_code whitelist.",
+          false,
+          { path: input.path }
+        );
+      }
+
+      let stats;
+      try {
+        stats = fileSystem.statSync(realFilePath);
+      } catch (error) {
+        if (error && ["ENOENT", "ENOTDIR"].includes(error.code)) {
+          throw new SafeToolError(
+            "file_not_found",
+            "The requested file does not exist.",
+            false,
+            { path: input.path }
+          );
+        }
+        throw new SafeToolError("forbidden_path", "The requested file could not be safely inspected.");
+      }
+      if (!stats.isFile()) {
+        throw new SafeToolError(
+          "not_a_file",
+          "The requested path is not a regular file.",
+          false,
+          { path: input.path }
+        );
+      }
+      if (stats.size > READ_CODE_MAX_FILE_BYTES) {
+        throw new SafeToolError(
+          "file_too_large",
+          "The requested source file exceeds the read_code file-size limit.",
+          false,
+          {
+            path: input.path,
+            fileSizeBytes: stats.size,
+            maxFileSizeBytes: READ_CODE_MAX_FILE_BYTES
+          }
+        );
+      }
+
+      const buffer = fileSystem.readFileSync(realFilePath);
+      if (!Buffer.isBuffer(buffer) || buffer.length > READ_CODE_MAX_FILE_BYTES) {
+        throw new SafeToolError(
+          "file_too_large",
+          "The requested source file exceeds the read_code file-size limit.",
+          false,
+          {
+            path: input.path,
+            fileSizeBytes: Buffer.isBuffer(buffer) ? buffer.length : null,
+            maxFileSizeBytes: READ_CODE_MAX_FILE_BYTES
+          }
+        );
+      }
+
+      const text = decodeUtf8Text(buffer);
+      const records = splitTextLineRecords(text);
+      if (records.length > 0 && input.startLine > records.length) {
+        throw new SafeToolError(
+          "invalid_line_range",
+          "startLine is beyond the end of the requested file.",
+          false,
+          { startLine: input.startLine, totalLines: records.length }
+        );
+      }
+
+      const requestedEndLine = Math.min(input.endLine, records.length);
+      const selection = selectTextLines(
+        records,
+        input.startLine,
+        requestedEndLine,
+        input.maxBytes
+      );
+      const lineLimitTruncated = !input.hasEndLine && input.endLine < records.length;
+      const endLine = selection.returnedLineCount > 0
+        ? input.startLine + selection.returnedLineCount - 1
+        : Math.min(input.startLine - 1, records.length);
+
+      return createToolSuccess(tool, {
+        path: input.path,
+        encoding: "utf-8",
+        fileSizeBytes: buffer.length,
+        contentSha256: crypto.createHash("sha256").update(buffer).digest("hex"),
+        startLine: input.startLine,
+        endLine,
+        totalLines: records.length,
+        returnedBytes: selection.returnedBytes,
+        truncated: lineLimitTruncated || selection.byteTruncated,
+        content: selection.content
+      }, meta());
+    } catch (error) {
+      return createToolFailure(tool, error, meta());
+    }
+  };
+}
+
 module.exports = {
+  READ_CODE_DEFAULT_BYTES,
+  READ_CODE_DEFAULT_LINES,
+  READ_CODE_MAX_BYTES,
+  READ_CODE_MAX_FILE_BYTES,
+  READ_CODE_MAX_LINES,
   SafeToolError,
   createGetContextTool,
+  createReadCodeTool,
   createToolFailure,
   createToolResult,
   createToolSuccess,
