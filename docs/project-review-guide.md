@@ -25,7 +25,7 @@
 | `lab6-starter` | `226a29f` | `lab6-solution` | `ec94a63` |
 | `lab7-starter` | `57473da` | `lab7-solution` | `72d18b0` |
 
-所有文档同步均从这些远程提交创建独立 `codex/docs-refresh-*` 工作分支；没有使用落后的本地教学分支作为事实来源。
+所有文档同步均基于上述远程提交完成；没有使用落后的本地教学分支作为事实来源。
 
 ## P0-Lab7 路线
 
