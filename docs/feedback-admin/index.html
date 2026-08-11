@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OS 教学评价本地查看</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">仅限项目负责人本机访问 · 127.0.0.1:8891</p>
+      <h1>OS 教学评价本地查看</h1>
+      <p>筛选并汇总保存在本机 JSONL 文件中的教学评价。本页面不连接外部服务。</p>
+    </header>
+
+    <section class="panel filters" aria-labelledby="filter-title">
+      <h2 id="filter-title">筛选</h2>
+      <label>Lab
+        <select id="filter-lab">
+          <option value="all">全部</option>
+          <option value="p0">P0</option>
+          <option value="lab1">Lab1</option><option value="lab2">Lab2</option>
+          <option value="lab3">Lab3</option><option value="lab4">Lab4</option>
+          <option value="lab5">Lab5</option><option value="lab6">Lab6</option>
+          <option value="lab7">Lab7</option>
+        </select>
+      </label>
+      <label>分支角色
+        <select id="filter-variant">
+          <option value="all">全部</option>
+          <option value="starter">starter</option>
+          <option value="solution">solution</option>
+          <option value="baseline">baseline</option>
+          <option value="main">main</option>
+          <option value="demo">demo</option>
+        </select>
+      </label>
+      <label>使用者身份
+        <select id="filter-role">
+          <option value="all">全部</option>
+          <option value="student">学生</option>
+          <option value="teacher">教师</option>
+          <option value="assistant">助教</option>
+          <option value="learner">其他学习者</option>
+        </select>
+      </label>
+      <button id="refresh" type="button">刷新</button>
+    </section>
+
+    <section class="panel export-panel" aria-labelledby="export-title">
+      <div><h2 id="export-title">当前结果</h2><strong id="feedback-count">0 份评价</strong></div>
+      <nav aria-label="导出当前筛选结果">
+        <a id="export-json" download>导出 JSON</a>
+        <a id="export-csv" download>导出 CSV</a>
+        <a id="export-md" download>导出 Markdown</a>
+      </nav>
+      <output id="status" aria-live="polite">正在读取本机记录……</output>
+    </section>
+
+    <section class="panel" aria-labelledby="question-title">
+      <h2 id="question-title">五道实验评价题</h2>
+      <div class="table-wrap"><table><thead><tr><th>题目</th><th>维度</th><th>平均值</th><th>1—5 分布</th></tr></thead><tbody id="question-summary"></tbody></table></div>
+    </section>
+
+    <section class="panel" aria-labelledby="comment-title">
+      <h2 id="comment-title">文字建议</h2>
+      <div id="feedback-comments" class="comments"></div>
+    </section>
+  </main>
+  <script src="admin-model.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
