@@ -17,6 +17,7 @@ qemu-*.err
 # Local environment and secrets
 .env
 .env.*
+/feedback-data/
 *.pem
 *.key
 *.token
