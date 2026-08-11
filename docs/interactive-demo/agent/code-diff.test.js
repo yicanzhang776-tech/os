@@ -72,7 +72,9 @@ function git(repoDir, args, options = {}) {
 
 function createFixture(options = {}) {
   const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "os-tutor-code-diff-"));
-  git(repoDir, ["init", "-b", "lab4-starter"]);
+  git(repoDir, ["init"]);
+  git(repoDir, ["symbolic-ref", "HEAD", "refs/heads/lab4-starter"]);
+  assert.equal(git(repoDir, ["symbolic-ref", "HEAD"]), "refs/heads/lab4-starter");
   git(repoDir, ["config", "user.name", "Code Diff Test"]);
   git(repoDir, ["config", "user.email", "code-diff@example.invalid"]);
   writeFile(repoDir, "kernel/src/lib.rs", "pub fn lesson_value() -> u32 { 1 }\n");
