@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const feedback = require("./feedback.js");
 
@@ -198,4 +200,134 @@ test("all five branch questions are required after a branch switch", () => {
   delete input.branchAnswers[feedback.getQuestionSet(context).questions[2].id];
   assert.match(feedback.validateFeedback(input, context).join("\n"), /教学评价第 3 题/);
   assert.match(feedback.validateFeedback(completeInput(), context).join("\n"), /当前实验已切换/);
+});
+
+test("schemaVersion 2 records are revalidated and dangerous text is sanitized", () => {
+  const context = { lab: "lab6", variant: "starter", branch: "lab6-starter", commit: "abcd1234" };
+  const record = feedback.buildFeedbackRecord(completeInput(context, {
+    suggestion: '<script>alert(1)</script><iframe src="x"></iframe><img onerror="run()" src="javascript:bad"> Bearer abcdefghijk'
+  }), context, { now: new Date("2026-08-11T01:02:03Z"), idSuffix: "SAFE" });
+  const normalized = feedback.normalizeFeedbackRecord(record);
+  assert.equal(normalized.schemaVersion, 2);
+  assert.deepEqual(feedback.validateFeedbackRecord(normalized), []);
+  assert.doesNotMatch(JSON.stringify(normalized), /<script|<iframe|onerror|javascript:|abcdefghijk/i);
+  assert.match(normalized.suggestion, /已过滤|已隐藏凭据/);
+});
+
+test("legacy drafts load while version 2 drafts may retain one pending id and receipt", () => {
+  const values = new Map();
+  const storage = {
+    setItem: (key, value) => values.set(key, value),
+    getItem: (key) => values.get(key) || null,
+    removeItem: (key) => values.delete(key)
+  };
+  values.set(feedback.DRAFT_STORAGE_KEY, JSON.stringify({
+    schemaVersion: 1,
+    savedAt: "2026-08-11T00:00:00Z",
+    input: completeInput()
+  }));
+  assert.equal(feedback.loadFeedbackDraft(storage).input.role, "student");
+
+  const record = feedback.buildFeedbackRecord(completeInput(), {}, {
+    now: new Date("2026-08-11T01:02:03Z"), idSuffix: "DRAFT"
+  });
+  const receipt = {
+    status: "created",
+    feedbackId: record.id,
+    receiptId: "RCPT-LOCALTEST",
+    receivedAt: "2026-08-11T01:03:00Z"
+  };
+  assert.equal(feedback.saveFeedbackDraft(completeInput(), storage, { pendingRecord: record, receipt }), true);
+  const loaded = feedback.loadFeedbackDraft(storage);
+  assert.equal(loaded.pendingRecord.id, record.id);
+  assert.equal(loaded.receipt.receiptId, "RCPT-LOCALTEST");
+});
+
+test("service address and invite remain local and trailing slashes are removed", () => {
+  const values = new Map();
+  const storage = {
+    setItem: (key, value) => values.set(key, value),
+    getItem: (key) => values.get(key) || null
+  };
+  assert.equal(feedback.normalizeServiceUrl("https://demo.trycloudflare.com///"), "https://demo.trycloudflare.com");
+  assert.equal(feedback.normalizeServiceUrl("http://127.0.0.1:8890/"), "http://127.0.0.1:8890");
+  assert.throws(() => feedback.normalizeServiceUrl("http://example.com"), /地址错误/);
+  assert.throws(() => feedback.normalizeServiceUrl("javascript:alert(1)"), /地址错误/);
+  assert.equal(feedback.saveFeedbackSettings({
+    serviceUrl: "https://demo.trycloudflare.com/",
+    inviteCode: "classroom-demo"
+  }, storage), true);
+  assert.deepEqual(feedback.loadFeedbackSettings(storage), {
+    serviceUrl: "https://demo.trycloudflare.com",
+    inviteCode: "classroom-demo"
+  });
+  const record = feedback.buildFeedbackRecord(completeInput(), {}, {
+    now: new Date("2026-08-11T01:02:03Z"), idSuffix: "LOCAL"
+  });
+  assert.doesNotMatch(JSON.stringify(feedback.createFeedbackEnvelope(record)), /classroom-demo/);
+  assert.doesNotMatch(feedback.serializeFeedbackJson(record), /classroom-demo/);
+});
+
+test("network retry reuses the same feedback id", () => {
+  const context = { lab: "lab1", variant: "starter", branch: "lab1-starter" };
+  const input = completeInput(context);
+  const first = feedback.resolveFeedbackRecord(input, context, null, {
+    now: new Date("2026-08-11T01:02:03Z"), idSuffix: "RETRY"
+  });
+  const retry = feedback.resolveFeedbackRecord(input, context, first, {
+    now: new Date("2026-08-11T02:03:04Z"), idSuffix: "OTHER"
+  });
+  assert.equal(retry.id, first.id);
+  const changed = feedback.resolveFeedbackRecord({ ...input, suggestion: "这是一条不同的新建议。" }, context, first, {
+    now: new Date("2026-08-11T02:03:04Z"), idSuffix: "OTHER"
+  });
+  assert.notEqual(changed.id, first.id);
+});
+
+test("successful and duplicate submissions return receipts while network failures are explicit", async () => {
+  const record = feedback.buildFeedbackRecord(completeInput(), {}, {
+    now: new Date("2026-08-11T01:02:03Z"), idSuffix: "SEND"
+  });
+  const calls = [];
+  const success = await feedback.submitFeedbackRecord(record, {
+    serviceUrl: "https://demo.trycloudflare.com/",
+    inviteCode: "classroom-demo",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok: true,
+        status: 201,
+        text: async () => JSON.stringify({
+          ok: true,
+          status: "created",
+          feedbackId: record.id,
+          receiptId: "RCPT-123456",
+          receivedAt: "2026-08-11T01:03:00Z"
+        })
+      };
+    }
+  });
+  assert.equal(success.status, "created");
+  assert.equal(calls[0].url, "https://demo.trycloudflare.com/api/feedback");
+  assert.equal(calls[0].options.headers["X-Feedback-Invite"], "classroom-demo");
+  assert.equal(JSON.parse(calls[0].options.body).feedback.id, record.id);
+
+  await assert.rejects(feedback.submitFeedbackRecord(record, {
+    serviceUrl: "https://demo.trycloudflare.com",
+    fetchImpl: async () => { throw new TypeError("offline"); }
+  }), (error) => error.code === "network");
+  await assert.rejects(feedback.submitFeedbackRecord(record, {
+    serviceUrl: "https://demo.trycloudflare.com",
+    fetchImpl: async () => ({ ok: false, status: 403, text: async () => "{}" })
+  }), (error) => error.code === "invite");
+});
+
+test("the page submits to the feedback service and no longer opens a GitLab Issue", () => {
+  const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "feedback.js"), "utf8");
+  assert.match(html, />提交教学评价</);
+  assert.match(html, /feedback-service-url/);
+  assert.doesNotMatch(html, /前往 GitLab 确认提交|GitLab 账号确认发布/);
+  const initSource = source.slice(source.indexOf("function initFeedbackCenter"));
+  assert.doesNotMatch(initSource, /buildIssueUrl\(|issues\/new|link\.click\(/);
 });
