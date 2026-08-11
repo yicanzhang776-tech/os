@@ -19,9 +19,15 @@
     newIssueUrl: "https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/issues/new"
   });
   const DRAFT_STORAGE_KEY = "os-visualization-feedback-draft-v1";
+  const SERVICE_URL_STORAGE_KEY = "os-visualization-feedback-service-v1";
+  const INVITE_CODE_STORAGE_KEY = "os-visualization-feedback-invite-v1";
+  const FEEDBACK_SUBMIT_PROTOCOL = "os-demo.feedback.submit/v1";
   let uiContext = normalizeContext();
   let uiQuestionSet = getQuestionSet(uiContext);
   let uiInitialized = false;
+  let uiPendingRecord = null;
+  let uiSubmissionReceipt = null;
+  let uiSubmitting = false;
 
   const OPTIONS = Object.freeze({
     types: Object.freeze({
@@ -66,6 +72,10 @@
       .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{8,}/gi, "Bearer [已隐藏凭据]")
       .replace(/\b[A-Za-z]:[\\/]Users[\\/][^\\/\s]+/gi, "$HOME")
       .replace(/\/(?:home|Users)\/[^/\s]+/g, "$HOME")
+      .replace(/<\s*(script|iframe)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "[已过滤内容]")
+      .replace(/<\s*\/?\s*(?:script|iframe)\b[^>]*>/gi, "[已过滤内容]")
+      .replace(/\bon[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "[已过滤属性]")
+      .replace(/\bjavascript\s*:/gi, "[已过滤协议]")
       .trim();
     if (text.length > maxLength) text = `${text.slice(0, maxLength - 1)}…`;
     return text;
@@ -187,6 +197,136 @@
     };
   }
 
+  function isPlainObject(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function validateFeedbackRecord(record) {
+    const errors = [];
+    if (!isPlainObject(record)) return ["评价记录必须是对象"];
+    if (record.schemaVersion !== 2) errors.push("评价记录 schemaVersion 必须为 2");
+    if (!/^FB-\d{8}T\d{6}Z-[A-Za-z0-9]{1,8}$/.test(String(record.id || ""))) {
+      errors.push("评价编号格式不正确");
+    }
+    if (!record.createdAt || Number.isNaN(Date.parse(record.createdAt))) {
+      errors.push("评价创建时间格式不正确");
+    }
+    if (!OPTIONS.types[record.type]) errors.push("评价类型无法识别");
+    if (!OPTIONS.roles[record.role]) errors.push("使用者身份无法识别");
+    if (!OPTIONS.experience[record.osExperience]) errors.push("操作系统学习经历无法识别");
+    if (normalizeScore(record.beforeUnderstanding) === null) errors.push("使用前理解程度无效");
+    if (normalizeScore(record.afterUnderstanding) === null) errors.push("使用后理解程度无效");
+    if (!OPTIONS.outcomes[record.outcome]) errors.push("总体学习效果无法识别");
+    if (!Array.isArray(record.helpfulAreas)
+      || record.helpfulAreas.some((area) => !OPTIONS.helpfulAreas[area])) {
+      errors.push("帮助维度格式不正确");
+    }
+
+    const branchSet = record.branchQuestionSet;
+    if (!isPlainObject(branchSet)) {
+      errors.push("缺少当前实验的五道教学评价");
+    } else {
+      const expectedSet = getQuestionSet({ lab: branchSet.lab, variant: branchSet.variant });
+      if (branchSet.id !== expectedSet.id) errors.push("实验评价题组无法识别");
+      if (!Array.isArray(branchSet.answers) || branchSet.answers.length !== expectedSet.questions.length) {
+        errors.push("实验教学评价必须包含五道题");
+      } else {
+        expectedSet.questions.forEach((question, index) => {
+          const answer = branchSet.answers[index];
+          if (!isPlainObject(answer) || answer.id !== question.id) {
+            errors.push(`实验教学评价第 ${index + 1} 题不匹配`);
+          } else if (normalizeScore(answer.score) === null) {
+            errors.push(`实验教学评价第 ${index + 1} 题评分无效`);
+          }
+        });
+      }
+      if (record.context && isPlainObject(record.context)) {
+        const normalized = normalizeContext(record.context);
+        if (normalized.lab !== "unknown" && expectedSet.lab !== normalized.lab) {
+          errors.push("实验上下文与评价题组不一致");
+        }
+        if (["starter", "solution", "baseline"].includes(normalized.variant)
+          && expectedSet.variant !== normalized.variant) {
+          errors.push("分支角色与评价题组不一致");
+        }
+      }
+    }
+
+    if (record.context !== null && !isPlainObject(record.context)) {
+      errors.push("实验上下文格式不正确");
+    }
+    const detailLength = [record.mostHelpful, record.stillConfusing, record.suggestion]
+      .map((value) => sanitizeText(value).length)
+      .reduce((sum, length) => sum + length, 0);
+    if (detailLength < 5) errors.push("补充反馈内容过短");
+    return errors;
+  }
+
+  function normalizeFeedbackRecord(record) {
+    const errors = validateFeedbackRecord(record);
+    if (errors.length) {
+      const error = new Error(errors.join("；"));
+      error.validationErrors = errors;
+      throw error;
+    }
+    const questionSet = getQuestionSet({
+      lab: record.branchQuestionSet.lab,
+      variant: record.branchQuestionSet.variant
+    });
+    const answerById = Object.fromEntries(
+      record.branchQuestionSet.answers.map((answer) => [answer.id, answer])
+    );
+    return {
+      schemaVersion: 2,
+      id: sanitizeText(record.id, 80),
+      createdAt: new Date(record.createdAt).toISOString(),
+      type: record.type,
+      role: record.role,
+      osExperience: record.osExperience,
+      beforeUnderstanding: normalizeScore(record.beforeUnderstanding),
+      afterUnderstanding: normalizeScore(record.afterUnderstanding),
+      outcome: record.outcome,
+      helpfulAreas: [...new Set(record.helpfulAreas)].filter((area) => OPTIONS.helpfulAreas[area]),
+      branchQuestionSet: {
+        id: questionSet.id,
+        lab: questionSet.lab,
+        variant: questionSet.variant,
+        title: questionSet.title,
+        answers: questionSet.questions.map((question) => ({
+          id: question.id,
+          dimension: question.dimension,
+          prompt: question.prompt,
+          score: normalizeScore(answerById[question.id]?.score),
+          lowLabel: question.lowLabel,
+          highLabel: question.highLabel
+        }))
+      },
+      mostHelpful: sanitizeText(record.mostHelpful),
+      stillConfusing: sanitizeText(record.stillConfusing),
+      suggestion: sanitizeText(record.suggestion),
+      context: record.context === null ? null : normalizeContext(record.context)
+    };
+  }
+
+  function comparableFeedback(record) {
+    const normalized = normalizeFeedbackRecord(record);
+    const { id, createdAt, ...content } = normalized;
+    return JSON.stringify(content);
+  }
+
+  function resolveFeedbackRecord(input = {}, context = {}, pendingRecord = null, options = {}) {
+    const candidate = buildFeedbackRecord(input, context, options);
+    if (!pendingRecord) return candidate;
+    try {
+      const normalizedPending = normalizeFeedbackRecord(pendingRecord);
+      return comparableFeedback(normalizedPending) === comparableFeedback(candidate)
+        ? normalizedPending
+        : candidate;
+    } catch (_) {
+      return candidate;
+    }
+  }
+
   function markdownValue(value) {
     return sanitizeText(value) || "未填写";
   }
@@ -290,7 +430,148 @@
     }
   }
 
-  function saveFeedbackDraft(input, storage) {
+  function normalizeServiceUrl(value) {
+    const raw = String(value || "").trim().replace(/\/+$/, "");
+    if (!raw || raw.length > 500) throw new Error("反馈服务地址错误");
+    let url;
+    try {
+      url = new URL(raw);
+    } catch (_) {
+      throw new Error("反馈服务地址错误");
+    }
+    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    if (url.username || url.password || url.search || url.hash
+      || (url.pathname && url.pathname !== "/")
+      || (url.protocol !== "https:" && !(url.protocol === "http:" && loopback))) {
+      throw new Error("反馈服务地址错误");
+    }
+    return url.origin;
+  }
+
+  function loadFeedbackSettings(storage) {
+    const target = getStorage(storage);
+    if (!target) return { serviceUrl: "", inviteCode: "" };
+    try {
+      const rawUrl = String(target.getItem(SERVICE_URL_STORAGE_KEY) || "").trim();
+      return {
+        serviceUrl: rawUrl ? normalizeServiceUrl(rawUrl) : "",
+        inviteCode: sanitizeText(target.getItem(INVITE_CODE_STORAGE_KEY) || "", 128)
+      };
+    } catch (_) {
+      return { serviceUrl: "", inviteCode: "" };
+    }
+  }
+
+  function saveFeedbackSettings(settings = {}, storage) {
+    const target = getStorage(storage);
+    if (!target) return false;
+    try {
+      const rawUrl = String(settings.serviceUrl || "").trim();
+      const serviceUrl = rawUrl ? normalizeServiceUrl(rawUrl) : "";
+      const inviteCode = sanitizeText(settings.inviteCode || "", 128);
+      target.setItem(SERVICE_URL_STORAGE_KEY, serviceUrl);
+      target.setItem(INVITE_CODE_STORAGE_KEY, inviteCode);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function createFeedbackEnvelope(record) {
+    return {
+      protocol: FEEDBACK_SUBMIT_PROTOCOL,
+      feedback: normalizeFeedbackRecord(record)
+    };
+  }
+
+  function submitError(code, message, status = 0) {
+    const error = new Error(message);
+    error.code = code;
+    error.status = status;
+    return error;
+  }
+
+  async function submitFeedbackRecord(record, options = {}) {
+    const serviceUrl = normalizeServiceUrl(options.serviceUrl);
+    const inviteCode = sanitizeText(options.inviteCode || "", 128);
+    const fetchImpl = options.fetchImpl || (typeof fetch === "function" ? fetch.bind(globalThis) : null);
+    if (!fetchImpl) throw submitError("network", "当前浏览器不支持网络提交");
+    const envelope = createFeedbackEnvelope(record);
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 12000;
+    const timer = controller && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+    let response;
+    try {
+      response = await fetchImpl(`${serviceUrl}/api/feedback`, {
+        method: "POST",
+        mode: "cors",
+        headers: {
+          "Content-Type": "application/json",
+          ...(inviteCode ? { "X-Feedback-Invite": inviteCode } : {})
+        },
+        body: JSON.stringify(envelope),
+        signal: controller?.signal
+      });
+    } catch (_) {
+      throw submitError("network", "网络连接失败");
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    if ([401, 403].includes(response.status)) throw submitError("invite", "邀请码错误", response.status);
+    if (response.status === 404) throw submitError("service_url", "反馈服务地址错误", 404);
+    if (response.status === 409) {
+      throw submitError("conflict", "同一反馈编号对应了不同内容，请检查本机草稿", 409);
+    }
+    if (response.status === 429 || response.status >= 500) {
+      throw submitError("unavailable", "服务暂时不可用", response.status);
+    }
+
+    let responseText;
+    try {
+      responseText = await response.text();
+    } catch (_) {
+      throw submitError("unavailable", "服务暂时不可用", response.status);
+    }
+    if (responseText.length > 16384) throw submitError("unavailable", "服务响应异常", response.status);
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (_) {
+      throw submitError("unavailable", "服务响应不是有效 JSON", response.status);
+    }
+    if (!response.ok || result?.ok !== true
+      || !["created", "duplicate"].includes(result.status)
+      || result.feedbackId !== envelope.feedback.id
+      || !sanitizeText(result.receiptId, 120)
+      || Number.isNaN(Date.parse(result.receivedAt))) {
+      throw submitError("unavailable", "服务响应缺少有效回执", response.status);
+    }
+    return {
+      ok: true,
+      status: result.status,
+      feedbackId: envelope.feedback.id,
+      receiptId: sanitizeText(result.receiptId, 120),
+      receivedAt: new Date(result.receivedAt).toISOString()
+    };
+  }
+
+  function normalizeReceipt(receipt) {
+    if (!isPlainObject(receipt)
+      || !["created", "duplicate"].includes(receipt.status)
+      || !sanitizeText(receipt.receiptId, 120)
+      || Number.isNaN(Date.parse(receipt.receivedAt))) return null;
+    return {
+      status: receipt.status,
+      feedbackId: sanitizeText(receipt.feedbackId, 80),
+      receiptId: sanitizeText(receipt.receiptId, 120),
+      receivedAt: new Date(receipt.receivedAt).toISOString()
+    };
+  }
+
+  function saveFeedbackDraft(input, storage, options = {}) {
     const target = getStorage(storage);
     if (!target) return false;
     const safeDraft = {
@@ -316,8 +597,18 @@
         stillConfusing: sanitizeText(input.stillConfusing),
         suggestion: sanitizeText(input.suggestion),
         includeContext: input.includeContext !== false
-      }
+      },
+      pendingRecord: null,
+      receipt: null
     };
+    try {
+      safeDraft.pendingRecord = options.pendingRecord
+        ? normalizeFeedbackRecord(options.pendingRecord)
+        : null;
+    } catch (_) {
+      safeDraft.pendingRecord = null;
+    }
+    safeDraft.receipt = safeDraft.pendingRecord ? normalizeReceipt(options.receipt) : null;
     try {
       target.setItem(DRAFT_STORAGE_KEY, JSON.stringify(safeDraft));
       return true;
@@ -331,7 +622,18 @@
     if (!target) return null;
     try {
       const draft = JSON.parse(target.getItem(DRAFT_STORAGE_KEY));
-      return [1, 2].includes(draft?.schemaVersion) && draft.input ? draft : null;
+      if (![1, 2].includes(draft?.schemaVersion) || !draft.input) return null;
+      let pendingRecord = null;
+      try {
+        pendingRecord = draft.pendingRecord ? normalizeFeedbackRecord(draft.pendingRecord) : null;
+      } catch (_) {
+        pendingRecord = null;
+      }
+      return {
+        ...draft,
+        pendingRecord,
+        receipt: pendingRecord ? normalizeReceipt(draft.receipt) : null
+      };
     } catch (_) {
       return null;
     }
@@ -508,18 +810,76 @@
     renderBranchQuestions(true);
 
     const draft = loadFeedbackDraft();
+    const serviceInput = document.getElementById("feedback-service-url");
+    const inviteInput = document.getElementById("feedback-invite-code");
+    const submitButton = document.getElementById("feedback-submit");
+    const settings = loadFeedbackSettings();
+    if (serviceInput) serviceInput.value = settings.serviceUrl;
+    if (inviteInput) inviteInput.value = settings.inviteCode;
     if (draft) {
       applyDraftToForm(form, draft.input);
-      setFeedbackStatus(`已恢复本机草稿（${new Date(draft.savedAt).toLocaleString()}）`);
+      uiPendingRecord = draft.pendingRecord;
+      uiSubmissionReceipt = draft.receipt;
+      if (uiSubmissionReceipt) {
+        setFeedbackStatus(
+          `已经提交过。回执 ${uiSubmissionReceipt.receiptId}，接收时间 ${new Date(uiSubmissionReceipt.receivedAt).toLocaleString()}。`,
+          "success"
+        );
+      } else {
+        setFeedbackStatus(`已恢复本机草稿（${new Date(draft.savedAt).toLocaleString()}）`);
+      }
     }
 
     function recordFromForm() {
-      return buildFeedbackRecord(collectFormInput(form), uiContext);
+      const input = collectFormInput(form);
+      const previousId = uiPendingRecord?.id;
+      const record = resolveFeedbackRecord(input, uiContext, uiPendingRecord);
+      if (previousId !== record.id) uiSubmissionReceipt = null;
+      uiPendingRecord = record;
+      saveFeedbackDraft(input, undefined, {
+        pendingRecord: uiPendingRecord,
+        receipt: uiSubmissionReceipt
+      });
+      return record;
+    }
+
+    function saveSettingsFromForm() {
+      const serviceUrl = serviceInput?.value || "";
+      const inviteCode = inviteInput?.value || "";
+      if (serviceUrl) {
+        const normalized = normalizeServiceUrl(serviceUrl);
+        if (serviceInput) serviceInput.value = normalized;
+      }
+      if (!saveFeedbackSettings({ serviceUrl, inviteCode })) {
+        throw new Error("浏览器未允许保存反馈服务设置");
+      }
+      return { serviceUrl, inviteCode };
     }
 
     document.getElementById("feedback-save")?.addEventListener("click", () => {
-      const saved = saveFeedbackDraft(collectFormInput(form));
+      const input = collectFormInput(form);
+      if (uiPendingRecord) {
+        const resolved = resolveFeedbackRecord(input, uiContext, uiPendingRecord);
+        if (resolved.id !== uiPendingRecord.id) {
+          uiPendingRecord = null;
+          uiSubmissionReceipt = null;
+        }
+      }
+      const saved = saveFeedbackDraft(input, undefined, {
+        pendingRecord: uiPendingRecord,
+        receipt: uiSubmissionReceipt
+      });
       setFeedbackStatus(saved ? "草稿已保存在当前浏览器。" : "浏览器未允许保存草稿。", saved ? "success" : "error");
+    });
+
+    [serviceInput, inviteInput].filter(Boolean).forEach((control) => {
+      control.addEventListener("change", () => {
+        const saved = saveFeedbackSettings({
+          serviceUrl: serviceInput?.value || "",
+          inviteCode: inviteInput?.value || ""
+        });
+        if (!saved) setFeedbackStatus("服务地址或邀请码格式不正确。", "error");
+      });
     });
 
     document.getElementById("feedback-export-md")?.addEventListener("click", () => {
@@ -542,27 +902,41 @@
       }
     });
 
-    document.getElementById("feedback-submit")?.addEventListener("click", () => {
+    submitButton?.addEventListener("click", async () => {
+      if (uiSubmitting) return;
       try {
         const record = recordFromForm();
-        saveFeedbackDraft(collectFormInput(form));
-        const link = document.createElement("a");
-        link.href = buildIssueUrl(record);
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.hidden = true;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setFeedbackStatus("已请求打开 GitLab 预填页面，请用你自己的账号检查后提交。", "success");
+        const submitSettings = saveSettingsFromForm();
+        uiSubmitting = true;
+        submitButton.disabled = true;
+        submitButton.setAttribute("aria-busy", "true");
+        setFeedbackStatus("正在提交教学评价……");
+        const receipt = await submitFeedbackRecord(record, submitSettings);
+        uiSubmissionReceipt = receipt;
+        saveFeedbackDraft(collectFormInput(form), undefined, {
+          pendingRecord: uiPendingRecord,
+          receipt
+        });
+        const received = new Date(receipt.receivedAt).toLocaleString();
+        const prefix = receipt.status === "duplicate" ? "已经提交过" : "提交成功";
+        setFeedbackStatus(`${prefix}。回执 ${receipt.receiptId}，接收时间 ${received}。`, "success");
       } catch (error) {
-        setFeedbackStatus(error.message, "error");
+        const suffix = ["network", "unavailable"].includes(error.code)
+          ? "草稿仍保留在当前浏览器，可导出文件或稍后重试。"
+          : "";
+        setFeedbackStatus(`${error.message}。${suffix}`.trim(), "error");
+      } finally {
+        uiSubmitting = false;
+        submitButton.disabled = false;
+        submitButton.removeAttribute("aria-busy");
       }
     });
 
     document.getElementById("feedback-clear")?.addEventListener("click", () => {
       form.reset();
       clearFeedbackDraft();
+      uiPendingRecord = null;
+      uiSubmissionReceipt = null;
       renderBranchQuestions(true);
       setFeedbackStatus("表单和本机草稿已清空。", "success");
     });
@@ -571,17 +945,29 @@
 
   return Object.freeze({
     DEFAULT_TARGET,
+    DRAFT_STORAGE_KEY,
+    SERVICE_URL_STORAGE_KEY,
+    INVITE_CODE_STORAGE_KEY,
+    FEEDBACK_SUBMIT_PROTOCOL,
     OPTIONS,
     getQuestionSet,
     sanitizeText,
     normalizeContext,
     validateFeedback,
+    validateFeedbackRecord,
+    normalizeFeedbackRecord,
     createFeedbackId,
     buildFeedbackRecord,
+    resolveFeedbackRecord,
     buildFeedbackMarkdown,
     buildIssueUrl,
     feedbackFilename,
     serializeFeedbackJson,
+    normalizeServiceUrl,
+    loadFeedbackSettings,
+    saveFeedbackSettings,
+    createFeedbackEnvelope,
+    submitFeedbackRecord,
     saveFeedbackDraft,
     loadFeedbackDraft,
     clearFeedbackDraft,
