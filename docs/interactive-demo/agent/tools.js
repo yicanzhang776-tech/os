@@ -6,6 +6,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { TextDecoder } = require("node:util");
 const {
+  EVENT_PROTOCOL,
+  STAGE_INDEX,
+  normalizeTeachingEvent
+} = require("../protocol");
+const {
   TOOL_CONTRACT_VERSION,
   protectedContextOverride,
   resolveTeachingContext,
@@ -21,6 +26,18 @@ const READ_CODE_DEFAULT_BYTES = 32 * 1024;
 const READ_CODE_MAX_BYTES = 64 * 1024;
 const READ_CODE_MAX_FILE_BYTES = 256 * 1024;
 const READ_CODE_INPUT_FIELDS = new Set(["path", "startLine", "endLine", "maxBytes"]);
+const GET_QEMU_EVENTS_DEFAULT_LIMIT = 50;
+const GET_QEMU_EVENTS_MAX_LIMIT = 100;
+const GET_QEMU_EVENTS_MAX_TEXT = 500;
+const GET_QEMU_EVENTS_INPUT_FIELDS = new Set([
+  "runId",
+  "lab",
+  "status",
+  "sequenceStart",
+  "sequenceEnd",
+  "limit",
+  "includeRaw"
+]);
 
 class SafeToolError extends Error {
   constructor(code, message, retryable = false, details = {}) {
@@ -334,6 +351,146 @@ function validateReadCodeInput(args) {
   };
 }
 
+function validEventStatus(status) {
+  if (typeof status !== "string") return false;
+  const normalized = normalizeTeachingEvent({
+    lab: "p0",
+    step: "status-filter",
+    status,
+    source: "lifecycle"
+  });
+  return Boolean(normalized && normalized.status === status);
+}
+
+function validateGetQemuEventsInput(args) {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw new SafeToolError("invalid_tool_input", "get_qemu_events input must be an object.");
+  }
+
+  const protectedField = protectedContextOverride(args);
+  if (protectedField) {
+    throw new SafeToolError(
+      "context_override_forbidden",
+      "Tool input cannot override the real branch or commit.",
+      false,
+      { field: protectedField }
+    );
+  }
+  const unknownField = Object.keys(args)
+    .find((field) => !GET_QEMU_EVENTS_INPUT_FIELDS.has(field));
+  if (unknownField) {
+    throw new SafeToolError(
+      "invalid_tool_input",
+      "get_qemu_events input contains an unknown field.",
+      false,
+      { field: unknownField }
+    );
+  }
+
+  let runId = null;
+  if (args.runId !== undefined) {
+    const runIdCheck = validateRequestId(args.runId);
+    if (!runIdCheck.ok || !runIdCheck.value) {
+      throw new SafeToolError(
+        "invalid_run_id",
+        "runId must contain only safe identifier characters and be at most 80 characters."
+      );
+    }
+    runId = runIdCheck.value;
+  }
+
+  const lab = args.lab === undefined ? null : args.lab;
+  if (args.lab !== undefined
+    && (typeof lab !== "string" || !Object.hasOwn(STAGE_INDEX, lab))) {
+    throw new SafeToolError(
+      "invalid_lab",
+      "lab must be one of p0 or lab1 through lab7."
+    );
+  }
+
+  const status = args.status === undefined ? null : args.status;
+  if (args.status !== undefined && !validEventStatus(status)) {
+    throw new SafeToolError(
+      "invalid_status",
+      "status must be a valid os-demo.event/v1 status."
+    );
+  }
+
+  const sequenceStart = args.sequenceStart === undefined ? null : args.sequenceStart;
+  const sequenceEnd = args.sequenceEnd === undefined ? null : args.sequenceEnd;
+  if ((args.sequenceStart !== undefined
+      && (!Number.isSafeInteger(sequenceStart) || sequenceStart < 0))
+    || (args.sequenceEnd !== undefined
+      && (!Number.isSafeInteger(sequenceEnd) || sequenceEnd < 0))
+    || (sequenceStart !== null && sequenceEnd !== null && sequenceStart > sequenceEnd)) {
+    throw new SafeToolError(
+      "invalid_sequence_range",
+      "sequenceStart and sequenceEnd must be non-negative safe integers with start <= end."
+    );
+  }
+
+  const limit = args.limit === undefined ? GET_QEMU_EVENTS_DEFAULT_LIMIT : args.limit;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > GET_QEMU_EVENTS_MAX_LIMIT) {
+    throw new SafeToolError(
+      "invalid_limit",
+      `limit must be an integer between 1 and ${GET_QEMU_EVENTS_MAX_LIMIT}.`
+    );
+  }
+
+  const includeRaw = args.includeRaw === undefined ? false : args.includeRaw;
+  if (typeof includeRaw !== "boolean") {
+    throw new SafeToolError(
+      "invalid_tool_input",
+      "includeRaw must be a boolean.",
+      false,
+      { field: "includeRaw" }
+    );
+  }
+
+  return {
+    runId,
+    lab,
+    status,
+    sequenceStart,
+    sequenceEnd,
+    limit,
+    includeRaw
+  };
+}
+
+function redactStoredEventText(value) {
+  const redacted = String(value || "")
+    .slice(0, GET_QEMU_EVENTS_MAX_TEXT)
+    .replace(/[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*/g, "[redacted-path]")
+    .replace(/(^|\s)\/(?:[^/\s]+\/)+[^\s]*/g, "$1[redacted-path]")
+    .replace(/\b(?:api[_-]?key|access[_-]?token|secret|password)=\S+/gi, "[redacted-secret]")
+    .replace(/\b[A-Z][A-Z0-9_]{1,63}=\S+/g, "[redacted-environment]");
+  return redacted.slice(0, GET_QEMU_EVENTS_MAX_TEXT);
+}
+
+function safeStoredQemuEvent(event, selectedRunId, includeRaw) {
+  if (!event || typeof event !== "object" || event.protocol !== EVENT_PROTOCOL) return null;
+  if (!Number.isSafeInteger(event.sequence) || event.sequence < 0) return null;
+  const normalized = normalizeTeachingEvent(event);
+  if (!normalized) return null;
+
+  const safeEvent = {
+    protocol: EVENT_PROTOCOL,
+    lab: normalized.lab,
+    step: normalized.step,
+    status: normalized.status,
+    detail: redactStoredEventText(normalized.detail),
+    source: normalized.source,
+    runId: selectedRunId,
+    sequence: event.sequence,
+    timestamp: Number.isFinite(event.timestamp) ? event.timestamp : null
+  };
+  if (includeRaw && typeof event.raw === "string") {
+    safeEvent.raw = redactStoredEventText(event.raw);
+  }
+  return safeEvent;
+}
+
 function createGetContextTool(options = {}) {
   if (typeof options.readWorkspaceContext !== "function") {
     throw new TypeError("readWorkspaceContext is required.");
@@ -612,7 +769,157 @@ function createReadCodeTool(options = {}) {
   };
 }
 
+function createGetQemuEventsTool(options = {}) {
+  if (typeof options.readWorkspaceContext !== "function") {
+    throw new TypeError("readWorkspaceContext is required.");
+  }
+  if (!options.runStore
+    || typeof options.runStore.getActiveRun !== "function"
+    || typeof options.runStore.getLastCompletedRun !== "function") {
+    throw new TypeError("runStore with active and completed run accessors is required.");
+  }
+
+  const makeRequestId = options.requestIdFactory || defaultRequestId;
+  const now = options.now || Date.now;
+
+  return function getQemuEvents(args = {}, invocationContext = {}) {
+    const tool = "get_qemu_events";
+    let actual = { branch: "unknown", commit: "unknown" };
+    let requestId = makeRequestId();
+    const meta = () => ({
+      requestId,
+      branch: actual.branch,
+      commit: actual.commit,
+      generatedAt: new Date(now()).toISOString()
+    });
+
+    try {
+      const rawContext = options.readWorkspaceContext();
+      if (!rawContext || typeof rawContext !== "object") {
+        throw new SafeToolError("context_unavailable", "The workspace context is unavailable.", true);
+      }
+      actual = {
+        branch: typeof rawContext.branch === "string" && rawContext.branch
+          ? rawContext.branch
+          : "unknown",
+        commit: typeof rawContext.commit === "string" && rawContext.commit
+          ? rawContext.commit
+          : "unknown"
+      };
+
+      const requestIdCheck = validateRequestId(invocationContext?.requestId);
+      if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
+      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+
+      const invocationCheck = validateInvocationContext(invocationContext);
+      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+
+      const expectedBranch = invocationCheck.value.expectedBranch;
+      const expectedCommit = invocationCheck.value.expectedCommit;
+      if ((expectedBranch && expectedBranch !== actual.branch)
+        || (expectedCommit && expectedCommit !== actual.commit)) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed before the tool executed.",
+          true,
+          {
+            expectedBranch: expectedBranch || null,
+            expectedCommit: expectedCommit || null,
+            actualBranch: actual.branch,
+            actualCommit: actual.commit
+          }
+        );
+      }
+
+      const input = validateGetQemuEventsInput(args);
+      const activeRun = options.runStore.getActiveRun();
+      const lastCompletedRun = options.runStore.getLastCompletedRun();
+      let selectedRun = null;
+      let active = false;
+      let source = null;
+
+      if (input.runId) {
+        if (activeRun && activeRun.runId === input.runId) {
+          selectedRun = activeRun;
+          active = true;
+          source = "activeRun";
+        } else if (lastCompletedRun && lastCompletedRun.runId === input.runId) {
+          selectedRun = lastCompletedRun;
+          source = "lastCompletedRun";
+        } else {
+          throw new SafeToolError(
+            "run_not_found",
+            "The requested run is not the active or last completed run.",
+            false,
+            { runId: input.runId }
+          );
+        }
+      } else if (activeRun) {
+        selectedRun = activeRun;
+        active = true;
+        source = "activeRun";
+      } else if (lastCompletedRun) {
+        selectedRun = lastCompletedRun;
+        source = "lastCompletedRun";
+      } else {
+        throw new SafeToolError(
+          "no_run_available",
+          "There is no active or completed run available."
+        );
+      }
+
+      if (selectedRun.branch !== actual.branch || selectedRun.commit !== actual.commit) {
+        throw new SafeToolError(
+          "run_context_mismatch",
+          "The selected run belongs to a different branch or commit.",
+          false,
+          {
+            runBranch: selectedRun.branch || null,
+            runCommit: selectedRun.commit || null,
+            actualBranch: actual.branch,
+            actualCommit: actual.commit
+          }
+        );
+      }
+
+      const storedEvents = Array.isArray(selectedRun.events) ? selectedRun.events : [];
+      const matchedEvents = storedEvents
+        .map((event) => safeStoredQemuEvent(event, selectedRun.runId, input.includeRaw))
+        .filter(Boolean)
+        .filter((event) => input.lab === null || event.lab === input.lab)
+        .filter((event) => input.status === null || event.status === input.status)
+        .filter((event) => input.sequenceStart === null
+          || event.sequence >= input.sequenceStart)
+        .filter((event) => input.sequenceEnd === null || event.sequence <= input.sequenceEnd);
+      const events = matchedEvents.slice(0, input.limit);
+
+      return createToolSuccess(tool, {
+        runId: selectedRun.runId,
+        branch: selectedRun.branch,
+        commit: selectedRun.commit,
+        lab: selectedRun.lab,
+        variant: selectedRun.variant,
+        source,
+        active,
+        eventProtocol: EVENT_PROTOCOL,
+        totalMatched: matchedEvents.length,
+        returnedCount: events.length,
+        sequenceStart: input.sequenceStart,
+        sequenceEnd: input.sequenceEnd,
+        limit: input.limit,
+        includeRaw: input.includeRaw,
+        truncated: matchedEvents.length > events.length,
+        events
+      }, meta());
+    } catch (error) {
+      return createToolFailure(tool, error, meta());
+    }
+  };
+}
+
 module.exports = {
+  GET_QEMU_EVENTS_DEFAULT_LIMIT,
+  GET_QEMU_EVENTS_MAX_LIMIT,
   READ_CODE_DEFAULT_BYTES,
   READ_CODE_DEFAULT_LINES,
   READ_CODE_MAX_BYTES,
@@ -620,6 +927,7 @@ module.exports = {
   READ_CODE_MAX_LINES,
   SafeToolError,
   createGetContextTool,
+  createGetQemuEventsTool,
   createReadCodeTool,
   createToolFailure,
   createToolResult,

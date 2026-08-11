@@ -8,11 +8,13 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   createGetContextTool,
+  createGetQemuEventsTool,
   createReadCodeTool,
   createToolFailure,
   parsePorcelainStatus
 } = require("./tools");
 const { TOOL_CONTRACT_VERSION } = require("./policy");
+const { RunStore } = require("./run-store");
 
 const NOW = Date.parse("2026-08-11T10:20:30.000Z");
 
@@ -79,6 +81,55 @@ function readCodeFailure(relativePath, expectedCode) {
     assert.equal(result.data, null);
     return result;
   });
+}
+
+function qemuRunInput(runId = "run-1", overrides = {}) {
+  return {
+    runId,
+    taskKind: "interactive-run",
+    branch: "lab4-starter",
+    commit: "abc1234",
+    lab: "lab4",
+    variant: "starter",
+    target: "riscv64gc-unknown-none-elf",
+    ...overrides
+  };
+}
+
+function qemuEvent(sequence, overrides = {}) {
+  return {
+    protocol: "os-demo.event/v1",
+    lab: "lab4",
+    step: `step-${sequence}`,
+    status: "running",
+    detail: `event ${sequence}`,
+    source: "console",
+    raw: `[Lab4] event ${sequence}`,
+    sequence,
+    timestamp: NOW + sequence,
+    ...overrides
+  };
+}
+
+function recordQemuEvents(store, runId, events) {
+  for (const event of events) assert.equal(store.recordEvent(runId, event), true);
+}
+
+function qemuEventsToolFor(store, options = {}) {
+  let contextReads = 0;
+  const tool = createGetQemuEventsTool({
+    runStore: store,
+    readWorkspaceContext() {
+      contextReads += 1;
+      return {
+        branch: options.branch || "lab4-starter",
+        commit: options.commit || "abc1234"
+      };
+    },
+    requestIdFactory: () => "qemu-events-generated",
+    now: () => NOW
+  });
+  return { tool, contextReads: () => contextReads };
 }
 
 test("get_context resolves the known lab4-starter teaching context", () => {
@@ -669,4 +720,278 @@ test("read_code accepts uppercase assembly .S files", () => {
     assert.equal(result.ok, true);
     assert.equal(result.data.encoding, "utf-8");
   });
+});
+
+test("get_qemu_events reports when no run is available", () => {
+  const result = qemuEventsToolFor(new RunStore()).tool({});
+  assert.equal(result.ok, false);
+  assert.equal(result.data, null);
+  assert.equal(result.error.code, "no_run_available");
+  assert.equal(Object.hasOwn(result.error, "stack"), false);
+});
+
+test("get_qemu_events reads the active run by default", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [qemuEvent(1)]);
+  const result = qemuEventsToolFor(store).tool({});
+  assert.equal(result.ok, true);
+  assert.equal(result.data.runId, "run-1");
+  assert.equal(result.data.branch, "lab4-starter");
+  assert.equal(result.data.commit, "abc1234");
+  assert.equal(result.data.lab, "lab4");
+  assert.equal(result.data.variant, "starter");
+  assert.equal(result.data.source, "activeRun");
+  assert.equal(result.data.active, true);
+  assert.equal(result.data.eventProtocol, "os-demo.event/v1");
+});
+
+test("get_qemu_events falls back to the last completed run", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput("completed-run"));
+  recordQemuEvents(store, "completed-run", [qemuEvent(3)]);
+  store.completeRun("completed-run", { finalResult: "finished" });
+  const result = qemuEventsToolFor(store).tool({});
+  assert.equal(result.ok, true);
+  assert.equal(result.data.runId, "completed-run");
+  assert.equal(result.data.source, "lastCompletedRun");
+  assert.equal(result.data.active, false);
+  assert.deepEqual(result.data.events.map((event) => event.sequence), [3]);
+});
+
+test("get_qemu_events selects either retained run by exact runId", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput("completed-run"));
+  recordQemuEvents(store, "completed-run", [qemuEvent(1)]);
+  store.completeRun("completed-run", { finalResult: "finished" });
+  store.startRun(qemuRunInput("active-run"));
+  recordQemuEvents(store, "active-run", [qemuEvent(2)]);
+
+  const tool = qemuEventsToolFor(store).tool;
+  const completed = tool({ runId: "completed-run" });
+  const active = tool({ runId: "active-run" });
+  assert.equal(completed.ok, true);
+  assert.equal(completed.data.active, false);
+  assert.deepEqual(completed.data.events.map((event) => event.sequence), [1]);
+  assert.equal(active.ok, true);
+  assert.equal(active.data.active, true);
+  assert.deepEqual(active.data.events.map((event) => event.sequence), [2]);
+});
+
+test("get_qemu_events distinguishes invalid and unavailable runIds", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  const tool = qemuEventsToolFor(store).tool;
+  for (const runId of ["", "../run", null, "x".repeat(81)]) {
+    const result = tool({ runId });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, "invalid_run_id");
+  }
+  const missing = tool({ runId: "other-run" });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, "run_not_found");
+});
+
+test("get_qemu_events applies the default limit and reports truncation", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", Array.from({ length: 51 }, (_, index) => qemuEvent(index + 1)));
+  const result = qemuEventsToolFor(store).tool({});
+  assert.equal(result.ok, true);
+  assert.equal(result.data.limit, 50);
+  assert.equal(result.data.totalMatched, 51);
+  assert.equal(result.data.returnedCount, 50);
+  assert.equal(result.data.truncated, true);
+});
+
+test("get_qemu_events accepts limit 1 and the maximum limit 100", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", Array.from({ length: 101 }, (_, index) => qemuEvent(index + 1)));
+  const tool = qemuEventsToolFor(store).tool;
+  const one = tool({ limit: 1 });
+  const hundred = tool({ limit: 100 });
+  assert.equal(one.data.returnedCount, 1);
+  assert.equal(one.data.truncated, true);
+  assert.equal(hundred.data.returnedCount, 100);
+  assert.equal(hundred.data.truncated, true);
+});
+
+test("get_qemu_events rejects limits outside 1 through 100", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  const tool = qemuEventsToolFor(store).tool;
+  for (const limit of [0, -1, 101, 1.5, Infinity]) {
+    const result = tool({ limit });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, "invalid_limit");
+  }
+});
+
+test("get_qemu_events combines lab and existing protocol status filters", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [
+    qemuEvent(1, { lab: "lab4", status: "running" }),
+    qemuEvent(2, { lab: "lab4", status: "fail" }),
+    qemuEvent(3, { lab: "lab5", status: "fail" }),
+    qemuEvent(4, { lab: "p0", status: "pass" })
+  ]);
+  const tool = qemuEventsToolFor(store).tool;
+  assert.deepEqual(tool({ lab: "lab4" }).data.events.map((event) => event.sequence), [1, 2]);
+  assert.deepEqual(tool({ status: "fail" }).data.events.map((event) => event.sequence), [2, 3]);
+  assert.deepEqual(tool({ lab: "lab4", status: "fail" }).data.events
+    .map((event) => event.sequence), [2]);
+  assert.deepEqual(tool({ lab: "p0" }).data.events.map((event) => event.sequence), [4]);
+});
+
+test("get_qemu_events applies start, end, and combined sequence filters", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [qemuEvent(7), qemuEvent(8), qemuEvent(12), qemuEvent(15)]);
+  const tool = qemuEventsToolFor(store).tool;
+  assert.deepEqual(tool({ sequenceStart: 12 }).data.events.map((event) => event.sequence), [12, 15]);
+  assert.deepEqual(tool({ sequenceEnd: 8 }).data.events.map((event) => event.sequence), [7, 8]);
+  const range = tool({ sequenceStart: 8, sequenceEnd: 12 });
+  assert.deepEqual(range.data.events.map((event) => event.sequence), [8, 12]);
+  assert.equal(range.data.sequenceStart, 8);
+  assert.equal(range.data.sequenceEnd, 12);
+  assert.equal(range.data.truncated, false);
+});
+
+test("get_qemu_events rejects invalid sequence ranges", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  const tool = qemuEventsToolFor(store).tool;
+  for (const args of [
+    { sequenceStart: 5, sequenceEnd: 4 },
+    { sequenceStart: -1 },
+    { sequenceEnd: 1.5 }
+  ]) {
+    const result = tool(args);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, "invalid_sequence_range");
+  }
+});
+
+test("get_qemu_events preserves stored order and real sequence numbers", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [qemuEvent(7), qemuEvent(8), qemuEvent(12), qemuEvent(15)]);
+  const result = qemuEventsToolFor(store).tool({ sequenceStart: 8, status: "running" });
+  assert.deepEqual(result.data.events.map((event) => event.sequence), [8, 12, 15]);
+});
+
+test("get_qemu_events hides raw by default and bounds explicitly requested raw", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [
+    qemuEvent(1, { raw: "x".repeat(900) }),
+    qemuEvent(2, { raw: "C:\\private\\kernel.log api_key=unsafe PATH=/private/bin" })
+  ]);
+  const tool = qemuEventsToolFor(store).tool;
+  const hidden = tool({});
+  const included = tool({ includeRaw: true });
+  assert.equal(hidden.data.includeRaw, false);
+  assert.equal(Object.hasOwn(hidden.data.events[0], "raw"), false);
+  assert.equal(included.data.includeRaw, true);
+  assert.equal(included.data.events[0].raw.length, 500);
+  assert.doesNotMatch(included.data.events[1].raw, /private|unsafe|PATH=/);
+});
+
+test("get_qemu_events does not mutate the RunStore event snapshots", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [qemuEvent(1), qemuEvent(2)]);
+  const before = store.getActiveRun().events;
+  const result = qemuEventsToolFor(store).tool({ limit: 1, includeRaw: false });
+  result.data.events[0].detail = "changed by caller";
+  assert.deepEqual(store.getActiveRun().events, before);
+  assert.equal(store.getActiveRun().events.length, 2);
+  assert.equal(Object.hasOwn(store.getActiveRun().events[0], "raw"), true);
+});
+
+test("get_qemu_events rejects invalid filters and protected or unknown fields", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  const tool = qemuEventsToolFor(store).tool;
+  for (const lab of ["lab8", null]) {
+    assert.equal(tool({ lab }).error.code, "invalid_lab");
+  }
+  for (const status of ["finished", null]) {
+    assert.equal(tool({ status }).error.code, "invalid_status");
+  }
+  assert.equal(tool({ sequenceStart: null }).error.code, "invalid_sequence_range");
+  assert.equal(tool({ includeRaw: "yes" }).error.code, "invalid_tool_input");
+  assert.equal(tool({ branch: "other" }).error.code, "context_override_forbidden");
+  assert.equal(tool({ history: true }).error.code, "invalid_tool_input");
+});
+
+test("get_qemu_events reuses invocation context_changed protection", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  const result = qemuEventsToolFor(store).tool({}, {
+    expectedBranch: "lab4-starter",
+    expectedCommit: "old-commit"
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "context_changed");
+  assert.equal(result.error.retryable, true);
+});
+
+test("get_qemu_events rejects a run from another branch or commit", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput("stale-run", { commit: "old-commit" }));
+  recordQemuEvents(store, "stale-run", [qemuEvent(1)]);
+  const result = qemuEventsToolFor(store).tool({});
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "run_context_mismatch");
+  assert.equal(result.error.details.runCommit, "old-commit");
+  assert.equal(result.error.details.actualCommit, "abc1234");
+});
+
+test("get_qemu_events success and failure reuse the unified ToolResult", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [qemuEvent(1)]);
+  const tool = qemuEventsToolFor(store).tool;
+  const success = tool({}, { requestId: "request-qemu-events" });
+  assert.equal(success.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(success.tool, "get_qemu_events");
+  assert.equal(success.ok, true);
+  assert.equal(success.error, null);
+  assert.equal(success.meta.requestId, "request-qemu-events");
+  assert.equal(success.meta.branch, "lab4-starter");
+  assert.equal(success.meta.commit, "abc1234");
+  assert.equal(success.meta.generatedAt, "2026-08-11T10:20:30.000Z");
+  const failure = tool({ limit: 101 });
+  assert.equal(failure.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(failure.tool, "get_qemu_events");
+  assert.equal(failure.ok, false);
+  assert.equal(failure.data, null);
+  assert.equal(Object.hasOwn(failure.error, "stack"), false);
+});
+
+test("get_qemu_events returns only valid os-demo.event/v1 stored events", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", [
+    qemuEvent(1),
+    qemuEvent(2, { protocol: "other.event/v1" })
+  ]);
+  const result = qemuEventsToolFor(store).tool({});
+  assert.equal(result.data.totalMatched, 1);
+  assert.equal(result.data.returnedCount, 1);
+  assert.equal(result.data.events.every((event) => event.protocol === "os-demo.event/v1"), true);
+});
+
+test("get_qemu_events returns at most 100 of RunStore's 512 retained events", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput());
+  recordQemuEvents(store, "run-1", Array.from({ length: 512 }, (_, index) => qemuEvent(index + 1)));
+  const result = qemuEventsToolFor(store).tool({ limit: 100 });
+  assert.equal(store.getActiveRun().events.length, 512);
+  assert.equal(result.data.totalMatched, 512);
+  assert.equal(result.data.returnedCount, 100);
+  assert.equal(result.data.truncated, true);
 });

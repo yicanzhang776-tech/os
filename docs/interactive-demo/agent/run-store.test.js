@@ -436,6 +436,52 @@ test("events are bound to the active runId and update event counters", () => {
   assert.equal(active.activeObservedLab, "lab4");
 });
 
+test("RunStore event accessors return independent read-only snapshots", () => {
+  const store = new RunStore();
+  store.startRun(runInput("snapshot-run"));
+  store.recordEvent("snapshot-run", {
+    protocol: "os-demo.event/v1",
+    lab: "lab4",
+    step: "paging-active",
+    status: "running",
+    detail: "paging is active",
+    source: "console",
+    sequence: 9
+  });
+  const first = store.getActiveRun();
+  first.events[0].detail = "caller mutation";
+  first.events.push({ sequence: 10 });
+  const second = store.getActiveRun();
+  assert.equal(second.events.length, 1);
+  assert.equal(second.events[0].detail, "paging is active");
+  assert.equal(second.events[0].sequence, 9);
+});
+
+test("RunStore keeps completed and active event snapshots separate", () => {
+  const store = new RunStore({ now: () => 100 });
+  store.startRun(runInput("completed-run"));
+  store.recordEvent("completed-run", {
+    protocol: "os-demo.event/v1",
+    lab: "lab4",
+    step: "completed-evidence",
+    status: "pass",
+    source: "lifecycle",
+    sequence: 3
+  });
+  store.completeRun("completed-run", { finalResult: "finished", endedAt: 110 });
+  store.startRun(runInput("active-run"));
+  store.recordEvent("active-run", {
+    protocol: "os-demo.event/v1",
+    lab: "lab4",
+    step: "active-evidence",
+    status: "running",
+    source: "lifecycle",
+    sequence: 4
+  });
+  assert.deepEqual(store.getLastCompletedRun().events.map((event) => event.sequence), [3]);
+  assert.deepEqual(store.getActiveRun().events.map((event) => event.sequence), [4]);
+});
+
 test("timeout followed by a late child completion emits one completion only", async () => {
   const fixture = lifecycleFixture();
   const build = deferredOperation();
