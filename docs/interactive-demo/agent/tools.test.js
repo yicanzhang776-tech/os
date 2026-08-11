@@ -7,8 +7,12 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
+  GET_RUN_RESULT_MAX_DIAGNOSTICS,
+  GET_RUN_RESULT_MAX_EVIDENCE_SEQUENCES,
+  GET_RUN_RESULT_SCHEMA_VERSION,
   createGetContextTool,
   createGetQemuEventsTool,
+  createGetRunResultTool,
   createReadCodeTool,
   createToolFailure,
   parsePorcelainStatus
@@ -130,6 +134,57 @@ function qemuEventsToolFor(store, options = {}) {
     now: () => NOW
   });
   return { tool, contextReads: () => contextReads };
+}
+
+function runResultToolFor(store, options = {}) {
+  let contextReads = 0;
+  const tool = createGetRunResultTool({
+    runStore: store,
+    readWorkspaceContext() {
+      contextReads += 1;
+      return {
+        branch: options.branch || "lab4-starter",
+        commit: options.commit || "abc1234"
+      };
+    },
+    diagnose: options.diagnose,
+    requestIdFactory: () => "run-result-generated",
+    now: () => NOW
+  });
+  return { tool, contextReads: () => contextReads };
+}
+
+function completeQemuRun(store, options = {}) {
+  const runId = options.runId || "completed-run";
+  const input = {
+    startedAt: 100,
+    ...options.input
+  };
+  store.startRun(qemuRunInput(runId, input));
+  const build = options.build || { status: "success", exitCode: 0 };
+  const qemu = options.qemu || { status: "finished", exitCode: 0 };
+  store.updateBuild(runId, build.status, build.exitCode);
+  store.updateQemu(runId, qemu.status, qemu.exitCode);
+  recordQemuEvents(store, runId, options.events || []);
+  for (const line of options.stableOutput || []) store.recordOutput(runId, line);
+  return store.completeRun(runId, {
+    endedAt: 160,
+    finalResult: "finished",
+    ...options.result
+  });
+}
+
+function completedSnapshot(options = {}) {
+  const store = new RunStore();
+  completeQemuRun(store, options);
+  return store.getLastCompletedRun();
+}
+
+function snapshotStore(lastCompletedRun, activeRun = null) {
+  return {
+    getActiveRun: () => activeRun,
+    getLastCompletedRun: () => lastCompletedRun
+  };
 }
 
 test("get_context resolves the known lab4-starter teaching context", () => {
@@ -994,4 +1049,622 @@ test("get_qemu_events returns at most 100 of RunStore's 512 retained events", ()
   assert.equal(result.data.totalMatched, 512);
   assert.equal(result.data.returnedCount, 100);
   assert.equal(result.data.truncated, true);
+});
+
+test("get_run_result distinguishes no completed run from an active run", () => {
+  const empty = runResultToolFor(new RunStore()).tool({});
+  assert.equal(empty.ok, false);
+  assert.equal(empty.error.code, "no_completed_run");
+  assert.equal(empty.error.retryable, false);
+
+  const store = new RunStore();
+  store.startRun(qemuRunInput("active-run", { startedAt: 100 }));
+  const active = runResultToolFor(store).tool({});
+  assert.equal(active.ok, false);
+  assert.equal(active.error.code, "run_in_progress");
+  assert.equal(active.error.details.runId, "active-run");
+});
+
+test("get_run_result defaults to the completed run even while a newer run is active", () => {
+  const store = new RunStore();
+  completeQemuRun(store, { runId: "completed-run" });
+  store.startRun(qemuRunInput("active-run", { startedAt: 200 }));
+
+  const result = runResultToolFor(store).tool({});
+  assert.equal(result.ok, true);
+  assert.equal(result.data.runId, "completed-run");
+  assert.equal(store.getActiveRun().runId, "active-run");
+});
+
+test("get_run_result selects exact completed and active runIds", () => {
+  const store = new RunStore();
+  completeQemuRun(store, { runId: "completed-run" });
+  store.startRun(qemuRunInput("active-run", { startedAt: 200 }));
+  const tool = runResultToolFor(store).tool;
+
+  assert.equal(tool({ runId: "completed-run" }).data.runId, "completed-run");
+  assert.equal(tool({ runId: "active-run" }).error.code, "run_in_progress");
+  assert.equal(tool({ runId: "missing-run" }).error.code, "run_not_found");
+});
+
+test("get_run_result validates runId, lab, includeDiagnostics, and input fields", () => {
+  const store = new RunStore();
+  completeQemuRun(store);
+  const tool = runResultToolFor(store).tool;
+
+  for (const runId of ["", null, {}, [], "x".repeat(81)]) {
+    assert.equal(tool({ runId }).error.code, "invalid_run_id");
+  }
+  for (const lab of ["lab8", null, {}, []]) {
+    assert.equal(tool({ lab }).error.code, "invalid_lab");
+  }
+  assert.equal(tool({ lab: "lab4" }).ok, true);
+  assert.equal(tool({ lab: "p0" }).error.code, "lab_mismatch");
+  assert.equal(tool({ includeDiagnostics: "false" }).error.code, "invalid_include_diagnostics");
+  assert.equal(tool({ branch: "other" }).error.code, "context_override_forbidden");
+  assert.equal(tool({ commit: "other" }).error.code, "context_override_forbidden");
+  for (const field of ["finalResult", "exitCode", "events", "command", "cwd", "env"]) {
+    assert.equal(tool({ [field]: true }).error.code, "invalid_tool_input");
+  }
+});
+
+test("get_run_result returns the unified ToolResult and stable result schema", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    events: [qemuEvent(7, { step: "pass", status: "pass" })]
+  });
+  const tool = runResultToolFor(store).tool;
+  const success = tool({}, { requestId: "request-run-result" });
+
+  assert.equal(success.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(success.tool, "get_run_result");
+  assert.equal(success.ok, true);
+  assert.equal(success.error, null);
+  assert.equal(success.meta.requestId, "request-run-result");
+  assert.equal(success.meta.branch, "lab4-starter");
+  assert.equal(success.meta.commit, "abc1234");
+  assert.equal(success.meta.generatedAt, "2026-08-11T10:20:30.000Z");
+  assert.equal(success.data.schemaVersion, GET_RUN_RESULT_SCHEMA_VERSION);
+  assert.equal(success.data.eventProtocol, "os-demo.event/v1");
+  assert.equal(success.data.runId, "completed-run");
+  assert.equal(success.data.branch, "lab4-starter");
+  assert.equal(success.data.commit, "abc1234");
+  assert.equal(success.data.lab, "lab4");
+  assert.equal(success.data.variant, "starter");
+  assert.equal(success.data.target, "riscv64gc-unknown-none-elf");
+  assert.deepEqual(success.data.build, { status: "success", exitCode: 0 });
+  assert.deepEqual(success.data.qemu, { status: "finished", exitCode: 0 });
+  assert.equal(success.data.finalResult, "pass");
+  assert.equal(success.data.failureSummary, null);
+
+  const failure = tool({ includeDiagnostics: 1 });
+  assert.equal(failure.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(failure.tool, "get_run_result");
+  assert.equal(failure.ok, false);
+  assert.equal(failure.data, null);
+  assert.equal(Object.hasOwn(failure.error, "stack"), false);
+});
+
+test("get_run_result derives teaching results only from the target lab", () => {
+  const resultFor = (events, result = {}) => {
+    const store = new RunStore();
+    completeQemuRun(store, { events, result });
+    return runResultToolFor(store).tool({ includeDiagnostics: false }).data.finalResult;
+  };
+
+  assert.equal(resultFor([qemuEvent(1, { step: "pass", status: "pass" })]), "pass");
+  assert.equal(resultFor([
+    qemuEvent(1, { step: "pass", status: "pass" }),
+    qemuEvent(2, { step: "todo", status: "todo" })
+  ]), "todo");
+  assert.equal(resultFor([
+    qemuEvent(1, { lab: "lab3", step: "pass", status: "pass" }),
+    qemuEvent(2, { lab: "p0", step: "pass", status: "pass" })
+  ]), "finished");
+  assert.equal(resultFor([]), "finished");
+  assert.equal(resultFor([qemuEvent(1, { step: "panic", status: "fail" })]), "fail");
+  assert.equal(resultFor([], { finalResult: "pass" }), "finished");
+  assert.equal(resultFor([], { finalResult: "todo" }), "finished");
+  assert.equal(resultFor([], { finalResult: "fail" }), "finished");
+});
+
+test("get_run_result never promotes exitCode zero to PASS", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    qemu: { status: "finished", exitCode: 0 },
+    events: [qemuEvent(3, { step: "task-2-todo", status: "todo" })]
+  });
+
+  const result = runResultToolFor(store).tool({ includeDiagnostics: false });
+  assert.equal(result.data.qemu.exitCode, 0);
+  assert.equal(result.data.finalResult, "todo");
+  assert.notEqual(result.data.finalResult, "pass");
+});
+
+test("get_run_result preserves timeout, stopped, and existing failure semantics", () => {
+  const cases = [
+    {
+      qemu: { status: "timeout", exitCode: null },
+      result: {
+        finalResult: "timeout",
+        timedOut: true,
+        error: { code: "qemu_timeout", message: "qemu timeout ended the run.", stage: "qemu" }
+      },
+      expected: "timeout"
+    },
+    {
+      qemu: { status: "stopped", exitCode: null },
+      result: { finalResult: "stopped", manuallyStopped: true },
+      expected: "stopped"
+    },
+    {
+      build: { status: "failure", exitCode: 101 },
+      qemu: { status: "not-started", exitCode: null },
+      result: {
+        finalResult: "build-failure",
+        error: { code: "build_failure", message: "cargo build failed.", stage: "build" }
+      },
+      expected: "fail"
+    },
+    {
+      qemu: { status: "failure", exitCode: 2 },
+      result: {
+        finalResult: "qemu-failure",
+        error: { code: "qemu_failure", message: "QEMU exited with code 2.", stage: "qemu" }
+      },
+      expected: "fail"
+    }
+  ];
+
+  for (const item of cases) {
+    const store = new RunStore();
+    completeQemuRun(store, item);
+    const result = runResultToolFor(store).tool({ includeDiagnostics: false });
+    assert.equal(result.data.finalResult, item.expected);
+  }
+});
+
+test("get_run_result returns recorded lifecycle times and event counters", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    events: [qemuEvent(7), qemuEvent(12)]
+  });
+  const result = runResultToolFor(store).tool({ includeDiagnostics: false });
+  assert.equal(result.data.startedAt, 100);
+  assert.equal(result.data.endedAt, 160);
+  assert.equal(result.data.durationMs, 60);
+  assert.equal(result.data.timedOut, false);
+  assert.equal(result.data.manuallyStopped, false);
+  assert.equal(result.data.eventCount, 2);
+  assert.equal(result.data.lastEventSequence, 12);
+
+  const noEvents = new RunStore();
+  completeQemuRun(noEvents);
+  assert.equal(runResultToolFor(noEvents).tool({ includeDiagnostics: false })
+    .data.lastEventSequence, null);
+});
+
+test("get_run_result forms deterministic timeout, build, QEMU, and stopped summaries", () => {
+  const timeoutStore = new RunStore();
+  completeQemuRun(timeoutStore, {
+    qemu: { status: "timeout", exitCode: null },
+    events: [qemuEvent(7), qemuEvent(8), qemuEvent(12)],
+    result: {
+      finalResult: "timeout",
+      timedOut: true,
+      error: { code: "qemu_timeout", message: "qemu timeout ended the run.", stage: "qemu" }
+    }
+  });
+  const timeout = runResultToolFor(timeoutStore).tool({ includeDiagnostics: false }).data;
+  assert.deepEqual(timeout.failureSummary, {
+    code: "qemu_timeout",
+    phase: "qemu",
+    message: "qemu timeout ended the run.",
+    evidenceSequences: [8, 12]
+  });
+
+  const buildStore = new RunStore();
+  completeQemuRun(buildStore, {
+    build: { status: "failure", exitCode: 101 },
+    qemu: { status: "not-started", exitCode: null },
+    result: {
+      finalResult: "build-failure",
+      error: { code: "build_failure", message: "cargo build failed.", stage: "build" }
+    }
+  });
+  const build = runResultToolFor(buildStore).tool({ includeDiagnostics: false }).data;
+  assert.equal(build.failureSummary.code, "build_failure");
+  assert.equal(build.failureSummary.phase, "build");
+  assert.deepEqual(build.failureSummary.evidenceSequences, []);
+
+  const qemuStore = new RunStore();
+  completeQemuRun(qemuStore, {
+    qemu: { status: "failure", exitCode: 2 },
+    events: [qemuEvent(4, { step: "panic", status: "fail" })],
+    result: {
+      finalResult: "qemu-failure",
+      error: { code: "qemu_failure", message: "QEMU exited with code 2.", stage: "qemu" }
+    }
+  });
+  const qemu = runResultToolFor(qemuStore).tool({ includeDiagnostics: false }).data;
+  assert.equal(qemu.failureSummary.code, "qemu_failure");
+  assert.deepEqual(qemu.failureSummary.evidenceSequences, [4]);
+
+  const stoppedStore = new RunStore();
+  completeQemuRun(stoppedStore, {
+    qemu: { status: "stopped", exitCode: null },
+    result: { finalResult: "stopped", manuallyStopped: true }
+  });
+  const stopped = runResultToolFor(stoppedStore).tool({ includeDiagnostics: false }).data;
+  assert.equal(stopped.failureSummary.code, "run_stopped");
+  assert.equal(stopped.failureSummary.phase, "qemu");
+  assert.match(stopped.failureSummary.message, /stopped manually/i);
+});
+
+test("get_run_result bounds and sanitizes stored failure summaries", () => {
+  const events = Array.from({ length: 12 }, (_, index) => qemuEvent(index + 1, {
+    status: "fail",
+    step: `failure-${index + 1}`
+  }));
+  const snapshot = completedSnapshot({
+    qemu: { status: "failure", exitCode: 2 },
+    events,
+    result: {
+      finalResult: "qemu-failure",
+      error: { code: "qemu_failure", message: "QEMU failed.", stage: "qemu" }
+    }
+  });
+  snapshot.failureSummary = {
+    code: "qemu_failure",
+    phase: "qemu",
+    message: `C:\\private\\kernel.log api_key=unsafe PATH=/private/bin ${"x".repeat(700)}`,
+    evidenceSequences: [...Array.from({ length: 12 }, (_, index) => index + 1), 999]
+  };
+  const result = runResultToolFor(snapshotStore(snapshot)).tool({ includeDiagnostics: false });
+  const summary = result.data.failureSummary;
+  assert.equal(summary.message.length <= 500, true);
+  assert.doesNotMatch(summary.message, /private|unsafe|PATH=/);
+  assert.equal(summary.evidenceSequences.length, GET_RUN_RESULT_MAX_EVIDENCE_SEQUENCES);
+  assert.deepEqual(summary.evidenceSequences, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(summary.evidenceSequences.includes(999), false);
+});
+
+test("get_run_result redacts bearer and service tokens without changing teaching text", () => {
+  const snapshot = completedSnapshot({
+    qemu: { status: "failure", exitCode: 2 },
+    result: {
+      finalResult: "qemu-failure",
+      error: { code: "qemu_failure", message: "QEMU failed.", stage: "qemu" }
+    }
+  });
+  const messages = [
+    ["Bearer TOPSECRET", "TOPSECRET"],
+    ["bearer abc123", "abc123"],
+    ["ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
+    ["github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ", "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
+    ["glpat-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "glpat-ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
+    ["sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ"],
+    ["sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ", "sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+  ];
+
+  for (const [message, secret] of messages) {
+    const candidate = structuredClone(snapshot);
+    candidate.failureSummary = {
+      code: "qemu_failure",
+      phase: "qemu",
+      message,
+      evidenceSequences: []
+    };
+    const result = runResultToolFor(snapshotStore(candidate))
+      .tool({ includeDiagnostics: false });
+    assert.equal(result.ok, true);
+    assert.equal(result.data.failureSummary.message.includes(secret), false, message);
+    assert.match(result.data.failureSummary.message, /\[REDACTED\]/);
+  }
+
+  const combined = structuredClone(snapshot);
+  combined.failureSummary = {
+    code: "qemu_failure",
+    phase: "qemu",
+    message: "Bearer first ghp_SECOND github_pat_THIRD glpat-FOURTH sk-FIFTH sk-proj-SIXTH",
+    evidenceSequences: []
+  };
+  const combinedResult = runResultToolFor(snapshotStore(combined))
+    .tool({ includeDiagnostics: false });
+  assert.doesNotMatch(
+    combinedResult.data.failureSummary.message,
+    /first|ghp_|github_pat_|glpat-|sk-/i
+  );
+  assert.equal(
+    combinedResult.data.failureSummary.message.match(/\[REDACTED\]/g).length,
+    6
+  );
+
+  const bounded = structuredClone(snapshot);
+  bounded.failureSummary = {
+    code: "qemu_failure",
+    phase: "qemu",
+    message: `${"x".repeat(480)} Bearer ${"s".repeat(200)}`,
+    evidenceSequences: []
+  };
+  const boundedResult = runResultToolFor(snapshotStore(bounded))
+    .tool({ includeDiagnostics: false });
+  assert.equal(boundedResult.data.failureSummary.message.length <= 500, true);
+  assert.doesNotMatch(boundedResult.data.failureSummary.message, /s{10}/);
+
+  const teaching = structuredClone(snapshot);
+  teaching.failureSummary = {
+    code: "qemu_timeout",
+    phase: "qemu",
+    message: "QEMU timeout after 20 seconds",
+    evidenceSequences: []
+  };
+  assert.equal(
+    runResultToolFor(snapshotStore(teaching)).tool({ includeDiagnostics: false })
+      .data.failureSummary.message,
+    "QEMU timeout after 20 seconds"
+  );
+});
+
+test("get_run_result revalidates stored teaching results against lifecycle and Lab evidence", () => {
+  const finalResultFor = (options = {}) => {
+    const store = new RunStore();
+    completeQemuRun(store, options);
+    return runResultToolFor(store).tool({ includeDiagnostics: false }).data.finalResult;
+  };
+
+  assert.equal(finalResultFor({
+    qemu: { status: "failure", exitCode: 2 },
+    result: { finalResult: "pass" }
+  }), "fail");
+  assert.equal(finalResultFor({
+    build: { status: "failure", exitCode: 101 },
+    qemu: { status: "not-started", exitCode: null },
+    result: { finalResult: "pass" }
+  }), "fail");
+  assert.equal(finalResultFor({
+    qemu: { status: "timeout", exitCode: null },
+    result: { finalResult: "pass", timedOut: true }
+  }), "timeout");
+  assert.equal(finalResultFor({
+    qemu: { status: "stopped", exitCode: null },
+    result: { finalResult: "pass", manuallyStopped: true }
+  }), "stopped");
+  assert.equal(finalResultFor({ result: { finalResult: "pass" } }), "finished");
+  assert.equal(finalResultFor({
+    events: [qemuEvent(1, { lab: "lab3", step: "pass", status: "pass" })],
+    result: { finalResult: "pass" }
+  }), "finished");
+  assert.equal(finalResultFor({
+    events: [qemuEvent(1, { step: "pass", status: "pass" })],
+    result: { finalResult: "pass" }
+  }), "pass");
+  assert.equal(finalResultFor({ result: { finalResult: "todo" } }), "finished");
+  assert.equal(finalResultFor({
+    events: [qemuEvent(1, { step: "task-2-todo", status: "todo" })],
+    result: { finalResult: "todo" }
+  }), "todo");
+  assert.equal(finalResultFor({ result: { finalResult: "fail" } }), "finished");
+  assert.equal(finalResultFor({
+    events: [qemuEvent(1, { step: "panic", status: "fail" })],
+    result: { finalResult: "fail" }
+  }), "fail");
+  assert.equal(finalResultFor({}), "finished");
+
+  const immutableStore = new RunStore();
+  completeQemuRun(immutableStore, {
+    events: [qemuEvent(1, { step: "pass", status: "pass" })],
+    result: { finalResult: "pass" }
+  });
+  const before = immutableStore.getLastCompletedRun();
+  const result = runResultToolFor(immutableStore).tool({ includeDiagnostics: false });
+  assert.equal(result.data.finalResult, "pass");
+  assert.deepEqual(immutableStore.getLastCompletedRun(), before);
+});
+
+test("get_run_result reuses diagnostics by default, caps them, and supports opt-out", () => {
+  const store = new RunStore();
+  completeQemuRun(store);
+  let calls = 0;
+  const diagnose = () => {
+    calls += 1;
+    return Array.from({ length: 7 }, (_, index) => ({
+      id: `diagnostic-${index + 1}`,
+      severity: index % 2 ? "warning" : "error",
+      title: `Diagnostic ${index + 1}`,
+      evidence: ["must not escape"],
+      codeLocations: [{ file: "C:\\private\\kernel.rs" }]
+    }));
+  };
+  const tool = runResultToolFor(store, { diagnose }).tool;
+
+  const implicit = tool({});
+  assert.equal(calls, 1);
+  assert.equal(implicit.data.diagnostics.length, GET_RUN_RESULT_MAX_DIAGNOSTICS);
+  assert.deepEqual(Object.keys(implicit.data.diagnostics[0]), ["id", "severity", "title"]);
+  const explicit = tool({ includeDiagnostics: true });
+  assert.equal(calls, 2);
+  assert.equal(explicit.data.diagnostics.length, GET_RUN_RESULT_MAX_DIAGNOSTICS);
+  const excluded = tool({ includeDiagnostics: false });
+  assert.equal(calls, 2);
+  assert.deepEqual(excluded.data.diagnostics, []);
+});
+
+test("get_run_result returns existing deterministic diagnostics for the selected run", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    qemu: { status: "timeout", exitCode: null },
+    result: {
+      finalResult: "timeout",
+      timedOut: true,
+      error: { code: "qemu_timeout", message: "qemu timeout ended the run.", stage: "qemu" }
+    }
+  });
+  const result = runResultToolFor(store).tool({ includeDiagnostics: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.diagnostics.some((item) => item.id === "qemu-timeout"), true);
+  assert.equal(result.data.diagnostics.length <= GET_RUN_RESULT_MAX_DIAGNOSTICS, true);
+
+  const otherLabStore = new RunStore();
+  completeQemuRun(otherLabStore, {
+    events: [
+      qemuEvent(1, { lab: "lab2", step: "trap-enter", status: "running" }),
+      qemuEvent(2, { lab: "lab2", step: "trap-enter", status: "running" })
+    ]
+  });
+  const otherLab = runResultToolFor(otherLabStore).tool({ includeDiagnostics: true });
+  assert.equal(otherLab.data.diagnostics.some((item) => item.id === "trap-repeated"), false);
+});
+
+test("get_run_result isolates diagnostics and returned data from RunStore snapshots", () => {
+  const snapshot = completedSnapshot({
+    events: [qemuEvent(1, { detail: "original event" })]
+  });
+  const active = {
+    runId: "active-run",
+    branch: "lab4-starter",
+    commit: "abc1234",
+    events: [{ detail: "active event" }]
+  };
+  const beforeCompleted = structuredClone(snapshot);
+  const beforeActive = structuredClone(active);
+  const tool = runResultToolFor(snapshotStore(snapshot, active), {
+    diagnose(input) {
+      input.events[0].detail = "mutated by diagnostics";
+      input.serialOutput.push("mutated output");
+      return [];
+    }
+  }).tool;
+  const result = tool({});
+  result.data.build.status = "mutated";
+  result.data.diagnostics.push({ id: "caller", severity: "error", title: "caller" });
+
+  assert.deepEqual(snapshot, beforeCompleted);
+  assert.deepEqual(active, beforeActive);
+});
+
+test("get_run_result reports diagnostics failures without changing the OS result", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    events: [qemuEvent(1, { step: "pass", status: "pass" })]
+  });
+  const before = store.getLastCompletedRun();
+  const result = runResultToolFor(store, {
+    diagnose() {
+      throw new Error("C:\\private\\diagnostics stack");
+    }
+  }).tool({ includeDiagnostics: true });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "diagnostics_failed");
+  assert.doesNotMatch(JSON.stringify(result), /private|stack/);
+  assert.deepEqual(store.getLastCompletedRun(), before);
+
+  const invalid = runResultToolFor(store, { diagnose: () => ({}) })
+    .tool({ includeDiagnostics: true });
+  assert.equal(invalid.error.code, "diagnostics_failed");
+});
+
+test("get_run_result reuses context_changed and rejects mismatched run context", () => {
+  const store = new RunStore();
+  completeQemuRun(store);
+  const tool = runResultToolFor(store).tool;
+  const changed = tool({}, {
+    expectedBranch: "lab4-starter",
+    expectedCommit: "old-commit"
+  });
+  assert.equal(changed.ok, false);
+  assert.equal(changed.error.code, "context_changed");
+  assert.equal(changed.error.retryable, true);
+
+  const mismatch = runResultToolFor(store, { commit: "different-commit" }).tool({});
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.error.code, "run_context_mismatch");
+  assert.equal(mismatch.error.details.runCommit, "abc1234");
+  assert.equal(mismatch.error.details.actualCommit, "different-commit");
+});
+
+test("get_run_result rejects incomplete completed records instead of guessing", () => {
+  const requiredFields = [
+    "runId",
+    "branch",
+    "commit",
+    "lab",
+    "variant",
+    "target",
+    "build",
+    "qemu",
+    "finalResult",
+    "startedAt",
+    "endedAt",
+    "durationMs",
+    "timedOut",
+    "manuallyStopped",
+    "error",
+    "eventCount",
+    "lastEventSequence",
+    "events",
+    "stableOutput"
+  ];
+  const base = completedSnapshot();
+  for (const field of requiredFields) {
+    const incomplete = structuredClone(base);
+    delete incomplete[field];
+    const result = runResultToolFor(snapshotStore(incomplete)).tool({ includeDiagnostics: false });
+    assert.equal(result.ok, false, field);
+    assert.equal(result.error.code, "incomplete_run_record", field);
+  }
+
+  const badDuration = structuredClone(base);
+  badDuration.durationMs += 1;
+  assert.equal(runResultToolFor(snapshotStore(badDuration)).tool({}).error.code,
+    "incomplete_run_record");
+  const badSequence = structuredClone(base);
+  badSequence.eventCount = 1;
+  badSequence.lastEventSequence = 99;
+  assert.equal(runResultToolFor(snapshotStore(badSequence)).tool({}).error.code,
+    "incomplete_run_record");
+});
+
+test("get_run_result supports p0 and enforces an exact selected-run lab", () => {
+  const snapshot = completedSnapshot({
+    events: [qemuEvent(1, { lab: "p0", step: "pass", status: "pass" })]
+  });
+  snapshot.lab = "p0";
+  const tool = runResultToolFor(snapshotStore(snapshot)).tool;
+  const p0 = tool({ lab: "p0", includeDiagnostics: false });
+  assert.equal(p0.ok, true);
+  assert.equal(p0.data.lab, "p0");
+  assert.equal(p0.data.finalResult, "pass");
+  assert.equal(tool({ lab: "lab4" }).error.code, "lab_mismatch");
+});
+
+test("get_run_result omits event arrays, output logs, paths, environment, and errors", () => {
+  const store = new RunStore();
+  completeQemuRun(store, {
+    qemu: { status: "failure", exitCode: 2 },
+    events: [qemuEvent(5, {
+      step: "panic",
+      status: "fail",
+      detail: "C:\\private\\kernel.log api_key=unsafe PATH=/private/bin"
+    })],
+    result: {
+      finalResult: "qemu-failure",
+      error: {
+        code: "qemu_failure",
+        message: "C:\\private\\server.log password=unsafe HOME=/home/private",
+        stage: "qemu"
+      }
+    },
+    stableOutput: ["stderr C:\\private\\trace.log TOKEN=unsafe"]
+  });
+  const before = store.getLastCompletedRun();
+  const result = runResultToolFor(store).tool({ includeDiagnostics: false });
+  const serialized = JSON.stringify(result);
+
+  assert.equal(result.ok, true);
+  assert.equal(Object.hasOwn(result.data, "events"), false);
+  assert.equal(Object.hasOwn(result.data, "stableOutput"), false);
+  assert.equal(Object.hasOwn(result.data, "error"), false);
+  assert.doesNotMatch(serialized, /private|unsafe|HOME=|PATH=|TOKEN=|server\.log|trace\.log/);
+  assert.deepEqual(store.getLastCompletedRun(), before);
 });
