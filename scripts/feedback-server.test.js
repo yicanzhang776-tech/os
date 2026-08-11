@@ -9,8 +9,11 @@ const feedback = require("../docs/interactive-demo/feedback.js");
 const {
   FEEDBACK_SUBMIT_PROTOCOL
 } = feedback;
+const { createRunRecord } = require("../docs/interactive-demo/run-history.js");
+const runSubmission = require("../docs/interactive-demo/run-submission.js");
 const {
   MAX_BODY_BYTES,
+  MAX_RUN_BODY_BYTES,
   createFeedbackService
 } = require("./feedback-server.js");
 
@@ -46,6 +49,38 @@ function validRecord(overrides = {}) {
 
 function envelope(record = validRecord()) {
   return { protocol: FEEDBACK_SUBMIT_PROTOCOL, feedback: record };
+}
+
+function validRun(overrides = {}) {
+  const internal = createRunRecord({
+    id: overrides.id || "lab2-solution-run",
+    context: { branch: "lab2-solution", commit: "abcdef123456", lab: "lab2", variant: "solution" },
+    prediction: {
+      version: 2,
+      expectedBuild: "success",
+      expectedRun: "complete",
+      expectedEvents: ["lab2:stvec-installed"],
+      expectedPass: true,
+      reasoning: "根据结构化事件预测。",
+      branch: "lab2-solution",
+      commit: "abcdef123456",
+      lab: "lab2"
+    },
+    events: [
+      { protocol: "os-demo.event/v1", lab: "lab2", step: "stvec-installed", status: "running", detail: "stvec ready", source: "tagged", sequence: 1, timestamp: 1001 },
+      { protocol: "os-demo.event/v1", lab: "lab2", step: "pass", status: "pass", detail: "pass", source: "tagged", sequence: 2, timestamp: 1002 }
+    ],
+    lifecycle: { buildResult: "success", runResult: "finished", completed: true },
+    startedAt: 1000,
+    endedAt: 2000,
+    exitCode: 0
+  });
+  const run = runSubmission.sanitizeRunRecordForSubmission(internal);
+  return { ...run, ...overrides, runId: overrides.id || run.runId };
+}
+
+function runEnvelope(run = validRun(), feedbackId = "FDBK-LINK") {
+  return { protocol: runSubmission.RUN_SUBMIT_PROTOCOL, feedbackId, run };
 }
 
 async function request(base, pathname, options = {}) {
@@ -98,7 +133,7 @@ test("health reports service status without feedback or invite data", async () =
     const { response, body, text } = await request(base, "/health");
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
-    assert.equal(body.protocol, FEEDBACK_SUBMIT_PROTOCOL);
+    assert.deepEqual(body, { ok: true });
     assert.doesNotMatch(text, /classroom-demo|suggestion|feedbackId/);
   });
 });
@@ -231,10 +266,97 @@ test("JSONL write failure never returns success", async () => {
   });
 });
 
+test("a legal run record is stored separately with an idempotent receipt", async () => {
+  await withService({}, async ({ base, dataFile, service }) => {
+    const first = await request(base, "/api/run-record", postOptions(runEnvelope()));
+    const duplicate = await request(base, "/api/run-record", postOptions(runEnvelope()));
+    assert.equal(first.response.status, 201);
+    assert.equal(first.body.status, "created");
+    assert.equal(first.body.runId, "lab2-solution-run");
+    assert.equal(duplicate.response.status, 200);
+    assert.equal(duplicate.body.status, "duplicate");
+    assert.equal(duplicate.body.receiptId, first.body.receiptId);
+    const runLines = (await fs.promises.readFile(service.runDataFile, "utf8")).trim().split("\n");
+    assert.equal(runLines.length, 1);
+    assert.equal(JSON.parse(runLines[0]).protocol, runSubmission.RUN_SUBMIT_PROTOCOL);
+    await assert.rejects(fs.promises.access(dataFile));
+  });
+});
+
+test("same runId with different content is conflict and never overwrites", async () => {
+  await withService({}, async ({ base, service }) => {
+    const first = await request(base, "/api/run-record", postOptions(runEnvelope()));
+    const changed = validRun();
+    changed.error = "different sanitized evidence";
+    const conflict = await request(base, "/api/run-record", postOptions(runEnvelope(changed)));
+    assert.equal(first.response.status, 201);
+    assert.equal(conflict.response.status, 409);
+    assert.equal(conflict.body.status, "conflict");
+    assert.equal((await fs.promises.readFile(service.runDataFile, "utf8")).trim().split("\n").length, 1);
+  });
+});
+
+test("run endpoint rejects unknown protocols, missing IDs, too many events and oversized bodies", async () => {
+  await withService({}, async ({ base }) => {
+    const submitProtocol = await request(base, "/api/run-record", postOptions({
+      protocol: "os-demo.run.submit/v2",
+      run: validRun()
+    }));
+    assert.equal(submitProtocol.response.status, 400);
+
+    const eventProtocol = validRun();
+    eventProtocol.events[0].protocol = "os-demo.event/v0";
+    const incompatible = await request(base, "/api/run-record", postOptions(runEnvelope(eventProtocol)));
+    assert.equal(incompatible.response.status, 422);
+    assert.equal(incompatible.body.code, "unsupported_event_protocol");
+
+    const missingId = validRun();
+    missingId.runId = "";
+    const missing = await request(base, "/api/run-record", postOptions(runEnvelope(missingId)));
+    assert.equal(missing.response.status, 422);
+
+    const excessive = validRun();
+    excessive.events = Array.from({ length: 513 }, (_, index) => ({
+      protocol: "os-demo.event/v1", lab: "lab2", step: "stvec-installed", status: "running",
+      detail: "event", source: "tagged", sequence: index, timestamp: index
+    }));
+    const tooMany = await request(base, "/api/run-record", postOptions(runEnvelope(excessive)));
+    assert.equal(tooMany.response.status, 422);
+    assert.equal(tooMany.body.code, "too_many_events");
+
+    const oversized = await request(base, "/api/run-record", postOptions("x".repeat(MAX_RUN_BODY_BYTES + 1)));
+    assert.equal(oversized.response.status, 413);
+  });
+});
+
+test("run records are sanitized again and a run JSONL write failure returns no success", async () => {
+  await withService({}, async ({ base, service }) => {
+    const malicious = validRun();
+    malicious.events[0].detail = '<script>run()</script> /home/student/private glpat-abcdefghijk';
+    malicious.rawOutput = "complete log";
+    malicious.sourceCode = "fn secret() {}";
+    const result = await request(base, "/api/run-record", postOptions(runEnvelope(malicious)));
+    assert.equal(result.response.status, 201);
+    const stored = await fs.promises.readFile(service.runDataFile, "utf8");
+    assert.doesNotMatch(stored, /<script|student|glpat-|complete log|fn secret/i);
+  });
+
+  const fileApi = {
+    ...fs.promises,
+    appendFile: async () => { throw new Error("disk full"); }
+  };
+  await withService({ fileApi }, async ({ base }) => {
+    const result = await request(base, "/api/run-record", postOptions(runEnvelope()));
+    assert.equal(result.response.status, 500);
+    assert.equal(result.body.ok, false);
+  });
+});
+
 test("the public feedback port never serves the teacher admin page", async () => {
   await withService({}, async ({ base }) => {
     assert.equal((await request(base, "/")).response.status, 404);
     assert.equal((await request(base, "/admin")).response.status, 404);
     assert.equal((await request(base, "/api/export.json")).response.status, 404);
+    assert.equal((await request(base, "/api/run-records")).response.status, 404);
   });
 });
