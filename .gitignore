@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+
+# QEMU and test temporary output
+*.log
+*.trace
+*.tmp
+qemu-*.out
+qemu-*.err
+
+# Generated images and binaries
+*.elf
+*.bin
+*.img
+*.qcow2
+
+# Local environment and secrets
+.env
+.env.*
+/feedback-data/
+*.pem
+*.key
+*.token
+secrets.*
+
+# Editor and OS temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+Thumbs.db
+.DS_Store
