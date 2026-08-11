@@ -219,6 +219,16 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(telemetry.protocol, "os-demo.event/v1");
   assert.match(telemetry.runId, /^external-/);
 
+  const legacyPanicPromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "panic"
+  );
+  child.stdin.write("[Lab2] kernel panic\n");
+  const legacyPanic = await legacyPanicPromise;
+  assert.equal(legacyPanic.lab, "lab5");
+  assert.equal(legacyPanic.status, "fail");
+  assert.equal(legacyPanic.raw, "[Lab2] kernel panic");
+
   const idleStop = await fetch(`${url}/api/stop`, { method: "POST" });
   assert.equal(idleStop.status, 409);
   socket.close();
