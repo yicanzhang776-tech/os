@@ -331,6 +331,9 @@
     "prediction-extra-list", "prediction-unknown-list", "diagnostics-summary", "diagnostics-list", "save-run",
     "export-run-json", "export-run-markdown", "import-run-trigger", "import-run-file",
     "run-transfer-status",
+    "run-submission-select", "run-submission-preview", "run-submission-facts",
+    "run-submission-sent-fields", "run-submission-excluded-fields",
+    "run-submission-consent", "run-submission-submit", "run-submission-status",
     "saved-run-select", "replay-start", "replay-play-pause", "replay-speed",
     "timeline-status-filter", "timeline-source-filter", "timeline-lab-filter",
     "timeline-step-filter", "timeline-keyword-filter", "timeline-clear-filters",
@@ -1530,6 +1533,134 @@
       state.savedRuns.filter((run) => run.context.variant === "solution"),
       "选择 solution 运行"
     );
+    fillRunSelect(dom.run_submission_select, state.savedRuns, "不选择（不发送任何运行记录）");
+    renderRunSubmissionPreview();
+  }
+
+  function selectedRunSubmission() {
+    return state.savedRuns.find((run) => run.id === dom.run_submission_select.value) || null;
+  }
+
+  function submittedFeedbackId() {
+    const draft = window.OsFeedback?.loadFeedbackDraft?.();
+    return draft?.receipt?.feedbackId || null;
+  }
+
+  function formatDuration(milliseconds) {
+    const value = Math.max(0, Number(milliseconds) || 0);
+    if (value < 1000) return `${value} ms`;
+    if (value < 60_000) return `${(value / 1000).toFixed(1)} 秒`;
+    return `${Math.floor(value / 60_000)} 分 ${Math.round((value % 60_000) / 1000)} 秒`;
+  }
+
+  function clearElement(element) {
+    while (element?.firstChild) element.removeChild(element.firstChild);
+  }
+
+  function appendSubmissionFact(label, value) {
+    const group = document.createElement("div");
+    const term = document.createElement("dt");
+    const detail = document.createElement("dd");
+    term.textContent = label;
+    detail.textContent = String(value ?? "无法判断");
+    group.append(term, detail);
+    dom.run_submission_facts.appendChild(group);
+  }
+
+  function renderSubmissionFieldList(container, values) {
+    clearElement(container);
+    values.forEach((value) => container.appendChild(element("li", "", value)));
+  }
+
+  function setRunSubmissionStatus(message, status = "info") {
+    dom.run_submission_status.textContent = message;
+    dom.run_submission_status.dataset.status = status;
+  }
+
+  function renderRunSubmissionPreview() {
+    const run = selectedRunSubmission();
+    dom.run_submission_consent.checked = false;
+    dom.run_submission_submit.disabled = true;
+    clearElement(dom.run_submission_facts);
+    if (!run || !window.OsRunSubmission) {
+      dom.run_submission_preview.hidden = true;
+      setRunSubmissionStatus("默认不发送。未选择运行记录，不会产生网络请求。", "info");
+      return;
+    }
+    try {
+      const preview = window.OsRunSubmission.previewRunSubmission(run, {
+        feedbackId: submittedFeedbackId()
+      });
+      appendSubmissionFact("Lab / 角色", `${preview.run.lab} / ${preview.run.role}`);
+      appendSubmissionFact("分支", preview.run.branch);
+      appendSubmissionFact("提交短编号", preview.run.commit.slice(0, 12));
+      appendSubmissionFact("开始时间", new Date(preview.run.startTime).toLocaleString());
+      appendSubmissionFact("结束时间", new Date(preview.run.endTime).toLocaleString());
+      appendSubmissionFact("运行时长", formatDuration(preview.durationMs));
+      appendSubmissionFact("结构化事件", `${preview.eventCount} 个`);
+      appendSubmissionFact("最终结果", resultLabel(preview.run.finalResult));
+      appendSubmissionFact(
+        "学生预测",
+        preview.run.prediction
+          ? `构建 ${preview.run.prediction.expectedBuild || "无法判断"}；运行 ${preview.run.prediction.expectedRun || "无法判断"}；PASS ${preview.run.prediction.expectedPass === null ? "无法判断" : preview.run.prediction.expectedPass ? "会出现" : "不会出现"}`
+          : "未保存预测"
+      );
+      appendSubmissionFact("预测对照", preview.run.predictionComparison?.overallLabel || "无法判断");
+      appendSubmissionFact("关联教学评价", preview.feedbackId || "未关联");
+      renderSubmissionFieldList(dom.run_submission_sent_fields, preview.sentFields);
+      renderSubmissionFieldList(dom.run_submission_excluded_fields, preview.excludedFields);
+      dom.run_submission_preview.hidden = false;
+      setRunSubmissionStatus(`已生成 ${preview.byteLength} 字节的脱敏预览；勾选同意前不能提交。`);
+    } catch (error) {
+      dom.run_submission_preview.hidden = true;
+      setRunSubmissionStatus(`无法预览：${error.message}`, "error");
+    }
+  }
+
+  async function submitSelectedRunRecord() {
+    const run = selectedRunSubmission();
+    if (!run || !window.OsRunSubmission) {
+      setRunSubmissionStatus("请先选择一次可提交的本机运行记录。", "error");
+      return;
+    }
+    if (!dom.run_submission_consent.checked) {
+      setRunSubmissionStatus("请先查看预览并明确同意提交这一次运行记录。", "error");
+      return;
+    }
+    dom.run_submission_submit.disabled = true;
+    dom.run_submission_submit.setAttribute("aria-busy", "true");
+    setRunSubmissionStatus("正在提交这一次脱敏运行记录……");
+    try {
+      const settings = window.OsFeedback?.loadFeedbackSettings?.() || {};
+      const receipt = await window.OsRunSubmission.submitRunRecord(run, {
+        ...settings,
+        consent: true,
+        feedbackId: submittedFeedbackId()
+      });
+      const prefix = receipt.status === "duplicate" ? "已经提交过" : "提交成功";
+      setRunSubmissionStatus(
+        `${prefix}。运行编号 ${receipt.runId}，回执 ${receipt.receiptId}。再次重试同一记录不会重复保存。`,
+        "success"
+      );
+    } catch (error) {
+      const messages = {
+        consent_required: "尚未明确同意，未发送运行记录。",
+        network: "网络连接失败，可稍后重试同一运行编号。",
+        invite: "邀请码错误，请检查教学评价中的服务设置。",
+        conflict: "同一运行编号在服务端已有不同内容，原记录未被覆盖。",
+        unsupported_schema: "运行记录版本不兼容。",
+        unsupported_event_protocol: "事件协议不兼容。",
+        too_many_events: "结构化事件超过 512 个，不能提交。",
+        file_too_large: "脱敏运行记录超过大小限制，不能提交。",
+        service_url: "反馈服务地址不支持运行记录提交。",
+        unavailable: "服务暂时不可用，可稍后重试同一运行编号。",
+        incompatible: "运行记录不兼容，不能提交。"
+      };
+      setRunSubmissionStatus(messages[error.code] || `无法提交：${error.message}`, "error");
+    } finally {
+      dom.run_submission_submit.removeAttribute("aria-busy");
+      dom.run_submission_submit.disabled = !dom.run_submission_consent.checked;
+    }
   }
 
   function renderPredictionComparisonList(container, items, kind, emptyText) {
@@ -2691,6 +2822,14 @@
   dom.export_run_markdown.addEventListener("click", () => exportSelectedRun("markdown"));
   dom.import_run_trigger.addEventListener("click", () => dom.import_run_file.click());
   dom.import_run_file.addEventListener("change", () => importRunFile(dom.import_run_file.files?.[0]));
+  dom.run_submission_select.addEventListener("change", renderRunSubmissionPreview);
+  dom.run_submission_consent.addEventListener("change", () => {
+    dom.run_submission_submit.disabled = !dom.run_submission_consent.checked || !selectedRunSubmission();
+    if (!dom.run_submission_consent.checked) {
+      setRunSubmissionStatus("尚未同意，运行记录不会发送。", "info");
+    }
+  });
+  dom.run_submission_submit.addEventListener("click", submitSelectedRunRecord);
   dom.replay_start.addEventListener("click", loadSelectedReplay);
   dom.replay_play_pause.addEventListener("click", toggleTimelinePlayback);
   dom.replay_speed.addEventListener("change", () => {
