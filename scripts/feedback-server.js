@@ -10,11 +10,17 @@ const {
   sanitizeText,
   validateFeedbackRecord
 } = require("../docs/interactive-demo/feedback.js");
+const {
+  MAX_SUBMISSION_BYTES,
+  RUN_SUBMIT_PROTOCOL,
+  sanitizeRunRecordForSubmission
+} = require("../docs/interactive-demo/run-submission.js");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8890;
 const DEFAULT_DATA_DIR = "feedback-data";
 const MAX_BODY_BYTES = 32 * 1024;
+const MAX_RUN_BODY_BYTES = Math.min(512 * 1024, MAX_SUBMISSION_BYTES);
 const DEFAULT_ALLOWED_ORIGINS = Object.freeze([
   "http://127.0.0.1:8888",
   "http://localhost:8888"
@@ -142,7 +148,7 @@ function readRequestBody(request, maximumBytes = MAX_BODY_BYTES) {
     });
     request.on("end", () => {
       if (tooLarge) {
-        const error = new Error("Request body exceeds 32 KiB.");
+        const error = new Error(`Request body exceeds ${Math.floor(maximumBytes / 1024)} KiB.`);
         error.code = "BODY_TOO_LARGE";
         reject(error);
       } else {
@@ -152,6 +158,27 @@ function readRequestBody(request, maximumBytes = MAX_BODY_BYTES) {
     request.on("aborted", () => reject(new Error("Request was aborted.")));
     request.on("error", reject);
   });
+}
+
+function parseStoredRunLine(line) {
+  try {
+    const stored = JSON.parse(line);
+    if (stored?.storageVersion !== 1 || stored?.protocol !== RUN_SUBMIT_PROTOCOL
+      || !stored.receiptId || Number.isNaN(Date.parse(stored.receivedAt))) return null;
+    const run = sanitizeRunRecordForSubmission(stored.run);
+    const feedbackId = sanitizeText(stored.feedbackId || "", 80) || null;
+    return {
+      storageVersion: 1,
+      protocol: RUN_SUBMIT_PROTOCOL,
+      receiptId: sanitizeText(stored.receiptId, 120),
+      receivedAt: new Date(stored.receivedAt).toISOString(),
+      contentHash: canonicalHash({ run, feedbackId }),
+      feedbackId,
+      run
+    };
+  } catch (_) {
+    return null;
+  }
 }
 
 function parseStoredLine(line) {
@@ -189,6 +216,22 @@ async function loadIndex(dataFile, fileApi = fs.promises) {
   return index;
 }
 
+async function loadRunIndex(dataFile, fileApi = fs.promises) {
+  const index = new Map();
+  let content = "";
+  try {
+    content = await fileApi.readFile(dataFile, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const stored = parseStoredRunLine(line);
+    if (stored && !index.has(stored.run.runId)) index.set(stored.run.runId, stored);
+  }
+  return index;
+}
+
 function createFeedbackService(options = {}) {
   const host = options.host || DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
@@ -196,6 +239,7 @@ function createFeedbackService(options = {}) {
   if (port !== 0) parseInteger(port, "port", 1, 65535);
   const dataDir = path.resolve(options.dataDir || DEFAULT_DATA_DIR);
   const dataFile = path.join(dataDir, "feedback.jsonl");
+  const runDataFile = path.join(dataDir, "runs.jsonl");
   const inviteCode = sanitizeText(options.inviteCode || "", 128);
   const allowedOrigins = new Set(
     (options.allowedOrigins || DEFAULT_ALLOWED_ORIGINS).map(normalizeOrigin)
@@ -205,11 +249,13 @@ function createFeedbackService(options = {}) {
   const randomUUID = options.randomUUID || crypto.randomUUID;
   const rateLimit = createRateLimiter(options.rateLimit);
   let index = new Map();
+  let runIndex = new Map();
   let writeQueue = Promise.resolve();
 
   const ready = (async () => {
     await fileApi.mkdir(dataDir, { recursive: true });
     index = await loadIndex(dataFile, fileApi);
+    runIndex = await loadRunIndex(runDataFile, fileApi);
   })();
 
   async function storeFeedback(feedback) {
@@ -237,6 +283,32 @@ function createFeedbackService(options = {}) {
     return operation;
   }
 
+  async function storeRunSubmission(run, feedbackId = null) {
+    const operation = writeQueue.then(async () => {
+      const hash = canonicalHash({ run, feedbackId });
+      const existing = runIndex.get(run.runId);
+      if (existing) {
+        return existing.contentHash === hash
+          ? { status: "duplicate", stored: existing }
+          : { status: "conflict", stored: existing };
+      }
+      const stored = {
+        storageVersion: 1,
+        protocol: RUN_SUBMIT_PROTOCOL,
+        receiptId: createReceiptId(randomUUID).replace("RCPT-", "RUN-RCPT-"),
+        receivedAt: now().toISOString(),
+        contentHash: hash,
+        feedbackId,
+        run
+      };
+      await fileApi.appendFile(runDataFile, `${JSON.stringify(stored)}\n`, "utf8");
+      runIndex.set(run.runId, stored);
+      return { status: "created", stored };
+    });
+    writeQueue = operation.catch(() => {});
+    return operation;
+  }
+
   const server = http.createServer(async (request, response) => {
     await ready;
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
@@ -244,15 +316,12 @@ function createFeedbackService(options = {}) {
     const cors = corsHeaders(origin, allowedOrigins);
 
     if (requestUrl.pathname === "/health" && request.method === "GET") {
-      writeJson(response, 200, {
-        ok: true,
-        service: "os-demo-feedback",
-        protocol: FEEDBACK_SUBMIT_PROTOCOL
-      });
+      writeJson(response, 200, { ok: true });
       return;
     }
 
-    if (requestUrl.pathname === "/api/feedback" && request.method === "OPTIONS") {
+    const submissionPath = ["/api/feedback", "/api/run-record"].includes(requestUrl.pathname);
+    if (submissionPath && request.method === "OPTIONS") {
       if (!origin || !allowedOrigins.has(origin)) {
         writeJson(response, 403, { ok: false, error: "Origin is not allowed." }, cors);
         return;
@@ -267,7 +336,7 @@ function createFeedbackService(options = {}) {
       return;
     }
 
-    if (requestUrl.pathname !== "/api/feedback" || request.method !== "POST") {
+    if (!submissionPath || request.method !== "POST") {
       writeJson(response, 404, { ok: false, error: "Not found." });
       return;
     }
@@ -290,7 +359,10 @@ function createFeedbackService(options = {}) {
 
     let body;
     try {
-      body = await readRequestBody(request);
+      body = await readRequestBody(
+        request,
+        requestUrl.pathname === "/api/run-record" ? MAX_RUN_BODY_BYTES : MAX_BODY_BYTES
+      );
     } catch (error) {
       const status = error.code === "BODY_TOO_LARGE" ? 413 : 400;
       writeJson(response, status, { ok: false, error: error.message }, cors);
@@ -303,6 +375,54 @@ function createFeedbackService(options = {}) {
       writeJson(response, 400, { ok: false, error: "Request body is not valid JSON." }, cors);
       return;
     }
+
+    if (requestUrl.pathname === "/api/run-record") {
+      if (envelope?.protocol !== RUN_SUBMIT_PROTOCOL) {
+        writeJson(response, 400, { ok: false, code: "unsupported_submit_protocol", error: "Unsupported run submission protocol." }, cors);
+        return;
+      }
+      let run;
+      try {
+        run = sanitizeRunRecordForSubmission(envelope.run);
+      } catch (error) {
+        writeJson(response, 422, {
+          ok: false,
+          code: error.code || "incompatible",
+          error: sanitizeText(error.message, 500) || "Run record is incompatible."
+        }, cors);
+        return;
+      }
+      const feedbackId = sanitizeText(envelope.feedbackId || "", 80) || null;
+      if (feedbackId && !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/.test(feedbackId)) {
+        writeJson(response, 422, { ok: false, code: "invalid_feedback_id", error: "feedbackId is invalid." }, cors);
+        return;
+      }
+      let result;
+      try {
+        result = await storeRunSubmission(run, feedbackId);
+      } catch (_) {
+        writeJson(response, 500, { ok: false, error: "Run record could not be saved." }, cors);
+        return;
+      }
+      if (result.status === "conflict") {
+        writeJson(response, 409, {
+          ok: false,
+          status: "conflict",
+          runId: run.runId,
+          error: "The same run id already has different content."
+        }, cors);
+        return;
+      }
+      writeJson(response, result.status === "created" ? 201 : 200, {
+        ok: true,
+        status: result.status,
+        runId: run.runId,
+        receiptId: result.stored.receiptId,
+        receivedAt: result.stored.receivedAt
+      }, cors);
+      return;
+    }
+
     if (envelope?.protocol !== FEEDBACK_SUBMIT_PROTOCOL) {
       writeJson(response, 400, { ok: false, error: "Unsupported feedback protocol." }, cors);
       return;
@@ -361,7 +481,7 @@ function createFeedbackService(options = {}) {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 
-  return Object.freeze({ server, listen, close, ready, dataDir, dataFile });
+  return Object.freeze({ server, listen, close, ready, dataDir, dataFile, runDataFile });
 }
 
 async function main() {
@@ -370,7 +490,7 @@ async function main() {
   const address = await service.listen();
   console.log(`[feedback] Listening on http://${options.host}:${address.port}`);
   console.log(`[feedback] Writing JSONL records under ${options.dataDir}`);
-  console.log("[feedback] Only /health and /api/feedback are available on this port.");
+  console.log("[feedback] Only /health, /api/feedback and /api/run-record are available on this port.");
   const shutdown = () => service.close().finally(() => process.exit(0));
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -388,13 +508,16 @@ module.exports = Object.freeze({
   DEFAULT_HOST,
   DEFAULT_PORT,
   MAX_BODY_BYTES,
+  MAX_RUN_BODY_BYTES,
   canonicalHash,
   createFeedbackService,
   createRateLimiter,
   loadIndex,
+  loadRunIndex,
   normalizeOrigin,
   parseArgs,
   parseStoredLine,
+  parseStoredRunLine,
   readRequestBody,
   safeEqual
 });
