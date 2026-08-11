@@ -2152,7 +2152,9 @@ h3 {
 }
 
 .feedback-form select,
-.feedback-form textarea {
+.feedback-form textarea,
+.feedback-form input[type="url"],
+.feedback-form input[type="password"] {
   width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
@@ -2161,7 +2163,9 @@ h3 {
   font: inherit;
 }
 
-.feedback-form select {
+.feedback-form select,
+.feedback-form input[type="url"],
+.feedback-form input[type="password"] {
   min-height: 42px;
   padding: 8px 34px 8px 10px;
 }
@@ -2220,6 +2224,14 @@ h3 {
   padding: 11px 13px;
   border: 1px dashed var(--line-strong);
   border-radius: 10px;
+}
+
+.feedback-submit-settings > small {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.55;
 }
 
 .feedback-actions {
