@@ -16,6 +16,7 @@ const {
   CODE_DIFF_MAX_LINES,
   CODE_DIFF_MAX_PATHS,
   CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES,
+  CODE_DIFF_MAX_SNAPSHOT_FILES,
   CODE_DIFF_MAX_SNAPSHOT_TOTAL_BYTES,
   CODE_DIFF_MAX_UNTRACKED_FILES,
   CODE_DIFF_SCHEMA_VERSION,
@@ -37,21 +38,35 @@ function writeFile(repoDir, relativePath, content) {
 }
 
 function writeMarkerHelper(repoDir, marker) {
+  const helperName = path.basename(marker, path.extname(marker)).replace(/[^A-Za-z0-9_-]/g, "-");
   if (process.platform === "win32") {
     return writeFile(
       repoDir,
-      "unsafe-helper.cmd",
+      `${helperName}.cmd`,
       `@echo invoked>"${marker}"\r\n@more\r\n@exit /b 0\r\n`
     );
   }
   const escapedMarker = marker.replaceAll("'", "'\\''");
   const helper = writeFile(
     repoDir,
-    "unsafe-helper.sh",
+    `${helperName}.sh`,
     `#!/bin/sh\nprintf invoked > '${escapedMarker}'\ncat\n`
   );
   fs.chmodSync(helper, 0o755);
   return helper;
+}
+
+function clearAndAssertMarkers(markers) {
+  for (const [name, marker] of Object.entries(markers)) {
+    fs.rmSync(marker, { force: true });
+    assert.equal(fs.existsSync(marker), false, `${name} marker existed before the safe call`);
+  }
+}
+
+function assertMarkersAbsent(markers) {
+  for (const [name, marker] of Object.entries(markers)) {
+    assert.equal(fs.existsSync(marker), false, `${name} helper was executed`);
+  }
 }
 
 function git(repoDir, args, options = {}) {
@@ -396,6 +411,17 @@ test("clean committed changes compare the fixed baseline to the current worktree
   }
 });
 
+test("an unchanged teaching workspace is clean", () => {
+  const fixture = createFixture();
+  try {
+    const data = fixture.inspect();
+    assert.equal(data.student.workspaceDirty, false);
+    assert.deepEqual(data.untrackedTeachingFiles, []);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("lab1 and lab7 resolve their own refs without cross-lab access", () => {
   const fixture = createFixture();
   try {
@@ -444,6 +470,7 @@ test("deletions, new tracked files, and index/worktree divergence keep filesyste
     try {
       fs.rmSync(path.join(fixture.repoDir, "kernel", "src", "lib.rs"));
       const data = fixture.inspect();
+      assert.equal(data.student.workspaceDirty, true);
       assert.deepEqual(data.files, ["kernel/src/lib.rs"]);
       assert.match(data.diff, /deleted file mode 100644/);
       assert.match(data.diff, /-pub fn lesson_value\(\) -> u32 \{ 1 \}/);
@@ -458,6 +485,7 @@ test("deletions, new tracked files, and index/worktree divergence keep filesyste
       writeFile(fixture.repoDir, "kernel/src/new_lesson.rs", "pub fn new_lesson() -> u32 { 8 }\n");
       git(fixture.repoDir, ["add", "kernel/src/new_lesson.rs"]);
       const data = fixture.inspect();
+      assert.equal(data.student.workspaceDirty, true);
       assert.deepEqual(data.files, ["kernel/src/new_lesson.rs"]);
       assert.match(data.diff, /new file mode 100644/);
       assert.match(data.diff, /\+pub fn new_lesson\(\) -> u32 \{ 8 \}/);
@@ -473,12 +501,36 @@ test("deletions, new tracked files, and index/worktree divergence keep filesyste
       git(fixture.repoDir, ["add", "kernel/src/lib.rs"]);
       writeFile(fixture.repoDir, "kernel/src/lib.rs", "pub const WORKTREE_MARKER: u32 = 11;\n");
       const data = fixture.inspect();
+      assert.equal(data.student.workspaceDirty, true);
       assert.match(data.diff, /WORKTREE_MARKER/);
       assert.doesNotMatch(data.diff, /INDEX_ONLY_MARKER/);
     } finally {
       fixture.cleanup();
     }
   });
+});
+
+test("unmerged index stages are treated as dirty without replacing filesystem content", () => {
+  const fixture = createFixture();
+  try {
+    const relativePath = "kernel/src/lib.rs";
+    const objectId = git(fixture.repoDir, ["rev-parse", `HEAD:${relativePath}`]);
+    const zeros = "0".repeat(objectId.length);
+    git(fixture.repoDir, ["update-index", "--index-info"], {
+      input: [
+        `0 ${zeros}\t${relativePath}`,
+        `100644 ${objectId} 1\t${relativePath}`,
+        `100644 ${objectId} 2\t${relativePath}`,
+        `100644 ${objectId} 3\t${relativePath}`,
+        ""
+      ].join("\n")
+    });
+    const data = fixture.inspect();
+    assert.equal(data.student.workspaceDirty, true);
+    assert.deepEqual(data.files, []);
+  } finally {
+    fixture.cleanup();
+  }
 });
 
 test("current file and ancestor symlinks or junctions are rejected", async (t) => {
@@ -894,6 +946,7 @@ test("sensitive untracked paths are hidden while tokenizer.rs remains allowed", 
     }
     writeFile(fixture.repoDir, "kernel/src/tokenizer.rs", "pub struct Tokenizer;\n");
     const data = fixture.inspect();
+    assert.equal(data.student.workspaceDirty, true);
     assert.deepEqual(data.untrackedTeachingFiles, ["kernel/src/tokenizer.rs"]);
     assert.equal(data.diff.includes("SENSITIVE_UNTRACKED_CONTENT"), false);
     for (const sensitivePath of sensitivePaths) {
@@ -902,6 +955,50 @@ test("sensitive untracked paths are hidden while tokenizer.rs remains allowed", 
   } finally {
     fixture.cleanup();
   }
+});
+
+test("untracked bodies are not opened and filesystem candidates stop at the hard limit", async (t) => {
+  await t.test("untracked content is never opened", () => {
+    const fixture = createFixture();
+    try {
+      const untracked = writeFile(
+        fixture.repoDir,
+        "kernel/src/untracked.rs",
+        "UNTRACKED_BODY_MUST_NOT_BE_READ\n"
+      );
+      const fileSystem = fileSystemWith({
+        openSync(candidate, flags) {
+          assert.notEqual(path.resolve(candidate), path.resolve(untracked), "opened untracked body");
+          return fs.openSync(candidate, flags);
+        }
+      });
+      const data = fixture.inspect({}, "lab4-starter", { fileSystem });
+      assert.equal(data.student.workspaceDirty, true);
+      assert.deepEqual(data.untrackedTeachingFiles, ["kernel/src/untracked.rs"]);
+      assert.doesNotMatch(data.diff, /UNTRACKED_BODY_MUST_NOT_BE_READ/);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test("candidate enumeration stops after the configured bound", () => {
+    const fixture = createFixture();
+    try {
+      for (let index = 0; index <= CODE_DIFF_MAX_SNAPSHOT_FILES; index += 1) {
+        writeFile(
+          fixture.repoDir,
+          `kernel/src/candidate_${String(index).padStart(3, "0")}.rs`,
+          "body must not be read\n"
+        );
+      }
+      assert.equal(
+        errorCode(() => fixture.inspect()),
+        "too_many_working_tree_files"
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
 
 test("sensitive tracked and special-character file names never enter diff outputs", () => {
@@ -1051,7 +1148,7 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
       assert.equal(call.program, "git");
       assert.equal(call.options.shell, false);
       assert.equal(call.args[0], "--literal-pathspecs");
-      assert.equal(call.args.includes("core.fsmonitor=false"), true);
+      assert.equal(call.args.includes("core.fsmonitor=false"), false);
       assert.equal(call.args.includes("credential.helper="), true);
       assert.equal(call.options.env.GIT_LITERAL_PATHSPECS, "1");
       assert.equal(call.options.env.GIT_NO_LAZY_FETCH, "1");
@@ -1066,14 +1163,20 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
     }
     const subcommands = calls.map((call) => gitSubcommand(call.args));
     for (const forbidden of [
-      "fetch", "pull", "log", "reflog", "blame", "show", "checkout", "switch",
+      "fetch", "pull", "log", "reflog", "blame", "show", "status", "diff-index",
+      "diff-files", "update-index", "checkout-index", "hash-object", "checkout", "switch",
       "reset", "restore", "clean", "add", "commit", "merge", "rebase", "push"
     ]) {
       assert.equal(subcommands.includes(forbidden), false);
     }
-    assert.deepEqual(subcommands, [
-      "rev-parse", "status", "ls-tree", "ls-files", "cat-file", "diff"
+    const whitelist = new Set(["rev-parse", "ls-tree", "ls-files", "cat-file", "diff"]);
+    assert.equal(subcommands.every((subcommand) => whitelist.has(subcommand)), true);
+    assert.deepEqual([...new Set(subcommands)].sort(), [...whitelist].sort());
+    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
+    assert.deepEqual(lsFiles.args.slice(lsFiles.args.indexOf("ls-files")), [
+      "ls-files", "--stage", "-z", "--", "kernel/src/"
     ]);
+    assert.equal(lsFiles.options.shell, false);
     const isolatedDiff = calls.find((call) => gitSubcommand(call.args) === "diff");
     assert.notEqual(path.resolve(isolatedDiff.options.cwd), path.resolve(fixture.repoDir));
     assert.equal(isolatedDiff.args.includes("--no-index"), true);
@@ -1088,32 +1191,82 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
   }
 });
 
-test("repository, global, and system helpers are isolated from status and diff", () => {
+test("the exact production ls-files argv does not execute fsmonitor or clean filters", () => {
   const fixture = createFixture();
   try {
-    const marker = path.join(fixture.repoDir, "unsafe-helper-ran.txt");
-    const helper = writeMarkerHelper(fixture.repoDir, marker);
-    git(fixture.repoDir, ["config", "diff.external", helper]);
-    git(fixture.repoDir, ["config", "diff.danger.textconv", helper]);
-    git(fixture.repoDir, ["config", "filter.danger.clean", helper]);
-    git(fixture.repoDir, ["config", "core.fsmonitor", helper]);
+    const calls = [];
+    fixture.inspect({}, "lab4-starter", { spawnSync: recordingGit(calls) });
+    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
+    assert.notEqual(lsFiles, undefined);
+    assert.deepEqual(lsFiles.args.slice(lsFiles.args.indexOf("ls-files")), [
+      "ls-files", "--stage", "-z", "--", "kernel/src/"
+    ]);
+    assert.equal(lsFiles.options.shell, false);
+
+    const markers = {
+      repositoryFsmonitor: path.join(fixture.repoDir, "ls-files-fsmonitor-helper-ran.txt"),
+      repositoryCleanFilter: path.join(fixture.repoDir, "ls-files-clean-filter-ran.txt")
+    };
+    const fsmonitorHelper = writeMarkerHelper(fixture.repoDir, markers.repositoryFsmonitor);
+    const cleanFilterHelper = writeMarkerHelper(fixture.repoDir, markers.repositoryCleanFilter);
+    git(fixture.repoDir, ["config", "core.fsmonitor", fsmonitorHelper]);
+    git(fixture.repoDir, ["config", "filter.danger.clean", cleanFilterHelper]);
     writeFile(fixture.repoDir, ".gitattributes", "*.rs diff=danger filter=danger\n");
-    const hostileConfig = writeFile(
+    clearAndAssertMarkers(markers);
+    const result = spawnSync(lsFiles.program, lsFiles.args, lsFiles.options);
+    assert.equal(result.status, 0, String(result.stderr || result.error || ""));
+    assertMarkersAbsent(markers);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("repository, global, and system helpers have isolated markers and never execute", () => {
+  const fixture = createFixture();
+  try {
+    const context = fixture.context();
+    const markers = {
+      repositoryFsmonitor: path.join(fixture.repoDir, "repo-fsmonitor-helper-ran.txt"),
+      repositoryExternalDiff: path.join(fixture.repoDir, "repo-external-diff-helper-ran.txt"),
+      repositoryTextconv: path.join(fixture.repoDir, "repo-textconv-helper-ran.txt"),
+      repositoryCleanFilter: path.join(fixture.repoDir, "repo-clean-filter-helper-ran.txt"),
+      globalHelper: path.join(fixture.repoDir, "global-helper-ran.txt"),
+      systemHelper: path.join(fixture.repoDir, "system-helper-ran.txt")
+    };
+    const helpers = Object.fromEntries(Object.entries(markers).map(([name, marker]) => (
+      [name, writeMarkerHelper(fixture.repoDir, marker)]
+    )));
+    git(fixture.repoDir, ["config", "core.fsmonitor", helpers.repositoryFsmonitor]);
+    git(fixture.repoDir, ["config", "diff.external", helpers.repositoryExternalDiff]);
+    git(fixture.repoDir, ["config", "diff.danger.textconv", helpers.repositoryTextconv]);
+    git(fixture.repoDir, ["config", "filter.danger.clean", helpers.repositoryCleanFilter]);
+    writeFile(fixture.repoDir, ".gitattributes", "*.rs diff=danger filter=danger\n");
+
+    const globalHelper = helpers.globalHelper.replaceAll("\\", "/");
+    const systemHelper = helpers.systemHelper.replaceAll("\\", "/");
+    const hostileGlobalConfig = writeFile(
       fixture.repoDir,
-      "hostile.gitconfig",
-      `[core]\n\tfsmonitor = ${helper.replaceAll("\\", "/")}\n[diff]\n\texternal = ${helper.replaceAll("\\", "/")}\n`
+      "hostile-global.gitconfig",
+      `[core]\n\tfsmonitor = ${globalHelper}\n[diff]\n\texternal = ${globalHelper}\n`
+    );
+    const hostileSystemConfig = writeFile(
+      fixture.repoDir,
+      "hostile-system.gitconfig",
+      `[core]\n\tfsmonitor = ${systemHelper}\n[diff]\n\texternal = ${systemHelper}\n`
     );
     writeFile(fixture.repoDir, "kernel/src/lib.rs", "pub fn lesson_value() -> u32 { 9 }\n");
-    const data = fixture.inspect({}, "lab4-starter", {
+    clearAndAssertMarkers(markers);
+    const data = createCodeDiffEngine({
+      repoDir: fixture.repoDir,
       processEnv: {
         ...process.env,
-        GIT_CONFIG_GLOBAL: hostileConfig,
-        GIT_CONFIG_SYSTEM: hostileConfig,
-        GIT_EXTERNAL_DIFF: helper
+        GIT_CONFIG_GLOBAL: hostileGlobalConfig,
+        GIT_CONFIG_SYSTEM: hostileSystemConfig,
+        GIT_EXTERNAL_DIFF: helpers.globalHelper
       }
-    });
+    })({}, context);
     assert.deepEqual(data.files, ["kernel/src/lib.rs"]);
-    assert.equal(fs.existsSync(marker), false);
+    assertMarkersAbsent(markers);
   } finally {
     fixture.cleanup();
   }

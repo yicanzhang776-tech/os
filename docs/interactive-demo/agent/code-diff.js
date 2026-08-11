@@ -371,38 +371,9 @@ function projectPatch(patch, files, maxLines, maxBytes = CODE_DIFF_MAX_BYTES) {
   };
 }
 
-function parseStatus(output) {
-  const entries = String(output || "").split("\0");
-  const untracked = [];
-  let dirty = false;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) continue;
-    dirty = true;
-    const code = entry.slice(0, 2);
-    const relativePath = entry.slice(3);
-    if (code === "??") {
-      try {
-        untracked.push(validateTeachingPath(relativePath));
-      } catch (_) {
-        // Protected or non-teaching untracked paths are never returned.
-      }
-    }
-    if (["R", "C"].includes(code[0]) || ["R", "C"].includes(code[1])) index += 1;
-  }
-  const paths = [...new Set(untracked)].sort();
-  return {
-    workspaceDirty: dirty,
-    untrackedTeachingFiles: paths.slice(0, CODE_DIFF_MAX_UNTRACKED_FILES),
-    untrackedTruncated: paths.length > CODE_DIFF_MAX_UNTRACKED_FILES
-  };
-}
-
 function safeGitArguments(args, nullDevice, workTree = null) {
   const safeArguments = [
     "--literal-pathspecs",
-    "-c",
-    "core.fsmonitor=false",
     "-c",
     "core.untrackedCache=false",
     "-c",
@@ -453,17 +424,128 @@ function parseBaselineTree(output) {
   return files;
 }
 
-function parseTrackedFiles(output) {
-  const files = [];
+function normalizeTeachingMetadataPath(value, stage) {
+  const invalid = typeof value !== "string"
+    || value.length === 0
+    || value.length > 1000
+    || /[\u0000-\u001f\u007f]/.test(value)
+    || value.includes("\\")
+    || path.posix.isAbsolute(value)
+    || /^[A-Za-z]:/.test(value);
+  const segments = invalid ? [] : value.split("/");
+  const normalized = invalid ? "" : path.posix.normalize(value);
+  if (invalid
+    || segments.some((segment) => segment === "" || segment === "." || segment === "..")
+    || normalized !== value
+    || !normalized.startsWith("kernel/src/")) {
+    throw new CodeDiffError(
+      "git_diff_failed",
+      "Git returned an unsafe teaching metadata path.",
+      false,
+      { stage }
+    );
+  }
+  return normalized;
+}
+
+function visibleTeachingPath(relativePath) {
+  try {
+    return validateTeachingPath(relativePath);
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseTreeMetadata(output, stage) {
+  const files = new Map();
+  for (const entry of String(output || "").split("\0")) {
+    if (!entry) continue;
+    const match = /^([0-7]{6}) (blob|tree|commit) ([0-9a-f]{40,64})\t([^\0]+)$/i.exec(entry);
+    if (!match) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "Git returned unexpected tree metadata.",
+        false,
+        { stage }
+      );
+    }
+    const relativePath = normalizeTeachingMetadataPath(match[4], stage);
+    if (files.has(relativePath)) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "Git returned duplicate tree metadata.",
+        false,
+        { stage }
+      );
+    }
+    files.set(relativePath, {
+      mode: match[1],
+      objectId: match[3].toLowerCase(),
+      type: match[2],
+      visiblePath: visibleTeachingPath(relativePath)
+    });
+  }
+  return files;
+}
+
+function parseIndexMetadata(output) {
+  const entries = new Map();
+  const stageZero = new Map();
+  let hasUnmergedEntries = false;
   for (const value of String(output || "").split("\0")) {
     if (!value) continue;
-    try {
-      files.push(validateTeachingPath(value));
-    } catch (_) {
-      // Unsafe, sensitive, or non-teaching paths are never read from the worktree.
+    const match = /^([0-7]{6}) ([0-9a-f]{40,64}) ([0-3])\t([^\0]+)$/i.exec(value);
+    if (!match) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "Git returned unexpected index metadata.",
+        false,
+        { stage: "index_metadata" }
+      );
     }
+    const relativePath = normalizeTeachingMetadataPath(match[4], "index_metadata");
+    const stage = Number(match[3]);
+    const metadata = {
+      mode: match[1],
+      objectId: match[2].toLowerCase(),
+      stage,
+      visiblePath: visibleTeachingPath(relativePath)
+    };
+    const pathEntries = entries.get(relativePath) || [];
+    if (pathEntries.some((item) => item.stage === stage)) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "Git returned duplicate index metadata.",
+        false,
+        { stage: "index_metadata" }
+      );
+    }
+    pathEntries.push(metadata);
+    entries.set(relativePath, pathEntries);
+    if (stage === 0) stageZero.set(relativePath, metadata);
+    else hasUnmergedEntries = true;
   }
-  return [...new Set(files)].sort();
+  return { entries, stageZero, hasUnmergedEntries };
+}
+
+function sameGitMetadata(left, right) {
+  return Boolean(left && right)
+    && left.mode === right.mode
+    && left.objectId === right.objectId;
+}
+
+function metadataMapsDiffer(left, right) {
+  if (left.size !== right.size) return true;
+  for (const [relativePath, metadata] of left) {
+    if (!sameGitMetadata(metadata, right.get(relativePath))) return true;
+  }
+  return false;
+}
+
+function pathMatchesScope(relativePath, scope) {
+  return scope.some((selected) => (
+    selected.endsWith("/") ? relativePath.startsWith(selected) : relativePath === selected
+  ));
 }
 
 function gitBlobObjectId(content, objectIdLength) {
@@ -620,6 +702,136 @@ function samePathInspection(left, right) {
     isSamePath(component.realPath, right.components[index].realPath)
     && sameObjectIdentity(component.stats, right.components[index].stats)
   ));
+}
+
+function inspectFilesystemNode(fileSystem, trustedTeachingRoot, candidate) {
+  let stats;
+  try {
+    stats = fileSystem.lstatSync(candidate);
+  } catch (_) {
+    throw filesystemError(
+      "unsafe_working_tree_file",
+      "A teaching filesystem entry could not be safely inspected.",
+      "filesystem_walk"
+    );
+  }
+  if (stats.isSymbolicLink() || (!stats.isDirectory() && !stats.isFile())) {
+    throw filesystemError(
+      "unsafe_working_tree_file",
+      "The teaching filesystem contains a linked or non-regular entry.",
+      "filesystem_walk"
+    );
+  }
+  let realPath;
+  try {
+    realPath = fileSystem.realpathSync(candidate);
+  } catch (_) {
+    throw filesystemError(
+      "unsafe_working_tree_file",
+      "A teaching filesystem entry could not be safely resolved.",
+      "filesystem_walk"
+    );
+  }
+  if (!isSamePath(candidate, realPath) || !isInsideDirectory(trustedTeachingRoot, realPath)) {
+    throw filesystemError(
+      "unsafe_working_tree_file",
+      "A teaching filesystem entry resolved outside its trusted root.",
+      "filesystem_walk"
+    );
+  }
+  return { realPath, stats };
+}
+
+function readBoundedDirectoryEntries(fileSystem, candidate, state) {
+  let directory = null;
+  const names = [];
+  try {
+    directory = fileSystem.opendirSync(candidate);
+    for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
+      state.candidates += 1;
+      if (state.candidates > CODE_DIFF_MAX_SNAPSHOT_FILES) {
+        throw filesystemError(
+          "too_many_working_tree_files",
+          "The teaching filesystem contains too many candidate entries.",
+          "filesystem_walk"
+        );
+      }
+      names.push(entry.name);
+    }
+  } catch (error) {
+    if (error instanceof CodeDiffError) throw error;
+    throw filesystemError(
+      "unsafe_working_tree_file",
+      "A teaching directory could not be safely enumerated.",
+      "filesystem_walk"
+    );
+  } finally {
+    if (directory !== null) {
+      try {
+        directory.closeSync();
+      } catch (_) {
+        throw filesystemError(
+          "unsafe_working_tree_file",
+          "A teaching directory could not be safely closed.",
+          "filesystem_walk"
+        );
+      }
+    }
+  }
+  return names.sort();
+}
+
+function enumerateTeachingFilesystem(fileSystem, trustedTeachingRoot) {
+  const files = new Map();
+  const state = { candidates: 0 };
+  const pending = [{ absolutePath: trustedTeachingRoot, relativePath: "kernel/src" }];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    const before = inspectFilesystemNode(
+      fileSystem,
+      trustedTeachingRoot,
+      directory.absolutePath
+    );
+    if (!before.stats.isDirectory()) {
+      throw filesystemError(
+        "unsafe_working_tree_file",
+        "A teaching directory was replaced by a non-directory entry.",
+        "filesystem_walk"
+      );
+    }
+    const names = readBoundedDirectoryEntries(fileSystem, directory.absolutePath, state);
+    const after = inspectFilesystemNode(
+      fileSystem,
+      trustedTeachingRoot,
+      directory.absolutePath
+    );
+    if (!after.stats.isDirectory()
+      || !isSamePath(before.realPath, after.realPath)
+      || !sameFileState(before.stats, after.stats)) {
+      throw filesystemError(
+        "working_tree_file_changed",
+        "A teaching directory changed while it was being safely enumerated.",
+        "filesystem_walk"
+      );
+    }
+
+    for (const name of names) {
+      const relativePath = normalizeTeachingMetadataPath(
+        `${directory.relativePath}/${name}`,
+        "filesystem_walk"
+      );
+      const absolutePath = path.join(directory.absolutePath, name);
+      const inspected = inspectFilesystemNode(fileSystem, trustedTeachingRoot, absolutePath);
+      if (inspected.stats.isDirectory()) {
+        pending.push({ absolutePath, relativePath });
+      } else {
+        files.set(relativePath, {
+          visiblePath: visibleTeachingPath(relativePath)
+        });
+      }
+    }
+  }
+  return files;
 }
 
 function boundedReadSync(fileSystem, fd, maxBytes) {
@@ -869,16 +1081,6 @@ function createCodeDiffEngine(options = {}) {
       );
     }
 
-    const status = parseStatus(invokeGit([
-      "status",
-      "--porcelain=v1",
-      "-z",
-      "--untracked-files=all",
-      "--ignore-submodules=all",
-      "--",
-      ...CODE_DIFF_DEFAULT_SCOPE
-    ], "status"));
-
     const baselineFiles = parseBaselineTree(invokeGit([
       "ls-tree",
       "-r",
@@ -888,16 +1090,40 @@ function createCodeDiffEngine(options = {}) {
       "--",
       ...input.scope
     ], "baseline_tree"));
-    const trackedFiles = parseTrackedFiles(invokeGit([
+    const headFiles = parseTreeMetadata(invokeGit([
+      "ls-tree",
+      "-r",
+      "-z",
+      "--full-tree",
+      "HEAD",
+      "--",
+      ...CODE_DIFF_DEFAULT_SCOPE
+    ], "head_tree"), "head_tree");
+    const index = parseIndexMetadata(invokeGit([
       "ls-files",
-      "--cached",
+      "--stage",
       "-z",
       "--",
-      ...input.scope
-    ], "tracked_files"));
+      ...CODE_DIFF_DEFAULT_SCOPE
+    ], "index_metadata"));
+    const trackedPaths = [...index.entries.keys()].sort();
+    if (trackedPaths.length > CODE_DIFF_MAX_SNAPSHOT_FILES) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "The safe teaching index contains too many files.",
+        false,
+        { stage: "index_metadata" }
+      );
+    }
+    const trackedVisibleFiles = trackedPaths.filter((relativePath) => (
+      index.entries.get(relativePath).some((metadata) => metadata.visiblePath !== null)
+    ));
+    const diffTrackedFiles = trackedVisibleFiles.filter((relativePath) => (
+      pathMatchesScope(relativePath, input.scope)
+    ));
     const candidatePaths = [...new Set([
       ...baselineFiles.keys(),
-      ...trackedFiles
+      ...diffTrackedFiles
     ])].sort();
     if (candidatePaths.length > CODE_DIFF_MAX_SNAPSHOT_FILES) {
       throw new CodeDiffError(
@@ -925,6 +1151,9 @@ function createCodeDiffEngine(options = {}) {
     let patch = "";
     let patchFiles = [];
     let fileLimitOmitted = [];
+    let workspaceDirty = false;
+    let untrackedTeachingFiles = [];
+    let untrackedTruncated = false;
     try {
       const temporaryBase = fileSystem.realpathSync(os.tmpdir());
       if (isInsideDirectory(repoRealPath, temporaryBase)) {
@@ -957,9 +1186,29 @@ function createCodeDiffEngine(options = {}) {
       fileSystem.mkdirSync(path.join(temporaryRealPath, "a", "kernel", "src"), { recursive: true });
       fileSystem.mkdirSync(path.join(temporaryRealPath, "b", "kernel", "src"), { recursive: true });
 
+      const filesystemFiles = enumerateTeachingFilesystem(fileSystem, trustedTeachingRoot);
+      const trackedSet = new Set(trackedPaths);
+      const untrackedPaths = [...filesystemFiles.keys()].filter((relativePath) => (
+        !trackedSet.has(relativePath)
+      ));
+      const visibleUntrackedPaths = untrackedPaths
+        .map((relativePath) => filesystemFiles.get(relativePath).visiblePath)
+        .filter((relativePath) => relativePath !== null)
+        .sort();
+      untrackedTeachingFiles = visibleUntrackedPaths.slice(0, CODE_DIFF_MAX_UNTRACKED_FILES);
+      untrackedTruncated = visibleUntrackedPaths.length > CODE_DIFF_MAX_UNTRACKED_FILES;
+
       let snapshotBytes = 0;
       const currentFiles = new Map();
-      for (const relativePath of trackedFiles) {
+      for (const relativePath of trackedVisibleFiles) {
+        const stageZero = index.stageZero.get(relativePath);
+        if (stageZero && !["100644", "100755"].includes(stageZero.mode)) {
+          throw filesystemError(
+            "unsafe_working_tree_file",
+            "The teaching index contains a non-regular entry.",
+            "index_metadata"
+          );
+        }
         const content = readCurrentTeachingFile(
           fileSystem,
           repoRealPath,
@@ -972,6 +1221,59 @@ function createCodeDiffEngine(options = {}) {
         snapshotBytes += content.length;
         currentFiles.set(relativePath, content);
       }
+
+      const stagedDirty = index.hasUnmergedEntries
+        || metadataMapsDiffer(headFiles, index.stageZero);
+      let worktreeDirty = false;
+      let indexBlobBytes = 0;
+      for (const [relativePath, metadata] of index.stageZero) {
+        if (!filesystemFiles.has(relativePath)) {
+          worktreeDirty = true;
+          continue;
+        }
+        if (metadata.visiblePath === null) continue;
+        if (!["100644", "100755"].includes(metadata.mode)) {
+          throw filesystemError(
+            "unsafe_working_tree_file",
+            "The teaching index contains a non-regular entry.",
+            "index_metadata"
+          );
+        }
+        const current = currentFiles.get(relativePath);
+        if (!current) {
+          worktreeDirty = true;
+          continue;
+        }
+        const indexBlob = invokeGit(
+          ["cat-file", "blob", metadata.objectId],
+          "index_blob",
+          {
+            encoding: null,
+            maxBuffer: CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES + 1
+          }
+        );
+        if (indexBlob.length > CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES) {
+          throw new CodeDiffError(
+            "file_too_large",
+            "An indexed teaching file exceeds the safe snapshot size limit.",
+            false,
+            { stage: "index_blob" }
+          );
+        }
+        indexBlobBytes += indexBlob.length;
+        if (indexBlobBytes > CODE_DIFF_MAX_SNAPSHOT_TOTAL_BYTES) {
+          throw new CodeDiffError(
+            "snapshot_too_large",
+            "The indexed teaching snapshot exceeds its total size limit.",
+            false,
+            { stage: "index_blob" }
+          );
+        }
+        if (!current.equals(indexBlob)) worktreeDirty = true;
+      }
+      const untrackedDirty = untrackedPaths.length > 0;
+      // Deliberately compare raw teaching bytes instead of executing repository filters.
+      workspaceDirty = stagedDirty || worktreeDirty || untrackedDirty;
 
       const changedFiles = candidatePaths.filter((relativePath) => {
         const baseline = baselineFiles.get(relativePath);
@@ -1069,13 +1371,13 @@ function createCodeDiffEngine(options = {}) {
       student: {
         branch: context.student.branch,
         commit: context.student.commit,
-        workspaceDirty: status.workspaceDirty
+        workspaceDirty
       },
       scope: input.scope,
       files: projected.files,
-      untrackedTeachingFiles: status.untrackedTeachingFiles,
+      untrackedTeachingFiles,
       untrackedIncluded: false,
-      untrackedTruncated: status.untrackedTruncated,
+      untrackedTruncated,
       contextLines: input.contextLines,
       returnedLines: projected.returnedLines,
       maxLines: input.maxLines,
@@ -1110,7 +1412,6 @@ module.exports = {
   createSafeGitEnvironment,
   createCodeDiffEngine,
   isInsideDirectory,
-  parseStatus,
   projectPatch,
   resolveStarterContext,
   sanitizedGitEnvironment,
