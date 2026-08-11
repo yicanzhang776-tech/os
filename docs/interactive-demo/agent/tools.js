@@ -4,7 +4,6 @@ const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { TextDecoder } = require("node:util");
 const {
   EVENT_PROTOCOL,
   STAGE_INDEX,
@@ -12,6 +11,8 @@ const {
 } = require("../protocol");
 const { diagnose } = require("../diagnostics");
 const { createRunRecord } = require("../run-history");
+const { createCodeDiffEngine } = require("./code-diff");
+const { classifySafeUtf8Text, redactSensitiveText } = require("./safe-text");
 const {
   TOOL_CONTRACT_VERSION,
   protectedContextOverride,
@@ -313,16 +314,11 @@ function selectTextLines(records, startLine, requestedEndLine, maxBytes) {
 }
 
 function decodeUtf8Text(buffer) {
-  let text;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-  } catch {
-    throw new SafeToolError("binary_file", "The requested file is not valid UTF-8 text.");
+  const result = classifySafeUtf8Text(buffer);
+  if (!result.ok) {
+    throw new SafeToolError("binary_file", result.message);
   }
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
-    throw new SafeToolError("binary_file", "The requested file contains binary data.");
-  }
-  return text;
+  return result.text;
 }
 
 function validateReadCodeInput(args) {
@@ -493,17 +489,7 @@ function validateGetQemuEventsInput(args) {
 }
 
 function redactStoredEventText(value) {
-  const redacted = String(value || "")
-    .slice(0, GET_QEMU_EVENTS_MAX_TEXT)
-    .replace(/\bBearer\s+[^\s,;]+/gi, "[REDACTED]")
-    .replace(
-      /\b(?:ghp_[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_-]+|glpat-[A-Za-z0-9_-]+|sk-(?:proj-)?[A-Za-z0-9_-]+)\b/gi,
-      "[REDACTED]"
-    )
-    .replace(/[A-Za-z]:\\(?:[^\\\s]+\\)*[^\\\s]*/g, "[REDACTED]")
-    .replace(/(^|\s)\/(?:[^/\s]+\/)+[^\s]*/g, "$1[REDACTED]")
-    .replace(/\b(?:api[_-]?key|access[_-]?token|secret|password)=\S+/gi, "[REDACTED]")
-    .replace(/\b[A-Z][A-Z0-9_]{1,63}=\S+/g, "[REDACTED]");
+  const redacted = redactSensitiveText(String(value || "").slice(0, GET_QEMU_EVENTS_MAX_TEXT));
   return redacted.slice(0, GET_QEMU_EVENTS_MAX_TEXT);
 }
 
@@ -1421,6 +1407,104 @@ function createGetRunResultTool(options = {}) {
   };
 }
 
+function createGetCodeDiffTool(options = {}) {
+  if (typeof options.readWorkspaceContext !== "function") {
+    throw new TypeError("readWorkspaceContext is required.");
+  }
+  if (!options.codeDiffEngine
+    && (typeof options.repoDir !== "string" || !options.repoDir)) {
+    throw new TypeError("repoDir is required.");
+  }
+
+  const inspectCodeDiff = options.codeDiffEngine || createCodeDiffEngine({
+    repoDir: options.repoDir,
+    spawnSync: options.spawnSync,
+    processEnv: options.processEnv
+  });
+  if (typeof inspectCodeDiff !== "function") {
+    throw new TypeError("codeDiffEngine must be a function.");
+  }
+  const makeRequestId = options.requestIdFactory || defaultRequestId;
+  const now = options.now || Date.now;
+
+  return function getCodeDiff(args = {}, invocationContext = {}) {
+    const tool = "get_code_diff";
+    let actual = { branch: "unknown", commit: "unknown" };
+    let requestId = makeRequestId();
+    const meta = () => ({
+      requestId,
+      branch: actual.branch,
+      commit: actual.commit,
+      generatedAt: new Date(now()).toISOString()
+    });
+
+    try {
+      const rawContext = options.readWorkspaceContext();
+      if (!rawContext || typeof rawContext !== "object") {
+        throw new SafeToolError("context_unavailable", "The workspace context is unavailable.", true);
+      }
+      actual = {
+        branch: typeof rawContext.branch === "string" && rawContext.branch
+          ? rawContext.branch
+          : "unknown",
+        commit: typeof rawContext.commit === "string" && rawContext.commit
+          ? rawContext.commit
+          : "unknown"
+      };
+
+      const requestIdCheck = validateRequestId(invocationContext?.requestId);
+      if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
+      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+
+      const invocationCheck = validateInvocationContext(invocationContext);
+      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+
+      const expectedBranch = invocationCheck.value.expectedBranch;
+      const expectedCommit = invocationCheck.value.expectedCommit;
+      if ((expectedBranch && expectedBranch !== actual.branch)
+        || (expectedCommit && expectedCommit !== actual.commit)) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed before the tool executed.",
+          true,
+          {
+            expectedBranch: expectedBranch || null,
+            expectedCommit: expectedCommit || null,
+            actualBranch: actual.branch,
+            actualCommit: actual.commit
+          }
+        );
+      }
+
+      const data = inspectCodeDiff(args, actual);
+      const finalContext = options.readWorkspaceContext();
+      const finalBranch = typeof finalContext?.branch === "string" && finalContext.branch
+        ? finalContext.branch
+        : "unknown";
+      const finalCommit = typeof finalContext?.commit === "string" && finalContext.commit
+        ? finalContext.commit
+        : "unknown";
+      if (finalBranch !== actual.branch || finalCommit !== actual.commit) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed while the tool executed.",
+          true,
+          {
+            expectedBranch: actual.branch,
+            expectedCommit: actual.commit,
+            actualBranch: finalBranch,
+            actualCommit: finalCommit
+          }
+        );
+      }
+
+      return createToolSuccess(tool, data, meta());
+    } catch (error) {
+      return createToolFailure(tool, error, meta());
+    }
+  };
+}
+
 module.exports = {
   GET_RUN_RESULT_MAX_DIAGNOSTICS,
   GET_RUN_RESULT_MAX_EVIDENCE_SEQUENCES,
@@ -1433,6 +1517,7 @@ module.exports = {
   READ_CODE_MAX_FILE_BYTES,
   READ_CODE_MAX_LINES,
   SafeToolError,
+  createGetCodeDiffTool,
   createGetContextTool,
   createGetQemuEventsTool,
   createGetRunResultTool,

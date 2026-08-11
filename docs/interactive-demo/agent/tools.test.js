@@ -10,6 +10,7 @@ const {
   GET_RUN_RESULT_MAX_DIAGNOSTICS,
   GET_RUN_RESULT_MAX_EVIDENCE_SEQUENCES,
   GET_RUN_RESULT_SCHEMA_VERSION,
+  createGetCodeDiffTool,
   createGetContextTool,
   createGetQemuEventsTool,
   createGetRunResultTool,
@@ -85,6 +86,63 @@ function readCodeFailure(relativePath, expectedCode) {
     assert.equal(result.data, null);
     return result;
   });
+}
+
+function codeDiffToolFor(options = {}) {
+  let contextReads = 0;
+  let engineCalls = 0;
+  const contexts = options.contexts || [
+    { branch: "lab4-starter", commit: "abc1234" },
+    { branch: "lab4-starter", commit: "abc1234" }
+  ];
+  const data = options.data || {
+    schemaVersion: "os-tutor.code-diff/v1",
+    lab: "lab4",
+    baseline: {
+      ref: "refs/remotes/origin/lab4-starter",
+      commit: "a".repeat(40)
+    },
+    student: {
+      branch: "lab4-starter",
+      commit: "abc1234",
+      workspaceDirty: false
+    },
+    scope: ["kernel/src/"],
+    files: [],
+    untrackedTeachingFiles: [],
+    untrackedIncluded: false,
+    untrackedTruncated: false,
+    contextLines: 3,
+    returnedLines: 0,
+    maxLines: 400,
+    maxBytes: 64 * 1024,
+    truncated: false,
+    omittedFiles: [],
+    omittedFilesTruncated: false,
+    diff: ""
+  };
+  const tool = createGetCodeDiffTool({
+    readWorkspaceContext() {
+      const selected = contexts[Math.min(contextReads, contexts.length - 1)];
+      contextReads += 1;
+      return selected;
+    },
+    codeDiffEngine(args, context) {
+      engineCalls += 1;
+      if (options.engineError) throw options.engineError;
+      if (typeof options.codeDiffEngine === "function") {
+        return options.codeDiffEngine(args, context);
+      }
+      return structuredClone(data);
+    },
+    requestIdFactory: () => "code-diff-generated",
+    now: () => NOW
+  });
+  return {
+    tool,
+    contextReads: () => contextReads,
+    engineCalls: () => engineCalls
+  };
 }
 
 function qemuRunInput(runId = "run-1", overrides = {}) {
@@ -1667,4 +1725,121 @@ test("get_run_result omits event arrays, output logs, paths, environment, and er
   assert.equal(Object.hasOwn(result.data, "error"), false);
   assert.doesNotMatch(serialized, /private|unsafe|HOME=|PATH=|TOKEN=|server\.log|trace\.log/);
   assert.deepEqual(store.getLastCompletedRun(), before);
+});
+
+test("get_code_diff returns the shared ToolResult contract and fixed schema data", () => {
+  let received = null;
+  const harness = codeDiffToolFor({
+    codeDiffEngine(args, context) {
+      received = { args, context };
+      return {
+        schemaVersion: "os-tutor.code-diff/v1",
+        lab: "lab4",
+        baseline: { ref: "refs/remotes/origin/lab4-starter", commit: "a".repeat(40) },
+        student: { branch: context.branch, commit: context.commit, workspaceDirty: true },
+        scope: args.paths,
+        files: ["kernel/src/lib.rs"],
+        untrackedTeachingFiles: [],
+        untrackedIncluded: false,
+        untrackedTruncated: false,
+        contextLines: args.contextLines,
+        returnedLines: 1,
+        maxLines: args.maxLines,
+        maxBytes: 64 * 1024,
+        truncated: false,
+        omittedFiles: [],
+        omittedFilesTruncated: false,
+        diff: "+student change\n"
+      };
+    }
+  });
+  const args = {
+    lab: "lab4",
+    paths: ["kernel/src/lib.rs"],
+    contextLines: 0,
+    maxLines: 50
+  };
+  const result = harness.tool(args, {
+    requestId: "request-code-diff",
+    expectedBranch: "lab4-starter",
+    expectedCommit: "abc1234"
+  });
+
+  assert.equal(result.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(result.tool, "get_code_diff");
+  assert.equal(result.ok, true);
+  assert.equal(result.error, null);
+  assert.equal(result.data.schemaVersion, "os-tutor.code-diff/v1");
+  assert.equal(result.data.baseline.ref, "refs/remotes/origin/lab4-starter");
+  assert.equal(result.data.student.workspaceDirty, true);
+  assert.deepEqual(received, {
+    args,
+    context: { branch: "lab4-starter", commit: "abc1234" }
+  });
+  assert.equal(harness.contextReads(), 2);
+  assert.equal(harness.engineCalls(), 1);
+  assert.deepEqual(result.meta, {
+    requestId: "request-code-diff",
+    branch: "lab4-starter",
+    commit: "abc1234",
+    generatedAt: "2026-08-11T10:20:30.000Z"
+  });
+});
+
+test("get_code_diff rejects a stale invocation before running Git", () => {
+  const harness = codeDiffToolFor();
+  const result = harness.tool({}, {
+    expectedBranch: "lab4-starter",
+    expectedCommit: "old-commit"
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.data, null);
+  assert.equal(result.error.code, "context_changed");
+  assert.equal(result.error.retryable, true);
+  assert.equal(harness.contextReads(), 1);
+  assert.equal(harness.engineCalls(), 0);
+});
+
+test("get_code_diff discards a diff when context changes during Git operations", () => {
+  const harness = codeDiffToolFor({
+    contexts: [
+      { branch: "lab4-starter", commit: "abc1234" },
+      { branch: "lab5-starter", commit: "def5678" }
+    ]
+  });
+  const result = harness.tool({});
+  assert.equal(result.ok, false);
+  assert.equal(result.data, null);
+  assert.equal(result.error.code, "context_changed");
+  assert.equal(result.error.retryable, true);
+  assert.deepEqual(result.error.details, {
+    expectedBranch: "lab4-starter",
+    expectedCommit: "abc1234",
+    actualBranch: "lab5-starter",
+    actualCommit: "def5678"
+  });
+  assert.equal(harness.contextReads(), 2);
+  assert.equal(harness.engineCalls(), 1);
+});
+
+test("get_code_diff failures omit stacks, host paths, Git stderr, and tokens", () => {
+  const unsafe = new Error(
+    "fatal C:\\Users\\student\\repo Authorization: Bearer ghp_abcdefghijklmnopqrstuvwxyz"
+  );
+  unsafe.stack = "STACK C:\\Users\\student\\repo";
+  const rawFailure = codeDiffToolFor({ engineError: unsafe }).tool({});
+  assert.equal(rawFailure.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(rawFailure.tool, "get_code_diff");
+  assert.equal(rawFailure.ok, false);
+  assert.equal(rawFailure.error.code, "tool_execution_failed");
+  assert.doesNotMatch(JSON.stringify(rawFailure), /Users|Bearer|ghp_|STACK|stderr/);
+
+  const safeFailure = new Error("The restricted Git diff operation failed.");
+  safeFailure.code = "git_diff_failed";
+  safeFailure.retryable = false;
+  safeFailure.details = { stage: "patch", exitCode: 1 };
+  const result = codeDiffToolFor({ engineError: safeFailure }).tool({});
+  assert.equal(result.error.code, "git_diff_failed");
+  assert.deepEqual(result.error.details, { stage: "patch", exitCode: 1 });
+  assert.equal(Object.hasOwn(result.error, "stack"), false);
 });
