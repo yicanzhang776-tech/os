@@ -118,7 +118,9 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /只在当前浏览器处理，不上传文件，也不会切换 Git 分支/);
   assert.match(html, /starter \/ solution 对比/);
   assert.match(html, /教学评价与反馈/);
-  assert.match(html, /前往 GitLab 确认提交/);
+  assert.match(html, /提交教学评价/);
+  assert.match(html, /feedback-service-url/);
+  assert.doesNotMatch(html, /前往 GitLab 确认提交/);
   assert.doesNotMatch(html, /这套实验是否真的帮助了你/);
   assert.match(html, /当前实验教学评价五题/);
   assert.match(html, /补充反馈/);
