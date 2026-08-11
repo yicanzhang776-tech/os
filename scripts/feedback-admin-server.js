@@ -9,13 +9,19 @@ const {
   exportMarkdown,
   filterRecords
 } = require("../docs/feedback-admin/admin-model.js");
-const { parseStoredLine } = require("./feedback-server.js");
+const {
+  exportRunCsv,
+  exportRunJson,
+  exportRunMarkdown,
+  filterRunRecords
+} = require("../docs/feedback-admin/run-admin-model.js");
+const { parseStoredLine, parseStoredRunLine } = require("./feedback-server.js");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8891;
 const DEFAULT_DATA_DIR = "feedback-data";
 const publicDir = path.resolve(__dirname, "..", "docs", "feedback-admin");
-const assetNames = ["index.html", "styles.css", "admin-model.js", "app.js"];
+const assetNames = ["index.html", "styles.css", "admin-model.js", "run-admin-model.js", "app.js"];
 
 function parseInteger(value, name, minimum, maximum) {
   const parsed = Number(value);
@@ -89,6 +95,19 @@ function normalizeFilters(searchParams) {
   return { lab, variant, role };
 }
 
+function normalizeRunFilters(searchParams) {
+  const allowedLabs = new Set(["p0", "lab1", "lab2", "lab3", "lab4", "lab5", "lab6", "lab7"]);
+  const allowedRoles = new Set(["starter", "solution", "custom"]);
+  const allowedResults = new Set(["pass", "todo", "fail", "timeout", "finished", "stopped"]);
+  const lab = searchParams.get("lab") || "all";
+  const role = searchParams.get("runRole") || "all";
+  const result = searchParams.get("result") || "all";
+  if (lab !== "all" && !allowedLabs.has(lab)) throw new Error("Unknown Lab filter.");
+  if (role !== "all" && !allowedRoles.has(role)) throw new Error("Unknown run role filter.");
+  if (result !== "all" && !allowedResults.has(result)) throw new Error("Unknown run result filter.");
+  return { lab, role, result };
+}
+
 async function readStoredRecords(dataFile, fileApi = fs.promises) {
   let content = "";
   try {
@@ -100,6 +119,17 @@ async function readStoredRecords(dataFile, fileApi = fs.promises) {
   return content.split(/\r?\n/).filter(Boolean).map(parseStoredLine).filter(Boolean);
 }
 
+async function readStoredRunRecords(dataFile, fileApi = fs.promises) {
+  let content = "";
+  try {
+    content = await fileApi.readFile(dataFile, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  return content.split(/\r?\n/).filter(Boolean).map(parseStoredRunLine).filter(Boolean);
+}
+
 function createFeedbackAdminService(options = {}) {
   const host = options.host || DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
@@ -107,12 +137,17 @@ function createFeedbackAdminService(options = {}) {
   if (port !== 0) parseInteger(port, "port", 1, 65535);
   const dataDir = path.resolve(options.dataDir || DEFAULT_DATA_DIR);
   const dataFile = path.join(dataDir, "feedback.jsonl");
+  const runDataFile = path.join(dataDir, "runs.jsonl");
   const fileApi = options.fileApi || fs.promises;
   const now = options.now || (() => new Date());
   const staticAssets = new Map(assetNames.map((name) => [
     name,
     fs.readFileSync(path.join(publicDir, name))
   ]));
+  staticAssets.set(
+    "event-catalog.js",
+    fs.readFileSync(path.resolve(__dirname, "..", "docs", "interactive-demo", "event-catalog.js"))
+  );
   const mimeTypes = {
     ".css": "text/css; charset=utf-8",
     ".html": "text/html; charset=utf-8",
@@ -135,6 +170,40 @@ function createFeedbackAdminService(options = {}) {
     }
 
     if (requestUrl.pathname.startsWith("/api/")) {
+      const runRoute = requestUrl.pathname === "/api/run-records"
+        || requestUrl.pathname.startsWith("/api/runs/export.");
+      if (runRoute) {
+        let filters;
+        try {
+          filters = normalizeRunFilters(requestUrl.searchParams);
+        } catch (error) {
+          writeJson(response, 400, { ok: false, error: error.message });
+          return;
+        }
+        let records;
+        try {
+          records = filterRunRecords(await readStoredRunRecords(runDataFile, fileApi), filters);
+        } catch (_) {
+          writeJson(response, 500, { ok: false, error: "Run record data could not be read." });
+          return;
+        }
+        if (requestUrl.pathname === "/api/run-records") {
+          writeJson(response, 200, { ok: true, count: records.length, records });
+          return;
+        }
+        if (requestUrl.pathname === "/api/runs/export.json") {
+          writeText(response, 200, exportRunJson(records, now()), "application/json; charset=utf-8", "os-runs.json");
+          return;
+        }
+        if (requestUrl.pathname === "/api/runs/export.csv") {
+          writeText(response, 200, exportRunCsv(records), "text/csv; charset=utf-8", "os-runs.csv");
+          return;
+        }
+        if (requestUrl.pathname === "/api/runs/export.md") {
+          writeText(response, 200, exportRunMarkdown(records, now()), "text/markdown; charset=utf-8", "os-runs.md");
+          return;
+        }
+      }
       let filters;
       try {
         filters = normalizeFilters(requestUrl.searchParams);
@@ -202,7 +271,7 @@ function createFeedbackAdminService(options = {}) {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 
-  return Object.freeze({ server, listen, close, dataDir, dataFile });
+  return Object.freeze({ server, listen, close, dataDir, dataFile, runDataFile });
 }
 
 async function main() {
@@ -228,7 +297,9 @@ module.exports = Object.freeze({
   DEFAULT_PORT,
   createFeedbackAdminService,
   normalizeFilters,
+  normalizeRunFilters,
   parseArgs,
   readStoredRecords,
+  readStoredRunRecords,
   requestHasLocalHost
 });
