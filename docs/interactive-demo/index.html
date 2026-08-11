@@ -565,14 +565,29 @@
             附带当前分支、实验、提交编号和运行状态（不包含代码与日志）
           </label>
 
+          <fieldset class="feedback-submit-settings">
+            <legend>异地提交设置</legend>
+            <div class="feedback-field-grid">
+              <label>
+                反馈服务地址
+                <input id="feedback-service-url" type="url" inputmode="url" maxlength="500" placeholder="https://xxxx.trycloudflare.com" autocomplete="url">
+              </label>
+              <label>
+                邀请码（可选）
+                <input id="feedback-invite-code" type="password" maxlength="128" placeholder="由项目负责人提供" autocomplete="off">
+              </label>
+            </div>
+            <small>地址和邀请码只保存在当前浏览器；邀请码仅作为课堂演示级保护，不会写入导出的评价记录。</small>
+          </fieldset>
+
           <div class="feedback-actions">
             <button class="button" id="feedback-save" type="button">保存本机草稿</button>
             <button class="button" id="feedback-export-md" type="button">导出 Markdown</button>
             <button class="button" id="feedback-export-json" type="button">导出 JSON</button>
-            <button class="button button-primary" id="feedback-submit" type="button">前往 GitLab 确认提交</button>
+            <button class="button button-primary" id="feedback-submit" type="button">提交教学评价</button>
             <button class="text-button feedback-clear" id="feedback-clear" type="button">清空</button>
           </div>
-          <output class="feedback-status" id="feedback-status" aria-live="polite">反馈只保存在当前浏览器，除非你主动导出或确认提交。</output>
+          <output class="feedback-status" id="feedback-status" aria-live="polite">草稿和服务设置保存在当前浏览器；只有点击“提交教学评价”才会发送评价记录。</output>
         </form>
 
         <aside class="feedback-context" aria-labelledby="feedback-context-heading">
@@ -586,8 +601,8 @@
           </dl>
           <ol class="feedback-route">
             <li>先在本机填写并检查内容</li>
-            <li>可导出文件离线提交</li>
-            <li>后续用自己的 GitLab 账号确认发布</li>
+            <li>填写项目负责人提供的服务地址</li>
+            <li>提交失败时保留草稿并稍后重试</li>
           </ol>
           <p class="feedback-privacy">请不要在文本中填写密码、访问令牌或不希望公开的个人信息。</p>
         </aside>
