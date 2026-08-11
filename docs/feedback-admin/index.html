@@ -67,8 +67,57 @@
       <h2 id="comment-title">文字建议</h2>
       <div id="feedback-comments" class="comments"></div>
     </section>
+
+    <section class="panel run-records" aria-labelledby="run-record-title">
+      <h2 id="run-record-title">学生自愿提交的实验运行记录</h2>
+      <p>这里只显示学生明确同意后发送的脱敏结构化记录，不包含源代码、完整终端或串口日志，也不用于自动评分和排名。</p>
+      <div class="run-filters">
+        <label>Lab
+          <select id="run-filter-lab">
+            <option value="all">全部</option>
+            <option value="p0">P0</option>
+            <option value="lab1">Lab1</option><option value="lab2">Lab2</option>
+            <option value="lab3">Lab3</option><option value="lab4">Lab4</option>
+            <option value="lab5">Lab5</option><option value="lab6">Lab6</option>
+            <option value="lab7">Lab7</option>
+          </select>
+        </label>
+        <label>分支角色
+          <select id="run-filter-role">
+            <option value="all">全部</option>
+            <option value="starter">starter</option>
+            <option value="solution">solution</option>
+            <option value="custom">custom</option>
+          </select>
+        </label>
+        <label>最终结果
+          <select id="run-filter-result">
+            <option value="all">全部</option>
+            <option value="pass">PASS</option>
+            <option value="todo">停在 TODO</option>
+            <option value="fail">失败</option>
+            <option value="timeout">QEMU 超时</option>
+            <option value="finished">正常结束</option>
+            <option value="stopped">手动停止</option>
+          </select>
+        </label>
+        <button id="run-refresh" type="button">刷新运行记录</button>
+      </div>
+      <div class="run-export-row">
+        <strong id="run-count">0 条运行记录</strong>
+        <nav aria-label="导出当前运行记录筛选结果">
+          <a id="run-export-json" download>导出 JSON</a>
+          <a id="run-export-csv" download>导出 CSV 摘要</a>
+          <a id="run-export-md" download>导出 Markdown 总结</a>
+        </nav>
+      </div>
+      <output id="run-status" aria-live="polite">正在读取本机脱敏运行记录……</output>
+      <div id="run-record-list" class="run-record-list"></div>
+    </section>
   </main>
   <script src="admin-model.js"></script>
+  <script src="event-catalog.js"></script>
+  <script src="run-admin-model.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
