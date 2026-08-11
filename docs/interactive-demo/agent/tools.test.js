@@ -15,11 +15,13 @@ const {
   createGetQemuEventsTool,
   createGetRunResultTool,
   createReadCodeTool,
+  createRunTestTool,
   createToolFailure,
   parsePorcelainStatus
 } = require("./tools");
 const { TOOL_CONTRACT_VERSION } = require("./policy");
 const { RunStore } = require("./run-store");
+const { TEST_REGISTRY } = require("./test-registry");
 
 const NOW = Date.parse("2026-08-11T10:20:30.000Z");
 
@@ -242,6 +244,61 @@ function snapshotStore(lastCompletedRun, activeRun = null) {
   return {
     getActiveRun: () => activeRun,
     getLastCompletedRun: () => lastCompletedRun
+  };
+}
+
+function runTestToolFor(options = {}) {
+  let contextReads = 0;
+  let preflightCalls = 0;
+  let startCalls = 0;
+  const contexts = options.contexts || [
+    { branch: options.branch || "lab4-starter", commit: options.commit || "abc1234" },
+    { branch: options.branch || "lab4-starter", commit: options.commit || "abc1234" }
+  ];
+  const received = [];
+  const tool = createRunTestTool({
+    registry: options.registry || TEST_REGISTRY,
+    readWorkspaceContext() {
+      const selected = contexts[Math.min(contextReads, contexts.length - 1)];
+      contextReads += 1;
+      if (selected instanceof Error) throw selected;
+      return selected;
+    },
+    readPreflight() {
+      preflightCalls += 1;
+      if (options.preflightError) throw options.preflightError;
+      return options.preflight || {
+        ok: true,
+        checks: [
+          { name: "cargo", ok: true },
+          { name: "Rust target", ok: true },
+          { name: "QEMU", ok: true }
+        ]
+      };
+    },
+    startApprovedRun(input) {
+      startCalls += 1;
+      received.push(input);
+      if (typeof options.startApprovedRun === "function") {
+        return options.startApprovedRun(input, startCalls);
+      }
+      if (options.startError) throw options.startError;
+      return options.started || {
+        started: true,
+        runId: "run-test-1",
+        startedAt: NOW,
+        activeTask: { kind: "agent-test", runId: "run-test-1" }
+      };
+    },
+    requestIdFactory: () => "run-test-generated",
+    now: () => NOW
+  });
+  return {
+    tool,
+    contextReads: () => contextReads,
+    preflightCalls: () => preflightCalls,
+    startCalls: () => startCalls,
+    received
   };
 }
 
@@ -1842,4 +1899,322 @@ test("get_code_diff failures omit stacks, host paths, Git stderr, and tokens", (
   assert.equal(result.error.code, "git_diff_failed");
   assert.deepEqual(result.error.details, { stage: "patch", exitCode: 1 });
   assert.equal(Object.hasOwn(result.error, "stack"), false);
+});
+
+test("run_test starts approved main, starter, and solution tests", () => {
+  const cases = [
+    ["main", "main-lab7-qemu", "lab7", "complete"],
+    ["lab4-starter", "lab4-starter-qemu", "lab4", "starter"],
+    ["lab4-solution", "lab4-solution-qemu", "lab4", "solution"]
+  ];
+  for (const [branch, testId, lab, variant] of cases) {
+    const harness = runTestToolFor({ branch });
+    const result = harness.tool({ testId, lab });
+    assert.equal(result.ok, true, testId);
+    assert.equal(result.data.testId, testId);
+    assert.equal(result.data.lab, lab);
+    assert.equal(harness.contextReads(), 2);
+    assert.equal(harness.preflightCalls(), 1);
+    assert.equal(harness.startCalls(), 1);
+    assert.equal(harness.received[0].approvedTest.variant, variant);
+    assert.equal(harness.received[0].approvedTest, TEST_REGISTRY[testId]);
+  }
+});
+
+test("run_test validates required testId and lab fields before starting", () => {
+  for (const [args, code] of [
+    [{ lab: "lab4" }, "invalid_test_id"],
+    [{ testId: "Lab4 Starter" }, "invalid_test_id"],
+    [{ testId: "lab4-starter-qemu" }, "invalid_lab"],
+    [{ testId: "lab4-starter-qemu", lab: "p0" }, "invalid_lab"],
+    [null, "invalid_tool_input"],
+    [[], "invalid_tool_input"]
+  ]) {
+    const harness = runTestToolFor();
+    const result = harness.tool(args);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, code);
+    assert.equal(harness.preflightCalls(), 0);
+    assert.equal(harness.startCalls(), 0);
+  }
+});
+
+test("run_test rejects unknown tests and testId-to-lab mismatches", () => {
+  const unknownHarness = runTestToolFor();
+  const unknown = unknownHarness.tool({ testId: "lab4-unknown-qemu", lab: "lab4" });
+  assert.equal(unknown.error.code, "unknown_test");
+  assert.equal(unknownHarness.startCalls(), 0);
+
+  const mismatchHarness = runTestToolFor();
+  const mismatch = mismatchHarness.tool({ testId: "lab4-starter-qemu", lab: "lab5" });
+  assert.equal(mismatch.error.code, "lab_mismatch");
+  assert.deepEqual(mismatch.error.details, { requestedLab: "lab5", testLab: "lab4" });
+  assert.equal(mismatchHarness.startCalls(), 0);
+});
+
+test("run_test enforces current lab, variant, and exact branch policies", () => {
+  const wrongLab = runTestToolFor({ branch: "lab5-starter" });
+  assert.equal(wrongLab.tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4"
+  }).error.code, "lab_mismatch");
+
+  const wrongVariant = runTestToolFor({ branch: "lab4-solution" });
+  assert.equal(wrongVariant.tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4"
+  }).error.code, "branch_not_allowed");
+
+  const entry = TEST_REGISTRY["lab4-starter-qemu"];
+  const wrongBranchRegistry = Object.freeze({
+    [entry.testId]: Object.freeze({
+      ...entry,
+      branchPolicy: Object.freeze({ type: "exact", branch: "lab4-approved" })
+    })
+  });
+  const wrongBranch = runTestToolFor({ registry: wrongBranchRegistry });
+  assert.equal(wrongBranch.tool({ testId: entry.testId, lab: "lab4" }).error.code,
+    "branch_not_allowed");
+
+  assert.equal(wrongLab.startCalls(), 0);
+  assert.equal(wrongVariant.startCalls(), 0);
+  assert.equal(wrongBranch.startCalls(), 0);
+});
+
+test("run_test rejects custom, agent-mvp, and demo branches", () => {
+  for (const branch of ["custom-work", "agent-mvp", "interactive-demo-learning-map"]) {
+    const testId = branch === "interactive-demo-learning-map"
+      ? "main-lab7-qemu"
+      : "lab4-starter-qemu";
+    const lab = branch === "interactive-demo-learning-map" ? "lab7" : "lab4";
+    const harness = runTestToolFor({ branch });
+    const result = harness.tool({ testId, lab });
+    assert.equal(result.error.code, "branch_not_allowed", branch);
+    assert.equal(harness.startCalls(), 0);
+  }
+});
+
+test("run_test rejects stale expected branch and commit contexts", () => {
+  for (const invocationContext of [
+    { expectedBranch: "lab4-solution" },
+    { expectedCommit: "old-commit" }
+  ]) {
+    const harness = runTestToolFor();
+    const result = harness.tool({
+      testId: "lab4-starter-qemu",
+      lab: "lab4"
+    }, invocationContext);
+    assert.equal(result.error.code, "context_changed");
+    assert.equal(result.error.retryable, true);
+    assert.equal(harness.contextReads(), 1);
+    assert.equal(harness.startCalls(), 0);
+  }
+});
+
+test("run_test rechecks branch and commit immediately before start", () => {
+  const harness = runTestToolFor({
+    contexts: [
+      { branch: "lab4-starter", commit: "abc1234" },
+      { branch: "lab4-starter", commit: "def5678" }
+    ]
+  });
+  const result = harness.tool({ testId: "lab4-starter-qemu", lab: "lab4" });
+  assert.equal(result.error.code, "context_changed");
+  assert.equal(result.error.retryable, true);
+  assert.deepEqual(result.error.details, {
+    expectedBranch: "lab4-starter",
+    expectedCommit: "abc1234",
+    actualBranch: "lab4-starter",
+    actualCommit: "def5678"
+  });
+  assert.equal(harness.contextReads(), 2);
+  assert.equal(harness.preflightCalls(), 1);
+  assert.equal(harness.startCalls(), 0);
+});
+
+test("run_test explicitly rejects every process and repository execution field", () => {
+  const executionFields = [
+    "command", "args", "cwd", "env", "shell", "timeout", "target",
+    "branch", "ref", "commit", "makeTarget", "cargoTarget", "script",
+    "path", "executable", "marker", "mode", "log"
+  ];
+  const values = [null, "", false];
+  executionFields.forEach((field, index) => {
+    const harness = runTestToolFor();
+    const result = harness.tool({
+      testId: "lab4-starter-qemu",
+      lab: "lab4",
+      [field]: values[index % values.length]
+    });
+    assert.equal(result.error.code, "execution_field_forbidden", field);
+    assert.deepEqual(result.error.details, { field });
+    assert.equal(harness.preflightCalls(), 0, field);
+    assert.equal(harness.startCalls(), 0, field);
+  });
+});
+
+test("run_test rejects ordinary unknown fields without treating them as commands", () => {
+  const harness = runTestToolFor();
+  const result = harness.tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4",
+    extra: true
+  });
+  assert.equal(result.error.code, "invalid_tool_input");
+  assert.deepEqual(result.error.details, { field: "extra" });
+  assert.equal(harness.startCalls(), 0);
+});
+
+test("run_test returns context_unavailable without exposing context reader failures", () => {
+  const unsafe = new Error("C:\\private\\repo API_KEY=secret");
+  unsafe.stack = "STACK C:\\private\\repo";
+  const harness = runTestToolFor({ contexts: [unsafe] });
+  const result = harness.tool({ testId: "lab4-starter-qemu", lab: "lab4" });
+  assert.equal(result.error.code, "context_unavailable");
+  assert.equal(result.error.retryable, true);
+  assert.doesNotMatch(JSON.stringify(result), /private|API_KEY|secret|STACK/);
+  assert.equal(harness.startCalls(), 0);
+});
+
+test("run_test sanitizes preflight failures to safe component names", () => {
+  const harness = runTestToolFor({
+    preflight: {
+      ok: false,
+      checks: [
+        { name: "cargo", ok: false, detail: "C:\\private\\cargo.exe" },
+        { name: "C:\\private\\qemu.exe", ok: false, detail: "API_KEY=secret" },
+        { name: "Rust target", ok: true }
+      ]
+    }
+  });
+  const result = harness.tool({ testId: "lab4-starter-qemu", lab: "lab4" });
+  assert.equal(result.error.code, "preflight_failed");
+  assert.equal(result.error.retryable, true);
+  assert.deepEqual(result.error.details, { missing: ["cargo"] });
+  assert.doesNotMatch(JSON.stringify(result), /private|API_KEY|secret|cargo\.exe/);
+  assert.equal(harness.startCalls(), 0);
+});
+
+test("run_test reports interactive and agent lock conflicts as retryable run_busy", () => {
+  for (const kind of ["interactive-run", "agent-test"]) {
+    const harness = runTestToolFor({
+      started: { started: false, activeTask: { kind, runId: "active-run" } }
+    });
+    const result = harness.tool({ testId: "lab4-starter-qemu", lab: "lab4" });
+    assert.equal(result.error.code, "run_busy");
+    assert.equal(result.error.retryable, true);
+    assert.deepEqual(result.error.details, { activeKind: kind });
+    assert.equal(harness.startCalls(), 1);
+  }
+});
+
+test("run_test converts shared runner failures and malformed starts to run_start_failed", () => {
+  const unsafe = new Error("spawn C:\\private\\qemu.exe API_KEY=secret");
+  unsafe.code = "unsafe_start";
+  unsafe.details = { cwd: "C:\\private" };
+  const thrown = runTestToolFor({ startError: unsafe }).tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4"
+  });
+  assert.equal(thrown.error.code, "run_start_failed");
+  assert.equal(thrown.error.message, "The approved test could not be started.");
+  assert.deepEqual(thrown.error.details, {});
+  assert.doesNotMatch(JSON.stringify(thrown), /private|API_KEY|secret|unsafe_start|qemu\.exe/);
+
+  const malformed = runTestToolFor({ started: { started: true } }).tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4"
+  });
+  assert.equal(malformed.error.code, "run_start_failed");
+});
+
+test("run_test success uses the unified contract and returns only approved fields", () => {
+  const harness = runTestToolFor();
+  const result = harness.tool({
+    testId: "lab4-starter-qemu",
+    lab: "lab4"
+  }, {
+    requestId: "request-run-test",
+    expectedBranch: "lab4-starter",
+    expectedCommit: "abc1234"
+  });
+  assert.equal(result.contractVersion, TOOL_CONTRACT_VERSION);
+  assert.equal(result.tool, "run_test");
+  assert.equal(result.ok, true);
+  assert.equal(result.error, null);
+  assert.deepEqual(Object.keys(result.data), [
+    "runId", "testId", "lab", "status", "startedAt"
+  ]);
+  assert.deepEqual(result.data, {
+    runId: "run-test-1",
+    testId: "lab4-starter-qemu",
+    lab: "lab4",
+    status: "started",
+    startedAt: NOW
+  });
+  assert.deepEqual(result.meta, {
+    requestId: "request-run-test",
+    branch: "lab4-starter",
+    commit: "abc1234",
+    generatedAt: "2026-08-11T10:20:30.000Z"
+  });
+  assert.equal(Object.hasOwn(result.data, "expectedResult"), false);
+  assert.equal(Object.hasOwn(result.data, "events"), false);
+  assert.equal(Object.hasOwn(result.data, "command"), false);
+});
+
+test("run_test passes only a frozen registry entry and verified context to the runner", () => {
+  const harness = runTestToolFor();
+  const result = harness.tool({ testId: "lab4-starter-qemu", lab: "lab4" });
+  assert.equal(result.ok, true);
+  assert.equal(harness.received.length, 1);
+  assert.deepEqual(Object.keys(harness.received[0]).sort(), ["approvedTest", "context"]);
+  assert.equal(harness.received[0].approvedTest, TEST_REGISTRY["lab4-starter-qemu"]);
+  assert.equal(Object.isFrozen(harness.received[0].approvedTest), true);
+  assert.equal(harness.received[0].context.branch, "lab4-starter");
+  assert.equal(harness.received[0].context.commit, "abc1234");
+  for (const field of ["command", "args", "cwd", "env", "shell", "timeout", "target"]) {
+    assert.equal(Object.hasOwn(harness.received[0], field), false);
+  }
+});
+
+test("duplicate run_test requests cannot start a second approved operation", () => {
+  let active = false;
+  let operationStarts = 0;
+  const harness = runTestToolFor({
+    startApprovedRun(_input, callNumber) {
+      if (active) {
+        return {
+          started: false,
+          activeTask: { kind: "agent-test", runId: "run-test-1" }
+        };
+      }
+      active = true;
+      operationStarts += 1;
+      return {
+        started: true,
+        runId: `run-test-${callNumber}`,
+        startedAt: NOW,
+        activeTask: { kind: "agent-test", runId: `run-test-${callNumber}` }
+      };
+    }
+  });
+  const args = { testId: "lab4-starter-qemu", lab: "lab4" };
+  assert.equal(harness.tool(args).ok, true);
+  assert.equal(harness.tool(args).error.code, "run_busy");
+  assert.equal(harness.startCalls(), 2);
+  assert.equal(operationStarts, 1);
+});
+
+test("run_test implementation has no direct spawn, Git mutation, or file write path", () => {
+  const source = fs.readFileSync(path.join(__dirname, "tools.js"), "utf8");
+  const start = source.indexOf("function createRunTestTool");
+  const end = source.indexOf("function createGetContextTool", start);
+  const implementation = source.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.doesNotMatch(implementation, /\bspawn(?:Sync)?\s*\(/);
+  assert.doesNotMatch(implementation, /\bexec(?:File|Sync)?\s*\(/);
+  assert.doesNotMatch(implementation, /\bwriteFile(?:Sync)?\s*\(/);
+  assert.doesNotMatch(implementation, /git\s+(?:checkout|switch|fetch|pull|reset|merge|rebase|add|commit|push)/);
+  assert.doesNotMatch(implementation, /\.acquire\s*\(/);
 });

@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const test = require("node:test");
@@ -52,6 +53,32 @@ function waitForMessage(socket, predicate) {
     socket.addEventListener("message", onMessage);
   });
 }
+
+test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
+  const source = fs.readFileSync(serverPath, "utf8");
+  assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
+  assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
+  assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
+  assert.match(source, /const agentToolDispatch = Object\.freeze\(\{[\s\S]*?get_context: getContextTool,[\s\S]*?run_test: runTestTool/);
+  assert.match(source, /function startAgentApprovedRun\([\s\S]*?startKernelRun\(\{[\s\S]*?taskKind: "agent-test"/);
+  assert.match(source, /requestPath === "\/api\/run"[\s\S]*?startKernelRun\(\{ taskKind: "interactive-run" \}\)/);
+  assert.match(source, /activeTask\?\.kind === "agent-test"\) runLifecycle\.stop\(\)/);
+
+  const runRouteStart = source.indexOf('if (requestPath === "/api/run"');
+  const stopRouteStart = source.indexOf('if (requestPath === "/api/stop"', runRouteStart);
+  const runRoute = source.slice(runRouteStart, stopRouteStart);
+  assert.ok(runRouteStart >= 0 && stopRouteStart > runRouteStart);
+  assert.match(runRoute, /writeJson\(response, 202, \{[\s\S]*?ok: true,[\s\S]*?protocol: EVENT_PROTOCOL,[\s\S]*?context: currentContext,[\s\S]*?target: rustTarget/);
+  assert.doesNotMatch(runRoute, /\brunId\s*:/);
+  assert.match(runRoute, /errorCode: "run_busy"/);
+
+  const agentRunnerStart = source.indexOf("function startAgentApprovedRun");
+  const stopRunStart = source.indexOf("function stopRun", agentRunnerStart);
+  const agentRunner = source.slice(agentRunnerStart, stopRunStart);
+  assert.doesNotMatch(agentRunner, /\bspawn(?:Sync)?\s*\(/);
+  assert.doesNotMatch(agentRunner, /\.acquire\s*\(/);
+  assert.doesNotMatch(agentRunner, /terminateChildProcess/);
+});
 
 test("bridge serves the learning map and turns serial evidence into WebSocket events", {
   timeout: 10000

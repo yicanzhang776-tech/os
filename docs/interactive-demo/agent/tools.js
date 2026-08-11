@@ -13,6 +13,7 @@ const { diagnose } = require("../diagnostics");
 const { createRunRecord } = require("../run-history");
 const { createCodeDiffEngine } = require("./code-diff");
 const { classifySafeUtf8Text, redactSensitiveText } = require("./safe-text");
+const { TEST_REGISTRY } = require("./test-registry");
 const {
   TOOL_CONTRACT_VERSION,
   protectedContextOverride,
@@ -73,6 +74,30 @@ const GET_RUN_RESULT_STORED_FINAL_RESULTS = new Set([
   "qemu-failure",
   "error"
 ]);
+const RUN_TEST_INPUT_FIELDS = new Set(["testId", "lab"]);
+const RUN_TEST_EXECUTION_FIELDS = new Set([
+  "command",
+  "args",
+  "cwd",
+  "env",
+  "shell",
+  "timeout",
+  "target",
+  "branch",
+  "ref",
+  "commit",
+  "makeTarget",
+  "cargoTarget",
+  "script",
+  "path",
+  "executable",
+  "marker",
+  "mode",
+  "log"
+]);
+const RUN_TEST_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const RUN_TEST_LAB_PATTERN = /^lab[1-7]$/;
+const SAFE_PREFLIGHT_COMPONENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/;
 
 class SafeToolError extends Error {
   constructor(code, message, retryable = false, details = {}) {
@@ -793,6 +818,256 @@ function safeDiagnostic(value) {
     : null;
   const title = redactStoredEventText(value.title).slice(0, 200);
   return id && severity && title ? { id, severity, title } : null;
+}
+
+function validateRunTestInput(args) {
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    throw new SafeToolError("invalid_tool_input", "run_test input must be an object.");
+  }
+
+  const fields = Object.keys(args);
+  const executionField = fields.find((field) => RUN_TEST_EXECUTION_FIELDS.has(field));
+  if (executionField) {
+    throw new SafeToolError(
+      "execution_field_forbidden",
+      "run_test cannot accept process, repository, or execution parameters.",
+      false,
+      { field: executionField }
+    );
+  }
+  const unknownField = fields.find((field) => !RUN_TEST_INPUT_FIELDS.has(field));
+  if (unknownField) {
+    throw new SafeToolError(
+      "invalid_tool_input",
+      "run_test input contains an unknown field.",
+      false,
+      { field: unknownField }
+    );
+  }
+  if (typeof args.testId !== "string" || !RUN_TEST_ID_PATTERN.test(args.testId)) {
+    throw new SafeToolError(
+      "invalid_test_id",
+      "testId must be a safe approved-test identifier."
+    );
+  }
+  if (typeof args.lab !== "string" || !RUN_TEST_LAB_PATTERN.test(args.lab)) {
+    throw new SafeToolError("invalid_lab", "lab must be one of lab1 through lab7.");
+  }
+  return { testId: args.testId, lab: args.lab };
+}
+
+function readRunTestContext(readWorkspaceContext) {
+  let raw;
+  try {
+    raw = readWorkspaceContext();
+  } catch (_) {
+    throw new SafeToolError(
+      "context_unavailable",
+      "The workspace branch and commit are unavailable.",
+      true
+    );
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)
+    || !plainBoundedString(raw.branch, 200)
+    || !plainBoundedString(raw.commit, 200)) {
+    throw new SafeToolError(
+      "context_unavailable",
+      "The workspace branch and commit are unavailable.",
+      true
+    );
+  }
+  return {
+    ...resolveTeachingContext(raw.branch),
+    commit: raw.commit
+  };
+}
+
+function safeMissingPreflightComponents(preflight) {
+  if (!preflight || !Array.isArray(preflight.checks)) return [];
+  return preflight.checks
+    .filter((check) => check && check.ok === false
+      && typeof check.name === "string"
+      && SAFE_PREFLIGHT_COMPONENT_PATTERN.test(check.name))
+    .map((check) => check.name)
+    .slice(0, 8);
+}
+
+function createRunTestTool(options = {}) {
+  if (typeof options.readWorkspaceContext !== "function") {
+    throw new TypeError("readWorkspaceContext is required.");
+  }
+  if (typeof options.readPreflight !== "function") {
+    throw new TypeError("readPreflight is required.");
+  }
+  if (typeof options.startApprovedRun !== "function") {
+    throw new TypeError("startApprovedRun is required.");
+  }
+
+  const registry = options.registry === undefined ? TEST_REGISTRY : options.registry;
+  const makeRequestId = options.requestIdFactory || defaultRequestId;
+  const now = options.now || Date.now;
+
+  return function runTest(args = {}, invocationContext = {}) {
+    const tool = "run_test";
+    let actual = { branch: "unknown", commit: "unknown" };
+    let requestId = makeRequestId();
+    const meta = () => ({
+      requestId,
+      branch: actual.branch,
+      commit: actual.commit,
+      generatedAt: new Date(now()).toISOString()
+    });
+
+    try {
+      actual = readRunTestContext(options.readWorkspaceContext);
+
+      const requestIdCheck = validateRequestId(invocationContext?.requestId);
+      if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
+      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+
+      const invocationCheck = validateInvocationContext(invocationContext);
+      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+
+      const input = validateRunTestInput(args);
+      const expectedBranch = invocationCheck.value.expectedBranch;
+      const expectedCommit = invocationCheck.value.expectedCommit;
+      if ((expectedBranch && expectedBranch !== actual.branch)
+        || (expectedCommit && expectedCommit !== actual.commit)) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed before the tool executed.",
+          true,
+          {
+            expectedBranch: expectedBranch || null,
+            expectedCommit: expectedCommit || null,
+            actualBranch: actual.branch,
+            actualCommit: actual.commit
+          }
+        );
+      }
+
+      const approvedTest = registry && typeof registry === "object"
+        && Object.hasOwn(registry, input.testId)
+        ? registry[input.testId]
+        : null;
+      if (!approvedTest) {
+        throw new SafeToolError(
+          "unknown_test",
+          "The requested test is not in the approved test registry."
+        );
+      }
+      if (input.lab !== approvedTest.lab) {
+        throw new SafeToolError(
+          "lab_mismatch",
+          "The requested lab does not match the approved test.",
+          false,
+          { requestedLab: input.lab, testLab: approvedTest.lab }
+        );
+      }
+      if (actual.expectedBranch !== true) {
+        throw new SafeToolError(
+          "branch_not_allowed",
+          "The current branch is not approved for run_test."
+        );
+      }
+      if (actual.lab !== approvedTest.lab) {
+        throw new SafeToolError(
+          "lab_mismatch",
+          "The current teaching context belongs to a different lab.",
+          false,
+          { requestedLab: approvedTest.lab, currentLab: actual.lab }
+        );
+      }
+      if (actual.variant !== approvedTest.variant
+        || approvedTest.branchPolicy?.type !== "exact"
+        || actual.branch !== approvedTest.branchPolicy.branch) {
+        throw new SafeToolError(
+          "branch_not_allowed",
+          "The current branch is not approved for the requested test."
+        );
+      }
+
+      let preflight;
+      try {
+        preflight = options.readPreflight();
+      } catch (_) {
+        throw new SafeToolError(
+          "preflight_failed",
+          "The approved test environment is unavailable.",
+          true,
+          { missing: [] }
+        );
+      }
+      if (!preflight || preflight.ok !== true) {
+        throw new SafeToolError(
+          "preflight_failed",
+          "The approved test environment is unavailable.",
+          true,
+          { missing: safeMissingPreflightComponents(preflight) }
+        );
+      }
+
+      const confirmed = readRunTestContext(options.readWorkspaceContext);
+      if (confirmed.branch !== actual.branch || confirmed.commit !== actual.commit) {
+        throw new SafeToolError(
+          "context_changed",
+          "The workspace branch or commit changed before the test started.",
+          true,
+          {
+            expectedBranch: actual.branch,
+            expectedCommit: actual.commit,
+            actualBranch: confirmed.branch,
+            actualCommit: confirmed.commit
+          }
+        );
+      }
+      actual = confirmed;
+
+      const started = options.startApprovedRun({
+        approvedTest,
+        context: cloneToolSnapshot(actual)
+      });
+      if (started && started.started === false) {
+        const activeKind = typeof started.activeTask?.kind === "string"
+          && /^[a-z][a-z0-9-]{0,39}$/.test(started.activeTask.kind)
+          ? started.activeTask.kind
+          : null;
+        throw new SafeToolError(
+          "run_busy",
+          "Another approved build or QEMU run is already active.",
+          true,
+          { activeKind }
+        );
+      }
+      if (!started || started.started !== true
+        || typeof started.runId !== "string"
+        || !RUN_TEST_ID_PATTERN.test(started.runId)
+        || !Number.isFinite(started.startedAt)) {
+        throw new SafeToolError(
+          "run_start_failed",
+          "The approved test could not be started.",
+          true
+        );
+      }
+
+      return createToolSuccess(tool, {
+        runId: started.runId,
+        testId: approvedTest.testId,
+        lab: approvedTest.lab,
+        status: "started",
+        startedAt: started.startedAt
+      }, meta());
+    } catch (error) {
+      const safe = error instanceof SafeToolError
+        ? error
+        : new SafeToolError(
+          "run_start_failed",
+          "The approved test could not be started.",
+          true
+        );
+      return createToolFailure(tool, safe, meta());
+    }
+  };
 }
 
 function createGetContextTool(options = {}) {
@@ -1522,6 +1797,7 @@ module.exports = {
   createGetQemuEventsTool,
   createGetRunResultTool,
   createReadCodeTool,
+  createRunTestTool,
   createToolFailure,
   createToolResult,
   createToolSuccess,

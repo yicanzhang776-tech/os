@@ -15,7 +15,8 @@ const {
   parseBranchContext,
   parseKernelLine
 } = require("./protocol");
-const { createGetContextTool } = require("./agent/tools");
+const { createGetContextTool, createRunTestTool } = require("./agent/tools");
+const { getApprovedTest } = require("./agent/test-registry");
 const {
   DEFAULT_RUN_TIMEOUTS,
   RunLifecycleManager,
@@ -83,6 +84,15 @@ const runLifecycle = new RunLifecycleManager({
   onRunStarted: handleRunStarted,
   onRunUpdated: handleRunUpdated,
   onRunCompleted: handleRunCompleted
+});
+const runTestTool = createRunTestTool({
+  readWorkspaceContext,
+  readPreflight: readLinuxPreflight,
+  startApprovedRun: startAgentApprovedRun
+});
+const agentToolDispatch = Object.freeze({
+  get_context: getContextTool,
+  run_test: runTestTool
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -455,20 +465,44 @@ function handleRunCompleted(run) {
   console.error(`[demo] ${run.error?.message || "The run failed."}`);
 }
 
-function startRun() {
-  currentContext = readWorkspaceContext();
+function startKernelRun(options = {}) {
+  const taskKind = options.taskKind;
+  if (!["interactive-run", "agent-test"].includes(taskKind)) {
+    throw new TypeError("A server-owned taskKind is required.");
+  }
+  if (taskKind === "agent-test"
+    && (!options.approvedTest
+      || getApprovedTest(options.approvedTest.testId) !== options.approvedTest
+      || options.approvedTest.runner !== "kernel-build-qemu")) {
+    throw new TypeError("An approved registry test is required.");
+  }
+  if (taskKind === "agent-test"
+    && (!options.context
+      || typeof options.context !== "object"
+      || options.context.branch !== options.approvedTest.branchPolicy.branch
+      || options.context.lab !== options.approvedTest.lab
+      || options.context.variant !== options.approvedTest.variant
+      || typeof options.context.commit !== "string"
+      || !options.context.commit)) {
+    throw new TypeError("A verified approved-test context is required.");
+  }
+
+  currentContext = taskKind === "agent-test"
+    ? { ...options.context }
+    : readWorkspaceContext();
   const runId = createRunId();
+  const startedAt = Date.now();
   const kernel = path.join(repoDir, "target", rustTarget, "debug", "ai-os-kernel");
   const started = runLifecycle.start({
     runId,
-    taskKind: "interactive-run",
+    taskKind,
     branch: currentContext.branch,
     commit: currentContext.commit,
     lab: currentContext.lab,
     variant: currentContext.variant,
     target: rustTarget,
     context: currentContext,
-    startedAt: Date.now()
+    startedAt
   }, {
     build: () => streamProcess(
       cargoCommand,
@@ -483,13 +517,33 @@ function startRun() {
       { parseKernel: true, channel: "serial" }
     )
   });
-  if (!started.started) return false;
+  if (!started.started) {
+    return {
+      started: false,
+      runId: null,
+      startedAt: null,
+      activeTask: started.activeTask
+    };
+  }
 
   const trackedPromise = started.promise.finally(() => {
     if (runPromise === trackedPromise) runPromise = null;
   });
   runPromise = trackedPromise;
-  return true;
+  return {
+    started: true,
+    runId,
+    startedAt,
+    activeTask: started.activeTask
+  };
+}
+
+function startAgentApprovedRun({ approvedTest, context }) {
+  return startKernelRun({
+    taskKind: "agent-test",
+    approvedTest,
+    context
+  });
 }
 
 function stopRun() {
@@ -508,6 +562,8 @@ function refreshBranchContext() {
 
   const previous = currentContext;
   currentContext = next;
+  const activeTask = taskLock.getActiveTask();
+  if (activeTask?.kind === "agent-test") runLifecycle.stop();
   if (!taskLock.getActiveTask()) {
     eventHistory.length = 0;
     consoleHistory.length = 0;
@@ -569,7 +625,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (requestPath === "/api/context" && request.method === "GET") {
-    const toolResult = getContextTool({});
+    const toolResult = agentToolDispatch.get_context({});
     if (toolResult.ok) {
       currentContext = {
         branch: toolResult.data.branch,
@@ -613,8 +669,13 @@ const server = http.createServer((request, response) => {
       });
       return;
     }
-    if (!startRun()) {
-      writeJson(response, 409, { ok: false, error: "A build or QEMU run is already active." });
+    const started = startKernelRun({ taskKind: "interactive-run" });
+    if (!started.started) {
+      writeJson(response, 409, {
+        ok: false,
+        error: "A build or QEMU run is already active.",
+        errorCode: "run_busy"
+      });
       return;
     }
     writeJson(response, 202, {
@@ -727,7 +788,7 @@ server.listen(port, host, () => {
     console.log("[demo] Reading serial lines from standard input.");
     bridgeTextStream(process.stdin);
   }
-  if (runKernelOnStart) startRun();
+  if (runKernelOnStart) startKernelRun({ taskKind: "interactive-run" });
 });
 
 function shutdown() {
