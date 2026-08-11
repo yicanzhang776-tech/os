@@ -8,14 +8,19 @@ const path = require("node:path");
 const test = require("node:test");
 const feedback = require("../docs/interactive-demo/feedback.js");
 const adminModel = require("../docs/feedback-admin/admin-model.js");
+const runAdminModel = require("../docs/feedback-admin/run-admin-model.js");
+const { createRunRecord } = require("../docs/interactive-demo/run-history.js");
+const runSubmission = require("../docs/interactive-demo/run-submission.js");
 const {
   canonicalHash
 } = require("./feedback-server.js");
 const {
   createFeedbackAdminService,
   normalizeFilters,
+  normalizeRunFilters,
   parseArgs,
   readStoredRecords,
+  readStoredRunRecords,
   requestHasLocalHost
 } = require("./feedback-admin-server.js");
 
@@ -66,10 +71,48 @@ function storedRecord(options = {}) {
   };
 }
 
+function storedRunRecord(options = {}) {
+  const lab = options.lab || "lab2";
+  const role = options.role || "starter";
+  const internal = createRunRecord({
+    id: options.runId || `${lab}-${role}-admin-run`,
+    context: { branch: `${lab}-${role}`, commit: "abcdef1234567890", lab, variant: role },
+    events: [
+      { protocol: "os-demo.event/v1", lab, step: "start", status: "running", detail: "start", source: "tagged", sequence: 1, timestamp: 1000 },
+      { protocol: "os-demo.event/v1", lab, step: options.result === "todo" ? "task-1-todo" : "pass", status: options.result === "todo" ? "todo" : "pass", detail: "result", source: "tagged", sequence: 2, timestamp: 1200 }
+    ],
+    lifecycle: { buildResult: "success", runResult: "finished", completed: true },
+    startedAt: 1000,
+    endedAt: 1600,
+    exitCode: 0
+  });
+  const run = runSubmission.sanitizeRunRecordForSubmission(internal);
+  const feedbackId = options.feedbackId || null;
+  return {
+    storageVersion: 1,
+    protocol: runSubmission.RUN_SUBMIT_PROTOCOL,
+    receiptId: `RUN-RCPT-${options.suffix || "ADMIN"}`,
+    receivedAt: "2026-08-11T01:04:00.000Z",
+    contentHash: canonicalHash({ run, feedbackId }),
+    feedbackId,
+    run
+  };
+}
+
 async function writeJsonl(dataDir, records) {
   await fs.promises.mkdir(dataDir, { recursive: true });
   await fs.promises.writeFile(
     path.join(dataDir, "feedback.jsonl"),
+    `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
+    "utf8"
+  );
+}
+
+async function writeRunJsonl(dataDir, records) {
+  await fs.promises.mkdir(dataDir, { recursive: true });
+  if (!records.length) return;
+  await fs.promises.writeFile(
+    path.join(dataDir, "runs.jsonl"),
     `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
     "utf8"
   );
@@ -80,9 +123,10 @@ async function request(base, pathname) {
   return { response, text: await response.text() };
 }
 
-async function withAdmin(records, callback) {
+async function withAdmin(records, callback, runRecords = []) {
   const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "os-feedback-admin-test-"));
   await writeJsonl(dataDir, records);
+  await writeRunJsonl(dataDir, runRecords);
   const service = createFeedbackAdminService({
     port: 0,
     dataDir,
@@ -201,4 +245,74 @@ test("admin browser renderer uses textContent and never innerHTML", async () => 
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
   assert.equal(requestHasLocalHost({ headers: { host: "127.0.0.1:8891" } }), true);
   assert.equal(requestHasLocalHost({ headers: { host: "example.com" } }), false);
+});
+
+test("run admin model filters records and resolves event names and knowledge from the catalog", () => {
+  const records = [
+    storedRunRecord({ runId: "starter-one", role: "starter", result: "todo", suffix: "ONE" }),
+    storedRunRecord({ runId: "solution-two", role: "solution", result: "pass", suffix: "TWO", feedbackId: "FDBK-TWO" })
+  ];
+  const filtered = runAdminModel.filterRunRecords(records, { lab: "lab2", role: "solution", result: "pass" });
+  assert.equal(filtered.length, 1);
+  const summary = runAdminModel.summarizeRun(filtered[0]);
+  assert.equal(summary.runId, "solution-two");
+  assert.equal(summary.commit, "abcdef123456");
+  assert.equal(summary.eventCount, 2);
+  assert.equal(summary.feedbackId, "FDBK-TWO");
+  assert.ok(summary.events.every((event) => event.name && event.knowledge));
+  assert.equal(summary.events[1].deltaMs, 200);
+});
+
+test("run admin JSON, CSV and Markdown exports remain text-only summaries", () => {
+  const stored = storedRunRecord({ runId: "export-run", suffix: "EXPORT" });
+  stored.run.events[0].detail = "<img src=x onerror=run()>";
+  const json = runAdminModel.exportRunJson([stored], new Date("2026-08-11T02:00:00Z"));
+  const csv = runAdminModel.exportRunCsv([stored]);
+  const markdown = runAdminModel.exportRunMarkdown([stored], new Date("2026-08-11T02:00:00Z"));
+  assert.equal(JSON.parse(json).protocol, "os-demo.run.collection/v1");
+  assert.match(csv, /^\uFEFF/);
+  assert.match(csv, /runId/);
+  assert.match(markdown, /OS 实验自愿提交运行记录汇总/);
+  assert.doesNotMatch(markdown, /<img|onerror|run\(\)/i);
+});
+
+test("admin server serves run filters, timeline data and three run export formats", async () => {
+  const runs = [
+    storedRunRecord({ runId: "starter-run", role: "starter", result: "todo", suffix: "START" }),
+    storedRunRecord({ runId: "solution-run", role: "solution", result: "pass", suffix: "SOL" })
+  ];
+  await withAdmin([], async ({ base }) => {
+    const page = await request(base, "/");
+    assert.match(page.text, /学生自愿提交的实验运行记录/);
+
+    const filtered = await request(base, "/api/run-records?lab=lab2&runRole=solution&result=pass");
+    assert.equal(filtered.response.status, 200);
+    const body = JSON.parse(filtered.text);
+    assert.equal(body.count, 1);
+    assert.equal(body.records[0].run.runId, "solution-run");
+
+    const json = await request(base, "/api/runs/export.json?runRole=starter");
+    const csv = await request(base, "/api/runs/export.csv?runRole=starter");
+    const markdown = await request(base, "/api/runs/export.md?runRole=starter");
+    assert.equal(JSON.parse(json.text).count, 1);
+    assert.match(csv.response.headers.get("content-type"), /text\/csv/);
+    assert.match(markdown.text, /starter-run/);
+  }, runs);
+});
+
+test("damaged run JSONL and invalid run filters degrade safely", async () => {
+  const dataDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "os-run-admin-lines-"));
+  try {
+    const good = storedRunRecord({ runId: "good-run", suffix: "GOOD" });
+    await fs.promises.writeFile(
+      path.join(dataDir, "runs.jsonl"),
+      `{broken}\n${JSON.stringify(good)}\n${JSON.stringify({ storageVersion: 9 })}\n`,
+      "utf8"
+    );
+    const records = await readStoredRunRecords(path.join(dataDir, "runs.jsonl"));
+    assert.equal(records.length, 1);
+    assert.throws(() => normalizeRunFilters(new URLSearchParams("result=excellent")), /Unknown run result/);
+  } finally {
+    await fs.promises.rm(dataDir, { recursive: true, force: true });
+  }
 });
