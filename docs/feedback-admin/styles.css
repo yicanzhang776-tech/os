@@ -28,8 +28,20 @@ th { color: #52617a; font-size: .82rem; }
 .comments article { padding: 14px; border: 1px solid #e1e7f0; border-radius: 9px; background: #fafcff; }
 .comments h3 { margin: 0 0 10px; font-size: .95rem; }
 .comments p { margin: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-filters { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)) auto; gap: 12px; align-items: end; }
+.run-export-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 18px 0 10px; }
+.run-export-row nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.run-record-list { display: grid; gap: 14px; margin-top: 16px; }
+.run-record-list article { padding: 16px; border: 1px solid #dce4f0; border-radius: 10px; background: #fafcff; }
+.run-record-list h3 { margin: 0 0 10px; overflow-wrap: anywhere; }
+.run-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; padding-left: 20px; }
+.run-event-timeline { display: grid; gap: 7px; padding-left: 24px; }
+.run-event-timeline li { overflow-wrap: anywhere; }
+.run-records output { display: block; color: #5a667a; }
 
 @media (max-width: 760px) {
-  .filters, .export-panel { grid-template-columns: 1fr; }
+  .filters, .export-panel, .run-filters { grid-template-columns: 1fr; }
   .export-panel output, .filters h2 { grid-column: auto; }
+  .run-export-row { align-items: stretch; flex-direction: column; }
+  .run-facts { grid-template-columns: 1fr; }
 }
