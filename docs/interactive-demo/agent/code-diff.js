@@ -23,6 +23,7 @@ const CODE_DIFF_MAX_UNTRACKED_FILES = 20;
 const CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES = 512 * 1024;
 const CODE_DIFF_MAX_SNAPSHOT_TOTAL_BYTES = 8 * 1024 * 1024;
 const CODE_DIFF_MAX_SNAPSHOT_FILES = 512;
+const CODE_DIFF_MAX_INDEX_BYTES = 8 * 1024 * 1024;
 const CODE_DIFF_READ_CHUNK_BYTES = 64 * 1024;
 const CODE_DIFF_DEFAULT_SCOPE = Object.freeze(["kernel/src/"]);
 const CODE_DIFF_INPUT_FIELDS = new Set(["lab", "paths", "contextLines", "maxLines"]);
@@ -848,6 +849,134 @@ function boundedReadSync(fileSystem, fd, maxBytes) {
   return Buffer.concat(chunks, total);
 }
 
+function indexSnapshotError(code, message, stage = "index_snapshot") {
+  return new CodeDiffError(code, message, false, { stage });
+}
+
+function resolveIndexFilePath(fileSystem, repoDir, output) {
+  const value = String(output || "").replace(/\r?\n$/, "");
+  if (!value
+    || value.length > 4096
+    || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw indexSnapshotError(
+      "unsafe_index_file",
+      "The repository index location could not be safely resolved.",
+      "index_path"
+    );
+  }
+  const candidate = path.isAbsolute(value) ? path.normalize(value) : path.resolve(repoDir, value);
+  let stats;
+  try {
+    stats = fileSystem.lstatSync(candidate);
+  } catch (_) {
+    throw indexSnapshotError(
+      "unsafe_index_file",
+      "The repository index could not be safely inspected."
+    );
+  }
+  if (!stats.isFile() || stats.isSymbolicLink()) {
+    throw indexSnapshotError(
+      "unsafe_index_file",
+      "The repository index is not a safe regular file."
+    );
+  }
+  let realPath;
+  try {
+    realPath = fileSystem.realpathSync(candidate);
+  } catch (_) {
+    throw indexSnapshotError(
+      "unsafe_index_file",
+      "The repository index could not be safely resolved."
+    );
+  }
+  if (!isSamePath(candidate, realPath)) {
+    throw indexSnapshotError(
+      "unsafe_index_file",
+      "The repository index contains a linked filesystem component."
+    );
+  }
+  return { candidate, realPath, stats };
+}
+
+function changedIndexError() {
+  return indexSnapshotError(
+    "index_file_changed",
+    "The repository index changed while its safe snapshot was being read."
+  );
+}
+
+function readIndexFileSnapshot(fileSystem, repoDir, output, platform) {
+  const pre = resolveIndexFilePath(fileSystem, repoDir, output);
+  if (pre.stats.size > CODE_DIFF_MAX_INDEX_BYTES) {
+    throw indexSnapshotError(
+      "index_file_too_large",
+      "The repository index exceeds the safe snapshot size limit."
+    );
+  }
+
+  let fd = null;
+  try {
+    let flags = fs.constants.O_RDONLY;
+    if (platform !== "win32" && Number.isInteger(fs.constants.O_NOFOLLOW)) {
+      flags |= fs.constants.O_NOFOLLOW;
+    }
+    try {
+      fd = fileSystem.openSync(pre.candidate, flags);
+    } catch (_) {
+      throw changedIndexError();
+    }
+    let opened;
+    try {
+      opened = fileSystem.fstatSync(fd);
+    } catch (_) {
+      throw changedIndexError();
+    }
+    if (!opened.isFile() || !sameFileState(pre.stats, opened)) throw changedIndexError();
+    if (opened.size > CODE_DIFF_MAX_INDEX_BYTES) {
+      throw indexSnapshotError(
+        "index_file_too_large",
+        "The repository index exceeds the safe snapshot size limit."
+      );
+    }
+
+    let content;
+    try {
+      content = boundedReadSync(fileSystem, fd, CODE_DIFF_MAX_INDEX_BYTES);
+    } catch (_) {
+      throw changedIndexError();
+    }
+    if (content.length > CODE_DIFF_MAX_INDEX_BYTES) {
+      throw indexSnapshotError(
+        "index_file_too_large",
+        "The repository index exceeds the safe snapshot size limit."
+      );
+    }
+
+    let openedAfter;
+    let post;
+    try {
+      openedAfter = fileSystem.fstatSync(fd);
+      post = resolveIndexFilePath(fileSystem, repoDir, output);
+    } catch (_) {
+      throw changedIndexError();
+    }
+    if (!sameFileState(opened, openedAfter)
+      || !sameFileState(openedAfter, post.stats)
+      || !isSamePath(pre.realPath, post.realPath)) {
+      throw changedIndexError();
+    }
+    return content;
+  } finally {
+    if (fd !== null) {
+      try {
+        fileSystem.closeSync(fd);
+      } catch (_) {
+        throw changedIndexError();
+      }
+    }
+  }
+}
+
 function validateTeachingText(content, stage = "current_snapshot") {
   const classification = classifySafeUtf8Text(content);
   if (!classification.ok) {
@@ -1065,6 +1194,90 @@ function createCodeDiffEngine(options = {}) {
     return typeof result.stdout === "string" ? result.stdout : String(result.stdout || "");
   };
 
+  const inspectIsolatedIndex = (repoRealPath, indexSnapshot) => {
+    let cleanupRoot = null;
+    try {
+      const temporaryBase = fileSystem.realpathSync(os.tmpdir());
+      if (isInsideDirectory(repoRealPath, temporaryBase)) {
+        throw indexSnapshotError(
+          "git_diff_failed",
+          "The isolated index base directory is inside the trusted workspace.",
+          "index_isolation"
+        );
+      }
+      const temporaryRoot = makeTemporaryDirectory(
+        path.join(temporaryBase, "os-tutor-index-")
+      );
+      const temporaryStats = fileSystem.lstatSync(temporaryRoot);
+      const temporaryRealPath = fileSystem.realpathSync(temporaryRoot);
+      const safeTemporaryRoot = temporaryStats.isDirectory()
+        && !temporaryStats.isSymbolicLink()
+        && isInsideDirectory(temporaryBase, temporaryRealPath)
+        && !isInsideDirectory(repoRealPath, temporaryRealPath)
+        && path.basename(temporaryRealPath).startsWith("os-tutor-index-");
+      if (safeTemporaryRoot) cleanupRoot = temporaryRealPath;
+      if (!safeTemporaryRoot) {
+        throw indexSnapshotError(
+          "git_diff_failed",
+          "The isolated index context could not be safely created.",
+          "index_isolation"
+        );
+      }
+
+      const temporaryGitDir = path.join(temporaryRealPath, "gitdir");
+      const temporaryIndex = path.join(temporaryRealPath, "index");
+      fileSystem.mkdirSync(path.join(temporaryGitDir, "objects"), {
+        recursive: true,
+        mode: 0o700
+      });
+      fileSystem.mkdirSync(path.join(temporaryGitDir, "refs"), {
+        recursive: true,
+        mode: 0o700
+      });
+      fileSystem.writeFileSync(
+        path.join(temporaryGitDir, "HEAD"),
+        "ref: refs/heads/isolated\n",
+        { encoding: "utf8", flag: "wx", mode: 0o600 }
+      );
+      fileSystem.writeFileSync(temporaryIndex, indexSnapshot, {
+        flag: "wx",
+        mode: 0o600
+      });
+
+      const isolatedEnvironment = {
+        ...environment,
+        GIT_CEILING_DIRECTORIES: temporaryRealPath,
+        GIT_INDEX_FILE: temporaryIndex
+      };
+      return invokeGit([
+        `--git-dir=${temporaryGitDir}`,
+        "--bare",
+        "ls-files",
+        "--stage",
+        "--abbrev=64",
+        "-z",
+        "--",
+        ...CODE_DIFF_DEFAULT_SCOPE
+      ], "index_metadata", {
+        cwd: temporaryRealPath,
+        environment: isolatedEnvironment,
+        repositoryContext: false
+      });
+    } finally {
+      if (cleanupRoot !== null) {
+        try {
+          fileSystem.rmSync(cleanupRoot, { recursive: true, force: true });
+        } catch (_) {
+          throw indexSnapshotError(
+            "git_diff_failed",
+            "The isolated index context could not be safely removed.",
+            "index_snapshot_cleanup"
+          );
+        }
+      }
+    }
+  };
+
   return function inspectCodeDiff(args, workspaceContext) {
     const input = validateCodeDiffInput(args);
     const context = resolveStarterContext(workspaceContext, input.lab);
@@ -1078,6 +1291,18 @@ function createCodeDiffEngine(options = {}) {
       throw new CodeDiffError(
         "baseline_resolution_failed",
         "The starter baseline did not resolve to a valid commit."
+      );
+    }
+
+    let repoRealPath;
+    try {
+      repoRealPath = fileSystem.realpathSync(options.repoDir);
+    } catch (_) {
+      throw new CodeDiffError(
+        "git_diff_failed",
+        "The trusted workspace could not be safely resolved.",
+        false,
+        { stage: "snapshot" }
       );
     }
 
@@ -1099,13 +1324,18 @@ function createCodeDiffEngine(options = {}) {
       "--",
       ...CODE_DIFF_DEFAULT_SCOPE
     ], "head_tree"), "head_tree");
-    const index = parseIndexMetadata(invokeGit([
-      "ls-files",
-      "--stage",
-      "-z",
-      "--",
-      ...CODE_DIFF_DEFAULT_SCOPE
-    ], "index_metadata"));
+    const indexLocation = invokeGit(
+      ["rev-parse", "--git-path", "index"],
+      "index_path",
+      { maxBuffer: 4096 }
+    );
+    const indexSnapshot = readIndexFileSnapshot(
+      fileSystem,
+      repoRealPath,
+      indexLocation,
+      platform
+    );
+    const index = parseIndexMetadata(inspectIsolatedIndex(repoRealPath, indexSnapshot));
     const trackedPaths = [...index.entries.keys()].sort();
     if (trackedPaths.length > CODE_DIFF_MAX_SNAPSHOT_FILES) {
       throw new CodeDiffError(
@@ -1134,17 +1364,6 @@ function createCodeDiffEngine(options = {}) {
       );
     }
 
-    let repoRealPath;
-    try {
-      repoRealPath = fileSystem.realpathSync(options.repoDir);
-    } catch (_) {
-      throw new CodeDiffError(
-        "git_diff_failed",
-        "The trusted workspace could not be safely resolved.",
-        false,
-        { stage: "snapshot" }
-      );
-    }
     const trustedTeachingRoot = resolveTrustedTeachingRoot(fileSystem, repoRealPath);
 
     let cleanupRoot = null;
@@ -1399,6 +1618,7 @@ module.exports = {
   CODE_DIFF_MAX_CAPTURE_BYTES,
   CODE_DIFF_MAX_CONTEXT_LINES,
   CODE_DIFF_MAX_FILES,
+  CODE_DIFF_MAX_INDEX_BYTES,
   CODE_DIFF_MAX_LINES,
   CODE_DIFF_MAX_OMITTED_FILES,
   CODE_DIFF_MAX_PATHS,

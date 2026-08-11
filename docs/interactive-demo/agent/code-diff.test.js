@@ -13,6 +13,7 @@ const {
   CODE_DIFF_DEFAULT_MAX_LINES,
   CODE_DIFF_MAX_BYTES,
   CODE_DIFF_MAX_FILES,
+  CODE_DIFF_MAX_INDEX_BYTES,
   CODE_DIFF_MAX_LINES,
   CODE_DIFF_MAX_PATHS,
   CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES,
@@ -83,6 +84,11 @@ function git(repoDir, args, options = {}) {
     `git ${args.join(" ")} failed: ${String(result.stderr || result.error || "")}`
   );
   return String(result.stdout || "").trim();
+}
+
+function repositoryIndexPath(repoDir) {
+  const value = git(repoDir, ["rev-parse", "--git-path", "index"]);
+  return path.isAbsolute(value) ? path.normalize(value) : path.resolve(repoDir, value);
 }
 
 function createFixture(options = {}) {
@@ -202,6 +208,10 @@ function gitSubcommand(args) {
       index += 2;
       continue;
     }
+    if (args[index] === "--bare" || args[index].startsWith("--git-dir=")) {
+      index += 1;
+      continue;
+    }
     return args[index] || null;
   }
   return null;
@@ -212,8 +222,9 @@ function recordingGit(calls, intercept = null) {
     const call = { program, args: [...args], options };
     calls.push(call);
     const intercepted = intercept?.(call);
-    if (intercepted) return intercepted;
-    return spawnSync(program, args, options);
+    const result = intercepted || spawnSync(program, args, options);
+    call.result = result;
+    return result;
   };
 }
 
@@ -422,6 +433,28 @@ test("an unchanged teaching workspace is clean", () => {
   }
 });
 
+test("isolated index metadata preserves stage-zero mode, full OID, and literal safe names", () => {
+  const fixture = createFixture();
+  try {
+    const relativePath = "kernel/src/literal teaching name.rs";
+    writeFile(fixture.repoDir, relativePath, "pub const ISOLATED_INDEX: bool = true;\n");
+    git(fixture.repoDir, ["add", "--", relativePath]);
+    const objectId = git(fixture.repoDir, ["rev-parse", `:${relativePath}`]);
+    const calls = [];
+    const data = fixture.inspect({}, "lab4-starter", {
+      spawnSync: recordingGit(calls)
+    });
+    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
+    const entries = String(lsFiles.result.stdout || "").split("\0").filter(Boolean);
+    assert.equal(entries.includes(`100644 ${objectId} 0\t${relativePath}`), true);
+    assert.equal(objectId.length, 40);
+    assert.equal(data.student.workspaceDirty, true);
+    assert.deepEqual(data.files, [relativePath]);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("lab1 and lab7 resolve their own refs without cross-lab access", () => {
   const fixture = createFixture();
   try {
@@ -525,12 +558,159 @@ test("unmerged index stages are treated as dirty without replacing filesystem co
         ""
       ].join("\n")
     });
-    const data = fixture.inspect();
+    const calls = [];
+    const data = fixture.inspect({}, "lab4-starter", {
+      spawnSync: recordingGit(calls)
+    });
     assert.equal(data.student.workspaceDirty, true);
     assert.deepEqual(data.files, []);
+    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
+    const entries = String(lsFiles.result.stdout || "").split("\0").filter(Boolean);
+    const conflictEntries = entries.filter((entry) => entry.endsWith(`\t${relativePath}`));
+    assert.deepEqual(conflictEntries, [1, 2, 3].map((stage) => (
+      `100644 ${objectId} ${stage}\t${relativePath}`
+    )));
   } finally {
     fixture.cleanup();
   }
+});
+
+test("repository index snapshots reject unsafe files and always clean isolation", async (t) => {
+  await t.test("index symlink metadata is rejected before open", () => {
+    const fixture = createFixture();
+    try {
+      const indexPath = repositoryIndexPath(fixture.repoDir);
+      let indexOpened = false;
+      const fileSystem = fileSystemWith({
+        lstatSync(candidate) {
+          const stats = fs.lstatSync(candidate);
+          if (path.resolve(candidate) !== path.resolve(indexPath)) return stats;
+          return new Proxy(stats, {
+            get(value, property) {
+              if (property === "isFile") return () => false;
+              if (property === "isSymbolicLink") return () => true;
+              const selected = Reflect.get(value, property);
+              return typeof selected === "function" ? selected.bind(value) : selected;
+            }
+          });
+        },
+        openSync(candidate, flags) {
+          if (path.resolve(candidate) === path.resolve(indexPath)) indexOpened = true;
+          return fs.openSync(candidate, flags);
+        }
+      });
+      assert.equal(
+        errorCode(() => fixture.inspect({}, "lab4-starter", { fileSystem })),
+        "unsafe_index_file"
+      );
+      assert.equal(indexOpened, false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test("oversized index metadata is rejected before open", () => {
+    const fixture = createFixture();
+    try {
+      const indexPath = repositoryIndexPath(fixture.repoDir);
+      let indexOpened = false;
+      const fileSystem = fileSystemWith({
+        lstatSync(candidate) {
+          const stats = fs.lstatSync(candidate);
+          if (path.resolve(candidate) !== path.resolve(indexPath)) return stats;
+          return new Proxy(stats, {
+            get(value, property) {
+              if (property === "size") return CODE_DIFF_MAX_INDEX_BYTES + 1;
+              const selected = Reflect.get(value, property);
+              return typeof selected === "function" ? selected.bind(value) : selected;
+            }
+          });
+        },
+        openSync(candidate, flags) {
+          if (path.resolve(candidate) === path.resolve(indexPath)) indexOpened = true;
+          return fs.openSync(candidate, flags);
+        }
+      });
+      assert.equal(
+        errorCode(() => fixture.inspect({}, "lab4-starter", { fileSystem })),
+        "index_file_too_large"
+      );
+      assert.equal(indexOpened, false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test("index identity replacement between lstat and open is rejected", () => {
+    const fixture = createFixture();
+    try {
+      const indexPath = repositoryIndexPath(fixture.repoDir);
+      const original = path.join(path.dirname(indexPath), "index.original");
+      const replacement = path.join(path.dirname(indexPath), "index.replacement");
+      fs.copyFileSync(indexPath, replacement);
+      let replaced = false;
+      const fileSystem = fileSystemWith({
+        openSync(candidate, flags) {
+          if (!replaced && path.resolve(candidate) === path.resolve(indexPath)) {
+            replaced = true;
+            fs.renameSync(indexPath, original);
+            fs.renameSync(replacement, indexPath);
+          }
+          return fs.openSync(candidate, flags);
+        }
+      });
+      const error = captureError(() => fixture.inspect({}, "lab4-starter", { fileSystem }));
+      assert.equal(error.code, "index_file_changed");
+      assert.equal(replaced, true);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test("successful index and diff temporary contexts are removed", () => {
+    const fixture = createFixture();
+    const temporary = temporaryDirectoryTracker();
+    try {
+      fixture.inspect({}, "lab4-starter", {
+        temporaryDirectoryFactory: temporary.factory
+      });
+      assert.equal(
+        temporary.roots.some((root) => path.basename(root).startsWith("os-tutor-index-")),
+        true
+      );
+      temporary.assertCleaned();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test("index isolation cleanup failure is stable and path-free", () => {
+    const fixture = createFixture();
+    let indexRoot = null;
+    let cleanupFailed = false;
+    try {
+      const fileSystem = fileSystemWith({
+        rmSync(candidate, options) {
+          if (!cleanupFailed && path.basename(candidate).startsWith("os-tutor-index-")) {
+            cleanupFailed = true;
+            indexRoot = candidate;
+            throw new Error("cleanup failure with private temp path");
+          }
+          return fs.rmSync(candidate, options);
+        }
+      });
+      const error = captureError(() => fixture.inspect({}, "lab4-starter", { fileSystem }));
+      assert.equal(error.code, "git_diff_failed");
+      assert.equal(error.details.stage, "index_snapshot_cleanup");
+      assert.doesNotMatch(JSON.stringify(error), /os-tutor-index-|private temp path|[A-Za-z]:\\/);
+      assert.equal(cleanupFailed, true);
+    } finally {
+      if (indexRoot && fs.existsSync(indexRoot)) {
+        fs.rmSync(indexRoot, { recursive: true, force: true });
+      }
+      fixture.cleanup();
+    }
+  });
 });
 
 test("current file and ancestor symlinks or junctions are rejected", async (t) => {
@@ -807,15 +987,25 @@ test("bounded fd reads enforce growing-file and cumulative snapshot limits", asy
       const target = path.join(fixture.repoDir, "kernel", "src", "lib.rs");
       let grew = false;
       let bytesRead = 0;
+      const targetDescriptors = new Set();
       const fileSystem = fileSystemWith({
+        openSync(candidate, flags) {
+          const fd = fs.openSync(candidate, flags);
+          if (path.resolve(candidate) === path.resolve(target)) targetDescriptors.add(fd);
+          return fd;
+        },
         readSync(fd, buffer, offset, length, position) {
-          if (!grew) {
+          if (targetDescriptors.has(fd) && !grew) {
             grew = true;
             fs.appendFileSync(target, Buffer.alloc(CODE_DIFF_MAX_SNAPSHOT_FILE_BYTES + 1, 0x61));
           }
           const count = fs.readSync(fd, buffer, offset, length, position);
-          bytesRead += count;
+          if (targetDescriptors.has(fd)) bytesRead += count;
           return count;
+        },
+        closeSync(fd) {
+          targetDescriptors.delete(fd);
+          return fs.closeSync(fd);
         }
       });
       const error = captureError(() => fixture.inspect({}, "lab4-starter", {
@@ -843,11 +1033,21 @@ test("bounded fd reads enforce growing-file and cumulative snapshot limits", asy
       }
       git(fixture.repoDir, ["add", "kernel/src"]);
       let bytesRead = 0;
+      const targetDescriptors = new Set();
       const fileSystem = fileSystemWith({
+        openSync(candidate, flags) {
+          const fd = fs.openSync(candidate, flags);
+          if (path.basename(candidate).startsWith("large_")) targetDescriptors.add(fd);
+          return fd;
+        },
         readSync(fd, buffer, offset, length, position) {
           const count = fs.readSync(fd, buffer, offset, length, position);
-          bytesRead += count;
+          if (targetDescriptors.has(fd)) bytesRead += count;
           return count;
+        },
+        closeSync(fd) {
+          targetDescriptors.delete(fd);
+          return fs.closeSync(fd);
         }
       });
       const error = captureError(() => fixture.inspect({}, "lab4-starter", {
@@ -1138,11 +1338,34 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
       GIT_CONFIG_VALUE_0: "unsafe-helper",
       UNSAFE_TOKEN: "must-not-be-inherited"
     };
+    const realIndex = repositoryIndexPath(fixture.repoDir);
+    const expectedIndexSnapshot = fs.readFileSync(realIndex);
+    let isolatedIndexObserved = false;
     const data = fixture.inspect({ contextLines: 5 }, "lab4-starter", {
-      spawnSync: recordingGit(calls),
+      spawnSync: recordingGit(calls, (call) => {
+        if (gitSubcommand(call.args) !== "ls-files") return null;
+        isolatedIndexObserved = true;
+        const gitDirArgument = call.args.find((value) => value.startsWith("--git-dir="));
+        assert.notEqual(gitDirArgument, undefined);
+        const temporaryGitDir = gitDirArgument.slice("--git-dir=".length);
+        const temporaryIndex = call.options.env.GIT_INDEX_FILE;
+        assert.equal(call.args.includes("--bare"), true);
+        assert.equal(isInsideDirectory(fixture.repoDir, call.options.cwd), false);
+        assert.equal(isInsideDirectory(fixture.repoDir, temporaryGitDir), false);
+        assert.equal(isInsideDirectory(fixture.repoDir, temporaryIndex), false);
+        assert.notEqual(path.resolve(temporaryIndex), path.resolve(realIndex));
+        assert.deepEqual(fs.readFileSync(temporaryIndex), expectedIndexSnapshot);
+        assert.equal(fs.existsSync(path.join(temporaryGitDir, "config")), false);
+        assert.equal(fs.existsSync(path.join(temporaryGitDir, "config.worktree")), false);
+        assert.equal(fs.existsSync(path.join(temporaryGitDir, "hooks")), false);
+        assert.equal(fs.existsSync(path.join(temporaryGitDir, "info", "attributes")), false);
+        assert.equal(fs.existsSync(path.join(call.options.cwd, ".gitattributes")), false);
+        return null;
+      }),
       processEnv: inherited
     });
     assert.deepEqual(data.files, ["kernel/src/lib.rs"]);
+    assert.equal(isolatedIndexObserved, true);
     assert.ok(calls.length >= 6);
     for (const call of calls) {
       assert.equal(call.program, "git");
@@ -1157,7 +1380,10 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
       assert.equal(call.options.env.GIT_CONFIG_NOSYSTEM, "1");
       assert.equal(call.options.env.GIT_DIR, undefined);
       assert.equal(call.options.env.GIT_WORK_TREE, undefined);
-      assert.equal(call.options.env.GIT_INDEX_FILE, undefined);
+      assert.equal(
+        call.options.env.GIT_INDEX_FILE === undefined,
+        gitSubcommand(call.args) !== "ls-files"
+      );
       assert.equal(call.options.env.GIT_CONFIG_COUNT, undefined);
       assert.equal(call.options.env.UNSAFE_TOKEN, undefined);
     }
@@ -1172,11 +1398,22 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
     const whitelist = new Set(["rev-parse", "ls-tree", "ls-files", "cat-file", "diff"]);
     assert.equal(subcommands.every((subcommand) => whitelist.has(subcommand)), true);
     assert.deepEqual([...new Set(subcommands)].sort(), [...whitelist].sort());
+    const realRepositorySubcommands = calls
+      .filter((call) => path.resolve(call.options.cwd) === path.resolve(fixture.repoDir))
+      .map((call) => gitSubcommand(call.args));
+    assert.equal(realRepositorySubcommands.includes("ls-files"), false);
+    assert.equal(
+      realRepositorySubcommands.every((subcommand) => (
+        new Set(["rev-parse", "ls-tree", "cat-file"]).has(subcommand)
+      )),
+      true
+    );
     const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
     assert.deepEqual(lsFiles.args.slice(lsFiles.args.indexOf("ls-files")), [
-      "ls-files", "--stage", "-z", "--", "kernel/src/"
+      "ls-files", "--stage", "--abbrev=64", "-z", "--", "kernel/src/"
     ]);
     assert.equal(lsFiles.options.shell, false);
+    assert.equal(fs.existsSync(lsFiles.options.cwd), false);
     const isolatedDiff = calls.find((call) => gitSubcommand(call.args) === "diff");
     assert.notEqual(path.resolve(isolatedDiff.options.cwd), path.resolve(fixture.repoDir));
     assert.equal(isolatedDiff.args.includes("--no-index"), true);
@@ -1194,15 +1431,7 @@ test("every Git child uses literal argv, safe config, safe environment, and shel
 test("the exact production ls-files argv does not execute fsmonitor or clean filters", () => {
   const fixture = createFixture();
   try {
-    const calls = [];
-    fixture.inspect({}, "lab4-starter", { spawnSync: recordingGit(calls) });
-    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
-    assert.notEqual(lsFiles, undefined);
-    assert.deepEqual(lsFiles.args.slice(lsFiles.args.indexOf("ls-files")), [
-      "ls-files", "--stage", "-z", "--", "kernel/src/"
-    ]);
-    assert.equal(lsFiles.options.shell, false);
-
+    const context = fixture.context();
     const markers = {
       repositoryFsmonitor: path.join(fixture.repoDir, "ls-files-fsmonitor-helper-ran.txt"),
       repositoryCleanFilter: path.join(fixture.repoDir, "ls-files-clean-filter-ran.txt")
@@ -1213,8 +1442,29 @@ test("the exact production ls-files argv does not execute fsmonitor or clean fil
     git(fixture.repoDir, ["config", "filter.danger.clean", cleanFilterHelper]);
     writeFile(fixture.repoDir, ".gitattributes", "*.rs diff=danger filter=danger\n");
     clearAndAssertMarkers(markers);
-    const result = spawnSync(lsFiles.program, lsFiles.args, lsFiles.options);
-    assert.equal(result.status, 0, String(result.stderr || result.error || ""));
+    const calls = [];
+    const guardedSpawn = (program, args, options) => {
+      const call = { program, args: [...args], options };
+      calls.push(call);
+      if (gitSubcommand(args) === "ls-files") assertMarkersAbsent(markers);
+      const result = spawnSync(program, args, options);
+      call.result = result;
+      if (gitSubcommand(args) === "ls-files") assertMarkersAbsent(markers);
+      return result;
+    };
+    const data = createCodeDiffEngine({
+      repoDir: fixture.repoDir,
+      spawnSync: guardedSpawn
+    })({}, context);
+    assert.deepEqual(data.files, []);
+    const lsFiles = calls.find((call) => gitSubcommand(call.args) === "ls-files");
+    assert.notEqual(lsFiles, undefined);
+    assert.deepEqual(lsFiles.args.slice(lsFiles.args.indexOf("ls-files")), [
+      "ls-files", "--stage", "--abbrev=64", "-z", "--", "kernel/src/"
+    ]);
+    assert.equal(lsFiles.options.shell, false);
+    assert.notEqual(path.resolve(lsFiles.options.cwd), path.resolve(fixture.repoDir));
+    assert.equal(fs.existsSync(lsFiles.options.cwd), false);
     assertMarkersAbsent(markers);
   } finally {
     fixture.cleanup();
