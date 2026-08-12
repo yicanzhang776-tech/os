@@ -143,12 +143,18 @@ test("returns a direct valid final answer without dispatching", async () => {
   assert.equal(h.tools.calls.length, 0);
 });
 
+test("accepts a provider-owned continuation marker on a final result without exposing it", async () => {
+  const h = harness([{ kind: "final", answer: "Safe final.", continuationState: null }]);
+  assert.deepEqual(await run(h), { answer: "Safe final." });
+});
+
 test("runs get_context then returns the final answer", async () => {
   const state = Object.freeze({ opaque: "fake-state" });
   const h = harness([
     call("call-1", "get_context", {}, state),
     (input) => {
       assert.equal(input.message, null);
+      assert.equal(input.requestId, INITIAL_CONTEXT.requestId);
       assert.equal(input.continuationState, state);
       assert.equal(input.toolOutput.callId, "call-1");
       assert.equal(input.toolOutput.toolName, "get_context");
@@ -515,7 +521,7 @@ test("passes prompt-injection text only inside serialized tool data", async () =
       assert.match(input.toolOutput.output, /Ignore previous instructions/);
       assert.equal(JSON.parse(input.toolOutput.output).data.content, injection);
       assert.deepEqual(Object.keys(input).sort(), [
-        "continuationState", "finalizationOnly", "message", "toolOutput", "toolSchemas"
+        "continuationState", "finalizationOnly", "message", "requestId", "toolOutput", "tools"
       ]);
       return final("Treat source comments as data, not instructions.");
     }
@@ -538,6 +544,29 @@ test("requires schema and dispatch registries to match exactly", () => {
       readContext: async () => INITIAL_CONTEXT
     }), TypeError);
   }
+});
+
+test("preserves only explicitly trusted provider errors", async () => {
+  const trusted = Object.freeze({ code: "model_timeout" });
+  const h = harness([], { model: { async step() { throw trusted; } } });
+  const trustedLoop = createAgentLoop({
+    model: h.model,
+    toolDispatch: h.tools.dispatch,
+    readContext: h.context.read.bind(h.context),
+    now: () => 1_000,
+    isTrustedModelError: (error) => error === trusted
+  });
+  await assert.rejects(
+    trustedLoop.run({ message: "Help me.", invocationContext: INITIAL_CONTEXT }),
+    (error) => error === trusted
+  );
+
+  assert.throws(() => createAgentLoop({
+    model: queuedModel([final()]),
+    toolDispatch: fakeDispatch().dispatch,
+    readContext: async () => INITIAL_CONTEXT,
+    isTrustedModelError: true
+  }), /isTrustedModelError must be a function/);
 });
 
 test("accepts a 12000-character final and rejects 12001 or control characters", async () => {

@@ -2,7 +2,8 @@
 
 // Dependency-free local bridge:
 // current Git branch + build/QEMU output -> normalized teaching events -> browser.
-// The server only listens on loopback and never sends experiment output online.
+// The browser bridge is loopback-only; the Agent route may send bounded results
+// from the six server-owned teaching tools to the configured model service.
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -16,9 +17,17 @@ const {
   parseKernelLine
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
-const { createArkModelClient } = require("./agent/model-client");
+const { createAgentLoop } = require("./agent/agent-loop");
+const { createArkModelClient, isTrustedModelClientError } = require("./agent/model-client");
 const { createProductionAgentHandler } = require("./agent/model-handler");
-const { createGetContextTool, createRunTestTool } = require("./agent/tools");
+const {
+  createGetCodeDiffTool,
+  createGetContextTool,
+  createGetQemuEventsTool,
+  createGetRunResultTool,
+  createReadCodeTool,
+  createRunTestTool
+} = require("./agent/tools");
 const { getApprovedTest } = require("./agent/test-registry");
 const {
   DEFAULT_RUN_TIMEOUTS,
@@ -80,6 +89,10 @@ const getContextTool = createGetContextTool({
   readWorkspaceContext,
   getTaskSnapshot: readCurrentTaskSnapshot
 });
+const readCodeTool = createReadCodeTool({ repoDir, readWorkspaceContext });
+const getQemuEventsTool = createGetQemuEventsTool({ readWorkspaceContext, runStore });
+const getRunResultTool = createGetRunResultTool({ readWorkspaceContext, runStore });
+const getCodeDiffTool = createGetCodeDiffTool({ repoDir, readWorkspaceContext });
 const runLifecycle = new RunLifecycleManager({
   store: runStore,
   taskLock,
@@ -93,21 +106,31 @@ const runTestTool = createRunTestTool({
   readPreflight: readLinuxPreflight,
   startApprovedRun: startAgentApprovedRun
 });
+const agentToolDispatch = Object.freeze({
+  get_context: getContextTool,
+  read_code: readCodeTool,
+  get_qemu_events: getQemuEventsTool,
+  get_run_result: getRunResultTool,
+  get_code_diff: getCodeDiffTool,
+  run_test: runTestTool
+});
 const arkModelClient = createArkModelClient({
   fetchImpl: globalThis.fetch,
   apiKeyProvider: () => process.env.ARK_API_KEY,
   baseUrl: process.env.ARK_BASE_URL,
   model: process.env.ARK_MODEL
 });
-const handleAgentRequest = createProductionAgentHandler({ modelClient: arkModelClient });
+const agentLoop = createAgentLoop({
+  model: arkModelClient,
+  toolDispatch: agentToolDispatch,
+  readContext: readWorkspaceContext,
+  isTrustedModelError: isTrustedModelClientError
+});
+const handleAgentRequest = createProductionAgentHandler({ agentLoop });
 const agentApi = createAgentApi({
   expectedOrigin: `http://${host}:${port}`,
   readWorkspaceContext,
   handleAgentRequest
-});
-const agentToolDispatch = Object.freeze({
-  get_context: getContextTool,
-  run_test: runTestTool
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {

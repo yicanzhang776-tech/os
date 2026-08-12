@@ -1,6 +1,7 @@
 "use strict";
 
 const { AgentApiError } = require("./api");
+const { isTrustedAgentLoopError } = require("./agent-loop");
 const { isTrustedModelClientError } = require("./model-client");
 
 const MODEL_ERROR_CODES = new Set([
@@ -14,25 +15,28 @@ const MODEL_ERROR_CODES = new Set([
   "model_invalid_response",
   "model_internal_error"
 ]);
+const DIRECT_AGENT_ERROR_CODES = new Set(["context_changed", "context_unavailable"]);
 
 function createProductionAgentHandler(options = {}) {
-  const modelClient = options.modelClient;
-  if (!modelClient || typeof modelClient.respond !== "function") {
-    throw new TypeError("modelClient.respond is required.");
+  const agentLoop = options.agentLoop;
+  if (!agentLoop || typeof agentLoop.run !== "function") {
+    throw new TypeError("agentLoop.run is required.");
   }
 
   return async function handleAgentRequest(input = {}) {
     try {
-      const answer = await modelClient.respond({
+      return await agentLoop.run({
         message: input.message,
-        requestId: input.invocationContext?.requestId
+        invocationContext: input.invocationContext
       });
-      return { answer };
     } catch (error) {
       if (isTrustedModelClientError(error) && MODEL_ERROR_CODES.has(error.code)) {
         throw new AgentApiError(error.code);
       }
-      throw new AgentApiError("model_internal_error");
+      if (isTrustedAgentLoopError(error) && DIRECT_AGENT_ERROR_CODES.has(error.code)) {
+        throw new AgentApiError(error.code);
+      }
+      throw new AgentApiError("agent_internal_error");
     }
   };
 }

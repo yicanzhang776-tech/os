@@ -57,15 +57,17 @@ function waitForMessage(socket, predicate) {
 test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
   const source = fs.readFileSync(serverPath, "utf8");
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
-  assert.match(source, /const \{ createArkModelClient \} = require\("\.\/agent\/model-client"\)/);
+  assert.match(source, /const \{ createAgentLoop \} = require\("\.\/agent\/agent-loop"\)/);
+  assert.match(source, /const \{ createArkModelClient, isTrustedModelClientError \} = require\("\.\/agent\/model-client"\)/);
   assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
   assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
-  assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ modelClient: arkModelClient \}\)/);
+  assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
+  assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ agentLoop \}\)/);
   assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
   assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
   assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
   assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
-  assert.match(source, /const agentToolDispatch = Object\.freeze\(\{[\s\S]*?get_context: getContextTool,[\s\S]*?run_test: runTestTool/);
+  assert.match(source, /const agentToolDispatch = Object\.freeze\(\{[\s\S]*?get_context: getContextTool,[\s\S]*?read_code: readCodeTool,[\s\S]*?get_qemu_events: getQemuEventsTool,[\s\S]*?get_run_result: getRunResultTool,[\s\S]*?get_code_diff: getCodeDiffTool,[\s\S]*?run_test: runTestTool/);
   assert.match(source, /function startAgentApprovedRun\([\s\S]*?startKernelRun\(\{[\s\S]*?taskKind: "agent-test"/);
   assert.match(source, /requestPath === "\/api\/run"[\s\S]*?startKernelRun\(\{ taskKind: "interactive-run" \}\)/);
   assert.match(source, /activeTask\?\.kind === "agent-test"\) runLifecycle\.stop\(\)/);

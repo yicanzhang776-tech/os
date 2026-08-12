@@ -19,6 +19,17 @@ const {
 
 const FAKE_KEY = "fake-test-key-123";
 const REQUEST = Object.freeze({ message: "Why did the page fault repeat?", requestId: "agent-test-1" });
+const TOOLS = Object.freeze([Object.freeze({
+  type: "function",
+  name: "get_context",
+  description: "Read the trusted context.",
+  parameters: Object.freeze({
+    type: "object",
+    properties: Object.freeze({}),
+    required: Object.freeze([]),
+    additionalProperties: false
+  })
+})]);
 
 function jsonResponse(value, options = {}) {
   const body = options.raw === true ? value : JSON.stringify(value);
@@ -34,6 +45,31 @@ function modelOutput(...parts) {
       type: "message",
       role: "assistant",
       content: parts.map((text) => ({ type: "output_text", text }))
+    }]
+  };
+}
+
+function stepInput(overrides = {}) {
+  return {
+    requestId: REQUEST.requestId,
+    message: REQUEST.message,
+    tools: TOOLS,
+    continuationState: null,
+    toolOutput: null,
+    finalizationOnly: false,
+    ...overrides
+  };
+}
+
+function functionCallResponse(overrides = {}) {
+  return {
+    id: "resp-test-1",
+    output: [{
+      type: "function_call",
+      name: "get_context",
+      call_id: "call-test-1",
+      arguments: "{}",
+      ...overrides
     }]
   };
 }
@@ -98,11 +134,159 @@ test("the API key provider is read exactly once during client initialization", a
     }
   });
   assert.equal(providerCalls, 1);
-  assert.deepEqual(Object.keys(client), ["respond"]);
+  assert.deepEqual(Object.keys(client), ["respond", "step"]);
   assert.equal(await client.respond(REQUEST), "ok");
   assert.equal(await client.respond(REQUEST), "ok");
   assert.equal(providerCalls, 1);
   assert.equal(fetchCalls, 2);
+});
+
+test("step returns a final answer while keeping reasoning hidden", async () => {
+  const client = clientWith(async () => jsonResponse({
+    id: "resp-final-1",
+    output: [
+      { type: "reasoning", summary: [{ type: "summary_text", text: "hidden" }] },
+      ...modelOutput("step answer").output
+    ]
+  }));
+  assert.deepEqual(await client.step(stepInput()), {
+    kind: "final",
+    answer: "step answer",
+    continuationState: null
+  });
+});
+
+test("step parses one function call and ignores intermediate assistant text", async () => {
+  let captured;
+  const client = clientWith(async (_url, options) => {
+    captured = JSON.parse(options.body);
+    return jsonResponse({
+      id: "resp-call-1",
+      output: [
+        ...modelOutput("I will inspect it.").output,
+        { type: "reasoning", summary: [{ type: "summary_text", text: "hidden" }] },
+        {
+          type: "function_call",
+          name: "get_context",
+          call_id: "call-1",
+          arguments: "{\"observe\":true}"
+        }
+      ]
+    });
+  });
+  const result = await client.step(stepInput());
+  assert.equal(result.kind, "tool_call");
+  assert.equal(result.callId, "call-1");
+  assert.equal(result.toolName, "get_context");
+  assert.deepEqual(result.arguments, { observe: true });
+  assert.equal(Object.isFrozen(result.continuationState), true);
+  assert.equal(captured.input, REQUEST.message);
+  assert.deepEqual(captured.tools, TOOLS);
+  assert.equal(Object.hasOwn(captured, "previous_response_id"), false);
+  assert.equal(Object.hasOwn(captured, "parallel_tool_calls"), false);
+  assert.equal(Object.hasOwn(captured.tools[0], "strict"), false);
+  assert.doesNotMatch(JSON.stringify(result), /I will inspect|hidden/);
+});
+
+test("step uses previous_response_id and one matching function_call_output", async () => {
+  const bodies = [];
+  const responses = [
+    functionCallResponse(),
+    { id: "resp-test-2", output: modelOutput("Context received.").output }
+  ];
+  const client = clientWith(async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return jsonResponse(responses.shift());
+  });
+  const first = await client.step(stepInput());
+  const output = JSON.stringify({
+    contractVersion: "os-tutor.tool/v1",
+    tool: "get_context",
+    ok: true,
+    data: { branch: "lab4-starter" },
+    error: null,
+    meta: {}
+  });
+  const second = await client.step(stepInput({
+    message: null,
+    continuationState: first.continuationState,
+    toolOutput: { callId: first.callId, toolName: first.toolName, output }
+  }));
+  assert.equal(second.kind, "final");
+  assert.equal(second.answer, "Context received.");
+  assert.equal(bodies[1].previous_response_id, "resp-test-1");
+  assert.deepEqual(bodies[1].input, [{
+    type: "function_call_output",
+    call_id: "call-test-1",
+    output
+  }]);
+  assert.deepEqual(bodies[1].tools, TOOLS);
+});
+
+test("step rejects wrong call_id and untrusted continuation state before fetch", async () => {
+  let fetchCalls = 0;
+  const responses = [functionCallResponse()];
+  const client = clientWith(async () => {
+    fetchCalls += 1;
+    return jsonResponse(responses.shift());
+  });
+  const first = await client.step(stepInput());
+  const safeOutput = JSON.stringify({ ok: true });
+  await expectModelError(client.step(stepInput({
+    message: null,
+    continuationState: first.continuationState,
+    toolOutput: { callId: "wrong", toolName: first.toolName, output: safeOutput }
+  })), "model_invalid_response");
+  await expectModelError(client.step(stepInput({
+    message: null,
+    continuationState: {
+      previousResponseId: "resp-test-1",
+      expectedCallId: first.callId,
+      expectedToolName: first.toolName
+    },
+    toolOutput: { callId: first.callId, toolName: first.toolName, output: safeOutput }
+  })), "model_invalid_response");
+  assert.equal(fetchCalls, 1);
+});
+
+test("step rejects malformed arguments, missing response id, and multiple calls", async (t) => {
+  const cases = [
+    ["malformed JSON", functionCallResponse({ arguments: "{" })],
+    ["array arguments", functionCallResponse({ arguments: "[]" })],
+    ["oversized arguments", functionCallResponse({ arguments: `{"x":"${"x".repeat(17 * 1024)}"}` })],
+    ["missing response id", { output: functionCallResponse().output }],
+    ["blank response id", { ...functionCallResponse(), id: "   " }],
+    ["blank call id", functionCallResponse({ call_id: "   " })],
+    ["multiple calls", {
+      id: "resp-multiple",
+      output: [
+        functionCallResponse().output[0],
+        { ...functionCallResponse().output[0], call_id: "call-2" }
+      ]
+    }]
+  ];
+  for (const [name, body] of cases) {
+    await t.test(name, () => expectModelError(
+      clientWith(async () => jsonResponse(body)).step(stepInput()),
+      "model_invalid_response"
+    ));
+  }
+});
+
+test("step rejects unexpected action items without mapping them to local tools", async (t) => {
+  for (const item of [
+    { type: "computer_call", call_id: "c" },
+    { type: "web_search_call", id: "w" },
+    { type: "shell_call", call_id: "s" },
+    { type: "custom_tool_call", name: "get_context" },
+    { type: "mcp_call", name: "get_context" }
+  ]) {
+    await t.test(item.type, () => expectModelError(
+      clientWith(async () => jsonResponse({ id: "resp-action", output: [item] }))
+        .step(stepInput()),
+      "model_invalid_response"
+    ));
+  }
 });
 
 test("missing and invalid API keys fail closed without fetch", async (t) => {
@@ -384,15 +568,14 @@ test("an upstream answer containing the configured key is rejected", async () =>
   );
 });
 
-test("the production client has no execution, Git, logging, environment, or tool-calling path", () => {
+test("the production client has no execution, Git, logging, environment, or hosted tool path", () => {
   const source = fs.readFileSync(path.join(__dirname, "model-client.js"), "utf8");
   assert.doesNotMatch(source, /child_process/);
   assert.doesNotMatch(source, /\b(?:spawn|exec|execFile)(?:Sync)?\s*\(/);
   assert.doesNotMatch(source, /git\s+(?:checkout|switch|fetch|pull|reset|merge|commit|push)/i);
   assert.doesNotMatch(source, /console\.(?:log|error|warn)/);
   assert.doesNotMatch(source, /process\.env/);
-  assert.doesNotMatch(source, /["']tools["']\s*:/);
   assert.doesNotMatch(source, /["']tool_choice["']\s*:/);
-  assert.doesNotMatch(source, /get_context|read_code|get_code_diff|get_qemu_events|get_run_result|run_test/);
+  assert.doesNotMatch(source, /web_search|computer_call|shell_call|mcp_call/);
   assert.doesNotMatch(source, /\/api\/coding|\/api\/v3/);
 });

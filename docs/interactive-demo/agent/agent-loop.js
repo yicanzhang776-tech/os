@@ -215,7 +215,12 @@ function readModelResult(value) {
 
   if (kind === "final") {
     const keys = Object.keys(descriptors).sort();
-    if (keys.length !== 2 || keys[0] !== "answer" || keys[1] !== "kind") {
+    const validKeys = keys.length === 2 && keys[0] === "answer" && keys[1] === "kind";
+    const validContinuationKeys = keys.length === 3
+      && keys[0] === "answer"
+      && keys[1] === "continuationState"
+      && keys[2] === "kind";
+    if (!validKeys && !validContinuationKeys) {
       throw loopError("agent_protocol_error");
     }
     if (typeof descriptors.answer.value !== "string") {
@@ -323,6 +328,10 @@ function createAgentLoop(options = {}) {
   const dispatch = buildDispatch(options.toolDispatch);
   const now = options.now || Date.now;
   if (typeof now !== "function") throw new TypeError("now must be a function.");
+  const isTrustedModelError = options.isTrustedModelError || (() => false);
+  if (typeof isTrustedModelError !== "function") {
+    throw new TypeError("isTrustedModelError must be a function.");
+  }
 
   return Object.freeze({
     async run(input) {
@@ -378,8 +387,9 @@ function createAgentLoop(options = {}) {
           checkDeadline();
           await checkContext();
           const modelResult = await options.model.step(Object.freeze({
+            requestId: initial.context.requestId,
             message: turn === 0 ? initial.message : null,
-            toolSchemas: TOOL_SCHEMAS,
+            tools: TOOL_SCHEMAS,
             continuationState,
             toolOutput,
             finalizationOnly
@@ -441,6 +451,7 @@ function createAgentLoop(options = {}) {
         throw loopError("agent_loop_limit");
       } catch (error) {
         if (isTrustedAgentLoopError(error)) throw error;
+        if (isTrustedModelError(error)) throw error;
         throw loopError("agent_internal_error");
       }
     }
