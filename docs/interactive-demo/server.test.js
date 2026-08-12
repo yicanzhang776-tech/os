@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
 const test = require("node:test");
@@ -53,14 +54,61 @@ function waitForMessage(socket, predicate) {
   });
 }
 
+test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
+  const source = fs.readFileSync(serverPath, "utf8");
+  assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
+  assert.match(source, /const \{ createAgentLoop \} = require\("\.\/agent\/agent-loop"\)/);
+  assert.match(source, /const \{ createArkModelClient, isTrustedModelClientError \} = require\("\.\/agent\/model-client"\)/);
+  assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
+  assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
+  assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
+  assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ agentLoop \}\)/);
+  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
+  assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
+  assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
+  assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
+  assert.match(source, /const agentToolDispatch = Object\.freeze\(\{[\s\S]*?get_context: getContextTool,[\s\S]*?read_code: readCodeTool,[\s\S]*?get_qemu_events: getQemuEventsTool,[\s\S]*?get_run_result: getRunResultTool,[\s\S]*?get_code_diff: getCodeDiffTool,[\s\S]*?run_test: runTestTool/);
+  assert.match(source, /function startAgentApprovedRun\([\s\S]*?startKernelRun\(\{[\s\S]*?taskKind: "agent-test"/);
+  assert.match(source, /requestPath === "\/api\/run"[\s\S]*?startKernelRun\(\{ taskKind: "interactive-run" \}\)/);
+  assert.match(source, /activeTask\?\.kind === "agent-test"\) runLifecycle\.stop\(\)/);
+
+  const agentRouteStart = source.indexOf('if (requestPath === "/api/agent")');
+  const contextRouteStart = source.indexOf('if (requestPath === "/api/context"', agentRouteStart);
+  const agentRoute = source.slice(agentRouteStart, contextRouteStart);
+  assert.ok(agentRouteStart >= 0 && contextRouteStart > agentRouteStart);
+  assert.match(agentRoute, /agentApi\.handleHttpRequest\(\{[\s\S]*?method: request\.method,[\s\S]*?headers: request\.headers,[\s\S]*?body: request/);
+  assert.match(agentRoute, /writeJson\(response, result\.statusCode, result\.body, result\.headers\)/);
+  assert.doesNotMatch(agentRoute, /taskLock|runLifecycle|startKernelRun|spawn|exec|agentToolDispatch/);
+
+  const runRouteStart = source.indexOf('if (requestPath === "/api/run"');
+  const stopRouteStart = source.indexOf('if (requestPath === "/api/stop"', runRouteStart);
+  const runRoute = source.slice(runRouteStart, stopRouteStart);
+  assert.ok(runRouteStart >= 0 && stopRouteStart > runRouteStart);
+  assert.match(runRoute, /writeJson\(response, 202, \{[\s\S]*?ok: true,[\s\S]*?protocol: EVENT_PROTOCOL,[\s\S]*?context: currentContext,[\s\S]*?target: rustTarget/);
+  assert.doesNotMatch(runRoute, /\brunId\s*:/);
+  assert.match(runRoute, /errorCode: "run_busy"/);
+
+  const agentRunnerStart = source.indexOf("function startAgentApprovedRun");
+  const stopRunStart = source.indexOf("function stopRun", agentRunnerStart);
+  const agentRunner = source.slice(agentRunnerStart, stopRunStart);
+  assert.doesNotMatch(agentRunner, /\bspawn(?:Sync)?\s*\(/);
+  assert.doesNotMatch(agentRunner, /\.acquire\s*\(/);
+  assert.doesNotMatch(agentRunner, /terminateChildProcess/);
+});
+
 test("bridge serves the learning map and turns serial evidence into WebSocket events", {
   timeout: 10000
 }, async (t) => {
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
+  const childEnv = { ...process.env, OS_DEMO_BRANCH: "lab5-starter" };
+  delete childEnv.ARK_API_KEY;
+  delete childEnv.ARK_BASE_URL;
+  delete childEnv.ARK_MODEL;
+  delete childEnv.ARK_LIVE_TEST;
   const child = spawn(process.execPath, [serverPath, "--stdin", "--port", String(port)], {
     cwd: repoDir,
-    env: { ...process.env, OS_DEMO_BRANCH: "lab5-starter" },
+    env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });
@@ -79,6 +127,97 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(health.context.variant, "starter");
   assert.equal(health.protocol, "os-demo.event/v1");
   assert.equal(health.target, "riscv64gc-unknown-none-elf");
+
+  const getAgent = await fetch(`${url}/api/agent`);
+  assert.equal(getAgent.status, 405);
+  assert.equal(getAgent.headers.get("allow"), "POST");
+  const getAgentBody = await getAgent.json();
+  assert.equal(getAgentBody.contractVersion, "os-tutor.agent/v1");
+  assert.equal(getAgentBody.error.code, "method_not_allowed");
+
+  const missingOrigin = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(missingOrigin.status, 403);
+  assert.equal((await missingOrigin.json()).error.code, "origin_not_allowed");
+
+  const wrongOrigin = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:8888"
+    },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(wrongOrigin.status, 403);
+  assert.equal((await wrongOrigin.json()).error.code, "origin_not_allowed");
+
+  const authorized = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: url,
+      authorization: "Bearer browser-secret"
+    },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(authorized.status, 403);
+  const authorizedBody = await authorized.json();
+  assert.equal(authorizedBody.error.code, "authorization_not_allowed");
+  assert.doesNotMatch(JSON.stringify(authorizedBody), /Bearer|browser-secret/);
+
+  const malformed = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: url },
+    body: "{"
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error.code, "invalid_json");
+
+  const oversized = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: url },
+    body: JSON.stringify({ message: "x".repeat(17000) })
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "request_too_large");
+
+  const notConfigured = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ message: "为什么 Lab5 没有切换任务？" })
+  });
+  assert.equal(notConfigured.status, 503);
+  const notConfiguredBody = await notConfigured.json();
+  assert.equal(notConfiguredBody.contractVersion, "os-tutor.agent/v1");
+  assert.equal(notConfiguredBody.ok, false);
+  assert.equal(notConfiguredBody.error.code, "model_not_configured");
+  assert.equal(notConfiguredBody.meta.branch, "lab5-starter");
+  assert.equal(notConfiguredBody.meta.lab, "lab5");
+  assert.equal(notConfiguredBody.meta.variant, "starter");
+
+  const contextResponse = await fetch(`${url}/api/context`);
+  assert.equal(contextResponse.status, 200);
+  const contextBody = await contextResponse.json();
+  assert.equal(contextBody.protocol, "os-demo.event/v1");
+  assert.equal(contextBody.context.branch, "lab5-starter");
+  assert.deepEqual(contextBody.agent, {
+    contractVersion: "os-tutor.agent/v1",
+    configured: false,
+    provider: "volcengine-ark-agent-plan",
+    model: "ark-code-latest",
+    remoteStore: true
+  });
+  assert.doesNotMatch(JSON.stringify(contextBody), /ARK_API_KEY|authorization|Bearer/i);
+
+  const rejectedRun = await fetch(`${url}/api/run`, {
+    method: "POST",
+    headers: { origin: "http://not-local.invalid" }
+  });
+  assert.equal(rejectedRun.status, 403);
+  assert.deepEqual(await rejectedRun.json(), { ok: false, error: "Origin is not local." });
 
   const page = await fetch(url);
   assert.equal(page.status, 200);
@@ -100,6 +239,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /不计算成绩，也不进行排名/);
   assert.match(html, /确定性规则检查/);
   assert.match(html, /运行错误诊断/);
+  assert.match(html, /AI 教学助教/);
   assert.match(html, /诊断只使用本地构建结果、结构化事件和稳定输出/);
   assert.match(html, /id="diagnostics-summary"/);
   assert.match(html, /id="diagnostics-list"/);
@@ -220,6 +360,16 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(telemetry.source, "console");
   assert.equal(telemetry.protocol, "os-demo.event/v1");
   assert.match(telemetry.runId, /^external-/);
+
+  const legacyPanicPromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "panic"
+  );
+  child.stdin.write("[Lab2] kernel panic\n");
+  const legacyPanic = await legacyPanicPromise;
+  assert.equal(legacyPanic.lab, "lab5");
+  assert.equal(legacyPanic.status, "fail");
+  assert.equal(legacyPanic.raw, "[Lab2] kernel panic");
 
   const idleStop = await fetch(`${url}/api/stop`, { method: "POST" });
   assert.equal(idleStop.status, 409);

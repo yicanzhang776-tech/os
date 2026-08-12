@@ -316,6 +316,34 @@
           <li class="empty-state">尚未完成或载入运行。</li>
         </ol>
       </article>
+      <article class="agent-panel card" id="agent-panel" aria-labelledby="agent-heading">
+        <div class="subpanel-heading">
+          <div><p class="eyebrow">可选云端引导</p><h3 id="agent-heading">AI 教学助教</h3></div>
+          <button class="button" id="agent-clear" type="button">清空当前显示</button>
+        </div>
+        <p class="agent-boundary">它与本地规则诊断相互独立：模型回答不是标准答案、根因判定或评分依据。</p>
+        <dl class="agent-facts">
+          <div><dt>当前分支 / Lab</dt><dd id="agent-context">正在读取上下文</dd></div>
+          <div><dt>模型状态</dt><dd id="agent-model-status">正在检查配置</dd></div>
+        </dl>
+        <p>服务端只允许六类工具：读取教学上下文、受限源码片段、QEMU 事件、运行结果、教学代码差异，以及启动已批准的实验测试。P0 可读取上下文和已有运行证据，但不支持启动测试。</p>
+        <div class="agent-consent-box">
+          <p><strong>首次发送前的数据告知</strong></p>
+          <p>模型服务为火山方舟 Agent Plan，默认模型 <code>ark-code-latest</code>。你的问题，以及模型按需读取的受限源码片段、代码差异、QEMU 结构化事件或运行结果，可能发送到云端。服务使用 <code>store: true</code> 续接工具调用，云端保留行为受方舟服务和账号配置约束。</p>
+          <p>系统不会发送 API Key、完整终端日志、环境变量、任意文件、教师答案文件或评分记录。</p>
+          <label><input id="agent-consent" type="checkbox"> 我已阅读并同意在当前浏览器会话中发送上述数据</label>
+        </div>
+        <form id="agent-form" class="agent-form">
+          <label for="agent-message">围绕当前实验提问</label>
+          <textarea id="agent-message" maxlength="4000" rows="4" required placeholder="例如：根据当前 Lab5 的事件，为什么还没有发生任务切换？"></textarea>
+          <div class="agent-actions">
+            <button class="button button-primary" id="agent-submit" type="submit">发送给教学助教</button>
+            <span>每次提问独立处理；请自行用真实运行证据验证回答。</span>
+          </div>
+        </form>
+        <output class="agent-status" id="agent-status" aria-live="polite">尚未提问。</output>
+        <pre class="agent-answer" id="agent-answer" tabindex="0" aria-label="教学助教回答"></pre>
+      </article>
       <article class="run-lab-panel card" id="run-lab-panel" aria-labelledby="run-lab-heading">
         <div class="subpanel-heading">
           <div>
@@ -652,6 +680,8 @@
   <script src="run-history.js"></script>
   <script src="run-transfer.js"></script>
   <script src="run-submission.js"></script>
+  <script src="agent-client.js"></script>
+  <script src="agent-panel.js"></script>
   <script src="timeline-controller.js"></script>
   <script src="diagnostics.js"></script>
   <script src="presentation-mode.js"></script>
