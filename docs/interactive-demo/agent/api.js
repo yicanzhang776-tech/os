@@ -116,6 +116,51 @@ const ERROR_DEFINITIONS = Object.freeze({
     message: "The agent is not configured.",
     retryable: false
   }),
+  model_not_configured: Object.freeze({
+    statusCode: 503,
+    message: "The model is not configured.",
+    retryable: false
+  }),
+  model_auth_failed: Object.freeze({
+    statusCode: 502,
+    message: "Model authentication failed.",
+    retryable: false
+  }),
+  model_rate_limited: Object.freeze({
+    statusCode: 429,
+    message: "The model request was rate limited.",
+    retryable: true
+  }),
+  model_timeout: Object.freeze({
+    statusCode: 504,
+    message: "The model request timed out.",
+    retryable: true
+  }),
+  model_request_failed: Object.freeze({
+    statusCode: 502,
+    message: "The model request was rejected.",
+    retryable: false
+  }),
+  model_upstream_error: Object.freeze({
+    statusCode: 502,
+    message: "The model service returned an error.",
+    retryable: true
+  }),
+  model_unavailable: Object.freeze({
+    statusCode: 503,
+    message: "The model service is unavailable.",
+    retryable: true
+  }),
+  model_invalid_response: Object.freeze({
+    statusCode: 502,
+    message: "The model service returned an invalid response.",
+    retryable: false
+  }),
+  model_internal_error: Object.freeze({
+    statusCode: 500,
+    message: "The model request could not be completed.",
+    retryable: false
+  }),
   agent_busy: Object.freeze({
     statusCode: 429,
     message: "The agent is currently busy.",

@@ -57,7 +57,11 @@ function waitForMessage(socket, predicate) {
 test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
   const source = fs.readFileSync(serverPath, "utf8");
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
-  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext/);
+  assert.match(source, /const \{ createArkModelClient \} = require\("\.\/agent\/model-client"\)/);
+  assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
+  assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
+  assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ modelClient: arkModelClient \}\)/);
+  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
   assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
   assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
   assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
@@ -95,9 +99,14 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
 }, async (t) => {
   const port = await reservePort();
   const url = `http://127.0.0.1:${port}`;
+  const childEnv = { ...process.env, OS_DEMO_BRANCH: "lab5-starter" };
+  delete childEnv.ARK_API_KEY;
+  delete childEnv.ARK_BASE_URL;
+  delete childEnv.ARK_MODEL;
+  delete childEnv.ARK_LIVE_TEST;
   const child = spawn(process.execPath, [serverPath, "--stdin", "--port", String(port)], {
     cwd: repoDir,
-    env: { ...process.env, OS_DEMO_BRANCH: "lab5-starter" },
+    env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
   });
@@ -182,7 +191,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   const notConfiguredBody = await notConfigured.json();
   assert.equal(notConfiguredBody.contractVersion, "os-tutor.agent/v1");
   assert.equal(notConfiguredBody.ok, false);
-  assert.equal(notConfiguredBody.error.code, "agent_not_configured");
+  assert.equal(notConfiguredBody.error.code, "model_not_configured");
   assert.equal(notConfiguredBody.meta.branch, "lab5-starter");
   assert.equal(notConfiguredBody.meta.lab, "lab5");
   assert.equal(notConfiguredBody.meta.variant, "starter");

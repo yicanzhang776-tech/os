@@ -16,6 +16,8 @@ const {
   parseKernelLine
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
+const { createArkModelClient } = require("./agent/model-client");
+const { createProductionAgentHandler } = require("./agent/model-handler");
 const { createGetContextTool, createRunTestTool } = require("./agent/tools");
 const { getApprovedTest } = require("./agent/test-registry");
 const {
@@ -91,9 +93,17 @@ const runTestTool = createRunTestTool({
   readPreflight: readLinuxPreflight,
   startApprovedRun: startAgentApprovedRun
 });
+const arkModelClient = createArkModelClient({
+  fetchImpl: globalThis.fetch,
+  apiKeyProvider: () => process.env.ARK_API_KEY,
+  baseUrl: process.env.ARK_BASE_URL,
+  model: process.env.ARK_MODEL
+});
+const handleAgentRequest = createProductionAgentHandler({ modelClient: arkModelClient });
 const agentApi = createAgentApi({
   expectedOrigin: `http://${host}:${port}`,
-  readWorkspaceContext
+  readWorkspaceContext,
+  handleAgentRequest
 });
 const agentToolDispatch = Object.freeze({
   get_context: getContextTool,

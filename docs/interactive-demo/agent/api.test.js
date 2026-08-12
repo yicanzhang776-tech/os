@@ -369,6 +369,28 @@ test("a branded AgentApiError is trusted but a lookalike object is not", async (
   assert.doesNotMatch(JSON.stringify(fake), /trust me|token|secret/);
 });
 
+test("trusted model errors use the fixed Agent API status and retry taxonomy", async () => {
+  const cases = [
+    ["model_not_configured", 503, false],
+    ["model_auth_failed", 502, false],
+    ["model_rate_limited", 429, true],
+    ["model_timeout", 504, true],
+    ["model_request_failed", 502, false],
+    ["model_upstream_error", 502, true],
+    ["model_unavailable", 503, true],
+    ["model_invalid_response", 502, false],
+    ["model_internal_error", 500, false]
+  ];
+  for (const [code, statusCode, retryable] of cases) {
+    const result = await harness({
+      handler: () => { throw new AgentApiError(code); }
+    }).requestJson({ message: "hello" });
+    assertError(result, statusCode, code);
+    assert.equal(result.body.error.retryable, retryable);
+    assert.deepEqual(result.body.error.details, {});
+  }
+});
+
 test("unknown handler exceptions are converted to one fixed path-free error", async () => {
   const unsafe = new Error("C:\\private\\repo token=secret outbound response body");
   unsafe.stack = "STACK C:\\private\\repo";
