@@ -460,7 +460,6 @@ function createArkModelClient(options = {}) {
       const validated = validateStepInput(input, apiKey);
       const body = {
         model: DEFAULT_ARK_MODEL,
-        instructions: SERVER_INSTRUCTIONS,
         input: validated.message === null
           ? [{
             type: "function_call_output",
@@ -472,6 +471,7 @@ function createArkModelClient(options = {}) {
         stream: false
       };
       if (validated.continuationState) {
+        body.instructions = SERVER_INSTRUCTIONS;
         body.previous_response_id = validated.continuationState.previousResponseId;
       }
       return parseStepResponse(await request(body), apiKey);
