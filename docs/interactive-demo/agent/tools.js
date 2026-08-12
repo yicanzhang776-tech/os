@@ -11,7 +11,7 @@ const {
 } = require("../protocol");
 const { diagnose } = require("../diagnostics");
 const { createRunRecord } = require("../run-history");
-const { createCodeDiffEngine } = require("./code-diff");
+const { CodeDiffError, createCodeDiffEngine } = require("./code-diff");
 const { classifySafeUtf8Text, redactSensitiveText } = require("./safe-text");
 const { TEST_REGISTRY } = require("./test-registry");
 const {
@@ -98,6 +98,85 @@ const RUN_TEST_EXECUTION_FIELDS = new Set([
 const RUN_TEST_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const RUN_TEST_LAB_PATTERN = /^lab[1-7]$/;
 const SAFE_PREFLIGHT_COMPONENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$/;
+const SAFE_POLICY_FIELD_PATTERN = /^[A-Za-z][A-Za-z0-9]{0,79}$/;
+const CODE_DIFF_ERROR_DEFINITIONS = Object.freeze({
+  baseline_resolution_failed: Object.freeze({
+    message: "The starter baseline could not be resolved."
+  }),
+  binary_file: Object.freeze({ message: "A teaching file contains binary data." }),
+  branch_not_allowed: Object.freeze({
+    message: "get_code_diff requires a registered starter teaching branch."
+  }),
+  context_unavailable: Object.freeze({
+    message: "The workspace context is unavailable.",
+    retryable: true
+  }),
+  file_too_large: Object.freeze({ message: "A teaching file exceeds the safe size limit." }),
+  git_diff_failed: Object.freeze({ message: "The restricted Git diff operation failed." }),
+  index_file_changed: Object.freeze({
+    message: "The repository index changed while it was being inspected."
+  }),
+  index_file_too_large: Object.freeze({
+    message: "The repository index exceeds the safe size limit."
+  }),
+  invalid_context_lines: Object.freeze({ message: "contextLines is outside the safe range." }),
+  invalid_max_lines: Object.freeze({ message: "maxLines is outside the safe range." }),
+  invalid_tool_input: Object.freeze({ message: "get_code_diff input is invalid." }),
+  invalid_utf8: Object.freeze({ message: "A teaching file is not valid UTF-8 text." }),
+  lab_mismatch: Object.freeze({
+    message: "The requested lab does not match the trusted workspace context."
+  }),
+  path_not_allowed: Object.freeze({ message: "A requested teaching path is not allowed." }),
+  snapshot_too_large: Object.freeze({
+    message: "The teaching snapshot exceeds the safe size limit."
+  }),
+  solution_diff_forbidden: Object.freeze({
+    message: "Solution and complete branches cannot be compared to starter baselines."
+  }),
+  starter_baseline_unavailable: Object.freeze({
+    message: "The fixed local starter baseline is unavailable."
+  }),
+  too_many_paths: Object.freeze({ message: "Too many teaching paths were requested." }),
+  too_many_working_tree_files: Object.freeze({
+    message: "The teaching workspace contains too many candidate files."
+  }),
+  unknown_lab: Object.freeze({ message: "The requested lab is not registered." }),
+  unsafe_baseline_entry: Object.freeze({
+    message: "The starter baseline contains an unsafe teaching entry."
+  }),
+  unsafe_index_file: Object.freeze({
+    message: "The repository index could not be safely inspected."
+  }),
+  unsafe_working_tree_file: Object.freeze({
+    message: "A teaching workspace file could not be safely inspected."
+  }),
+  working_tree_file_changed: Object.freeze({
+    message: "A teaching workspace file changed while it was being inspected."
+  })
+});
+const CODE_DIFF_SAFE_STAGES = new Set([
+  "baseline",
+  "baseline_blob",
+  "baseline_snapshot",
+  "baseline_tree",
+  "current_snapshot",
+  "filesystem_walk",
+  "head_tree",
+  "index_blob",
+  "index_isolation",
+  "index_metadata",
+  "index_path",
+  "index_snapshot",
+  "index_snapshot_cleanup",
+  "isolated_diff",
+  "patch",
+  "projection",
+  "snapshot",
+  "snapshot_cleanup",
+  "utf8"
+]);
+
+const trustedSafeToolErrors = new WeakSet();
 
 class SafeToolError extends Error {
   constructor(code, message, retryable = false, details = {}) {
@@ -105,29 +184,17 @@ class SafeToolError extends Error {
     this.code = code;
     this.retryable = retryable;
     this.details = details;
+    trustedSafeToolErrors.add(this);
   }
 }
 
 function safeError(error, fallback = {}) {
-  if (error instanceof SafeToolError) {
+  if (error && trustedSafeToolErrors.has(error)) {
     return {
       code: error.code,
       message: error.message,
       retryable: error.retryable,
       details: error.details
-    };
-  }
-  if (error && typeof error === "object"
-    && typeof error.code === "string"
-    && /^[a-z][a-z0-9_]{0,79}$/.test(error.code)
-    && typeof error.message === "string") {
-    return {
-      code: error.code,
-      message: error.message.slice(0, 500),
-      retryable: Boolean(error.retryable),
-      details: error.details && typeof error.details === "object" && !Array.isArray(error.details)
-        ? error.details
-        : {}
     };
   }
   return {
@@ -136,6 +203,85 @@ function safeError(error, fallback = {}) {
     retryable: Boolean(fallback.retryable),
     details: fallback.details || {}
   };
+}
+
+function requestIdPolicyError(error) {
+  if (!error || error.code !== "invalid_request_id") return null;
+  return new SafeToolError(
+    "invalid_request_id",
+    "requestId must contain only safe identifier characters and be at most 80 characters."
+  );
+}
+
+function invocationContextPolicyError(error) {
+  if (!error || error.code !== "invalid_invocation_context") return null;
+  const field = error.details && ["expectedBranch", "expectedCommit"].includes(error.details.field)
+    ? error.details.field
+    : null;
+  return new SafeToolError(
+    "invalid_invocation_context",
+    field ? `${field} must be a non-empty plain string.` : "invocationContext must be an object.",
+    false,
+    field ? { field } : {}
+  );
+}
+
+function readCodePathPolicyError(error) {
+  const definitions = {
+    absolute_path_forbidden: "Absolute paths are not allowed.",
+    forbidden_extension: "The requested file extension is not allowed.",
+    forbidden_path: "The requested path is protected or outside the read_code whitelist.",
+    invalid_path: "path must be a safe repository-relative POSIX path.",
+    path_traversal: "Path traversal is not allowed.",
+    solution_content_forbidden: "Solution and teacher-only content cannot be read by this tool."
+  };
+  const message = error && definitions[error.code];
+  return message ? new SafeToolError(error.code, message) : null;
+}
+
+function safeCodeDiffDetails(code, details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return {};
+  const safe = {};
+  if (code === "invalid_tool_input"
+    && typeof details.field === "string"
+    && SAFE_POLICY_FIELD_PATTERN.test(details.field)) {
+    safe.field = details.field;
+  }
+  if (code === "path_not_allowed"
+    && Number.isSafeInteger(details.index)
+    && details.index >= 0
+    && details.index < 100) {
+    safe.index = details.index;
+  }
+  if (code === "lab_mismatch") {
+    if (typeof details.requestedLab === "string" && RUN_TEST_LAB_PATTERN.test(details.requestedLab)) {
+      safe.requestedLab = details.requestedLab;
+    }
+    if (typeof details.actualLab === "string" && RUN_TEST_LAB_PATTERN.test(details.actualLab)) {
+      safe.actualLab = details.actualLab;
+    }
+  }
+  if (typeof details.stage === "string" && CODE_DIFF_SAFE_STAGES.has(details.stage)) {
+    safe.stage = details.stage;
+  }
+  if (Number.isSafeInteger(details.exitCode)
+    && details.exitCode >= -1
+    && details.exitCode <= 255) {
+    safe.exitCode = details.exitCode;
+  }
+  return safe;
+}
+
+function localCodeDiffError(error, fromLocalEngine) {
+  if (!fromLocalEngine || !(error instanceof CodeDiffError)) return null;
+  const definition = CODE_DIFF_ERROR_DEFINITIONS[error.code];
+  if (!definition) return null;
+  return new SafeToolError(
+    error.code,
+    definition.message,
+    definition.retryable === true,
+    safeCodeDiffDetails(error.code, error.details)
+  );
 }
 
 function createToolResult({ tool, ok, data, error, meta }) {
@@ -371,7 +517,10 @@ function validateReadCodeInput(args) {
   }
 
   const pathCheck = validateReadCodePath(args.path);
-  if (!pathCheck.ok) throw pathCheck.error;
+  if (!pathCheck.ok) {
+    throw readCodePathPolicyError(pathCheck.error)
+      || new SafeToolError("tool_execution_failed", "The tool could not complete the request.");
+  }
 
   const startLine = args.startLine === undefined ? 1 : args.startLine;
   const hasEndLine = args.endLine !== undefined;
@@ -923,10 +1072,18 @@ function createRunTestTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       const input = validateRunTestInput(args);
       const expectedBranch = invocationCheck.value.expectedBranch;
@@ -1058,7 +1215,7 @@ function createRunTestTool(options = {}) {
         startedAt: started.startedAt
       }, meta());
     } catch (error) {
-      const safe = error instanceof SafeToolError
+      const safe = error && trustedSafeToolErrors.has(error)
         ? error
         : new SafeToolError(
           "run_start_failed",
@@ -1111,10 +1268,18 @@ function createGetContextTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       if (!args || typeof args !== "object" || Array.isArray(args)) {
         throw new SafeToolError("invalid_tool_input", "get_context input must be an empty object.");
@@ -1208,10 +1373,18 @@ function createReadCodeTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       const expectedBranch = invocationCheck.value.expectedBranch;
       const expectedCommit = invocationCheck.value.expectedCommit;
@@ -1388,10 +1561,18 @@ function createGetQemuEventsTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       const expectedBranch = invocationCheck.value.expectedBranch;
       const expectedCommit = invocationCheck.value.expectedCommit;
@@ -1538,10 +1719,18 @@ function createGetRunResultTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       const expectedBranch = invocationCheck.value.expectedBranch;
       const expectedCommit = invocationCheck.value.expectedCommit;
@@ -1691,6 +1880,7 @@ function createGetCodeDiffTool(options = {}) {
     throw new TypeError("repoDir is required.");
   }
 
+  const usesLocalCodeDiffEngine = !options.codeDiffEngine;
   const inspectCodeDiff = options.codeDiffEngine || createCodeDiffEngine({
     repoDir: options.repoDir,
     spawnSync: options.spawnSync,
@@ -1729,10 +1919,18 @@ function createGetCodeDiffTool(options = {}) {
 
       const requestIdCheck = validateRequestId(invocationContext?.requestId);
       if (requestIdCheck.ok && requestIdCheck.value) requestId = requestIdCheck.value;
-      if (!requestIdCheck.ok) return createToolFailure(tool, requestIdCheck.error, meta());
+      if (!requestIdCheck.ok) {
+        return createToolFailure(tool, requestIdPolicyError(requestIdCheck.error), meta());
+      }
 
       const invocationCheck = validateInvocationContext(invocationContext);
-      if (!invocationCheck.ok) return createToolFailure(tool, invocationCheck.error, meta());
+      if (!invocationCheck.ok) {
+        return createToolFailure(
+          tool,
+          invocationContextPolicyError(invocationCheck.error),
+          meta()
+        );
+      }
 
       const expectedBranch = invocationCheck.value.expectedBranch;
       const expectedCommit = invocationCheck.value.expectedCommit;
@@ -1775,7 +1973,11 @@ function createGetCodeDiffTool(options = {}) {
 
       return createToolSuccess(tool, data, meta());
     } catch (error) {
-      return createToolFailure(tool, error, meta());
+      return createToolFailure(
+        tool,
+        localCodeDiffError(error, usesLocalCodeDiffEngine) || error,
+        meta()
+      );
     }
   };
 }

@@ -10,6 +10,7 @@ const {
   GET_RUN_RESULT_MAX_DIAGNOSTICS,
   GET_RUN_RESULT_MAX_EVIDENCE_SEQUENCES,
   GET_RUN_RESULT_SCHEMA_VERSION,
+  SafeToolError,
   createGetCodeDiffTool,
   createGetContextTool,
   createGetQemuEventsTool,
@@ -449,6 +450,77 @@ test("failed ToolResult is structured and never exposes an exception stack", () 
   assert.doesNotMatch(JSON.stringify(failure), /secret stack content/);
 });
 
+test("unknown and safe-looking errors cannot cross the trusted error boundary", () => {
+  const secret = "TEST_SECRET_DO_NOT_LEAK_9A";
+  const windowsPath = "C:\\Users\\secret\\token.txt";
+  const posixPath = "/home/test/.secret/token";
+  const meta = {
+    requestId: "request-untrusted-errors",
+    branch: "unknown",
+    commit: "unknown",
+    generatedAt: "2026-08-11T10:20:30.000Z"
+  };
+  const ordinaryError = new Error(`${secret} ${windowsPath}`);
+  ordinaryError.stack = `${secret} ${posixPath}`;
+  const safeLooking = {
+    code: "context_unavailable",
+    message: `${secret} ${windowsPath}`,
+    retryable: true,
+    details: { path: posixPath, nested: { secret } },
+    stack: `${secret} ${windowsPath}`
+  };
+  const prototypeSpoof = { ...safeLooking };
+  Object.setPrototypeOf(prototypeSpoof, SafeToolError.prototype);
+  const createdFromPrototype = Object.create(SafeToolError.prototype);
+  Object.assign(createdFromPrototype, safeLooking);
+
+  for (const error of [
+    ordinaryError,
+    safeLooking,
+    prototypeSpoof,
+    createdFromPrototype,
+    null,
+    secret,
+    9
+  ]) {
+    const result = createToolFailure("get_context", error, meta);
+    assert.deepEqual(result.error, {
+      code: "tool_execution_failed",
+      message: "The tool could not complete the request.",
+      retryable: false,
+      details: {}
+    });
+    assert.doesNotMatch(
+      JSON.stringify(result),
+      /TEST_SECRET_DO_NOT_LEAK_9A|Users\\secret|\/home\/test|context_unavailable/
+    );
+  }
+});
+
+test("a genuinely constructed SafeToolError keeps its stable safe fields", () => {
+  const result = createToolFailure(
+    "get_context",
+    new SafeToolError(
+      "context_changed",
+      "The workspace branch or commit changed before the tool executed.",
+      true,
+      { expectedBranch: "lab4-starter" }
+    ),
+    {
+      requestId: "request-trusted-error",
+      branch: "lab4-starter",
+      commit: "abc1234",
+      generatedAt: "2026-08-11T10:20:30.000Z"
+    }
+  );
+  assert.deepEqual(result.error, {
+    code: "context_changed",
+    message: "The workspace branch or commit changed before the tool executed.",
+    retryable: true,
+    details: { expectedBranch: "lab4-starter" }
+  });
+});
+
 test("tool input cannot override branch or commit", () => {
   const { tool } = toolFor("lab4-starter");
   const result = tool({ branch: "main" });
@@ -462,6 +534,7 @@ test("invalid invocation context still returns the structured policy error", () 
   const result = tool({}, { expectedBranch: "" });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, "invalid_invocation_context");
+  assert.deepEqual(result.error.details, { field: "expectedBranch" });
   assert.equal(Object.hasOwn(result.error, "stack"), false);
 });
 
@@ -1891,14 +1964,40 @@ test("get_code_diff failures omit stacks, host paths, Git stderr, and tokens", (
   assert.equal(rawFailure.error.code, "tool_execution_failed");
   assert.doesNotMatch(JSON.stringify(rawFailure), /Users|Bearer|ghp_|STACK|stderr/);
 
-  const safeFailure = new Error("The restricted Git diff operation failed.");
-  safeFailure.code = "git_diff_failed";
-  safeFailure.retryable = false;
-  safeFailure.details = { stage: "patch", exitCode: 1 };
-  const result = codeDiffToolFor({ engineError: safeFailure }).tool({});
-  assert.equal(result.error.code, "git_diff_failed");
-  assert.deepEqual(result.error.details, { stage: "patch", exitCode: 1 });
+  const fakeSafeFailure = new Error("The restricted Git diff operation failed.");
+  fakeSafeFailure.code = "git_diff_failed";
+  fakeSafeFailure.retryable = true;
+  fakeSafeFailure.details = { stage: "patch", exitCode: 1 };
+  const result = codeDiffToolFor({ engineError: fakeSafeFailure }).tool({});
+  assert.equal(result.error.code, "tool_execution_failed");
+  assert.equal(result.error.retryable, false);
+  assert.deepEqual(result.error.details, {});
   assert.equal(Object.hasOwn(result.error, "stack"), false);
+});
+
+test("get_code_diff adapts only real local CodeDiffError fields", () => {
+  const secret = "TEST_SECRET_DO_NOT_LEAK_9A";
+  const tool = createGetCodeDiffTool({
+    repoDir: "C:\\safe-test-repo",
+    readWorkspaceContext() {
+      return { branch: "lab4-starter", commit: "abc1234" };
+    },
+    spawnSync() {
+      return {
+        status: 1,
+        stdout: "",
+        stderr: `${secret} /home/test/.secret/token`
+      };
+    },
+    requestIdFactory: () => "code-diff-local-error",
+    now: () => NOW
+  });
+  const result = tool({});
+  assert.equal(result.error.code, "starter_baseline_unavailable");
+  assert.equal(result.error.message, "The fixed local starter baseline is unavailable.");
+  assert.equal(result.error.retryable, false);
+  assert.deepEqual(result.error.details, { stage: "baseline", exitCode: 1 });
+  assert.doesNotMatch(JSON.stringify(result), /TEST_SECRET_DO_NOT_LEAK_9A|\/home\/test/);
 });
 
 test("run_test starts approved main, starter, and solution tests", () => {
