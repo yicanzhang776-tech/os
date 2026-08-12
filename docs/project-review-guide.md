@@ -1,6 +1,6 @@
 # AI 合作的操作系统教学实验环境：项目复习与评审指南
 
-> 取证日期：2026-08-13。事实基线为 `origin/main` `4e60638` 与 `origin/agent-mvp` `d46cbba` 的隔离集成；测试数字只引用本轮实际命令。
+> 取证日期：2026-08-13。集成前事实基线为 `origin/main` `4e60638` 与 `origin/agent-mvp` `d46cbba`；首次集成发布提交为远端 `main` `18182c1`，当前正式状态以本指南所在的远端分支 HEAD 为准。测试数字只引用本轮实际命令。
 
 ## 一句话定位
 
@@ -16,20 +16,20 @@ AI 教学助教通过本地 `/api/agent` 调用火山方舟 Agent Plan，六个�
 - 教师：对应 `labN-solution`、教师指南，以及 `main` 的评分工具。
 - 评委：`main` 的 README、DESIGN、架构、验收报告、Demo 和答辩 PPT。
 
-## 远程取证基线
+## 首次集成发布取证点
 
 | 分支 | 提交 | 分支 | 提交 |
 |---|---|---|---|
-| `main` | `4e60638` | `p0-minimal-qemu-baseline` | `c056332` |
-| `lab1-starter` | `fb3de35` | `lab1-solution` | `f1d45b5` |
-| `lab2-starter` | `cbc7c68` | `lab2-solution` | `141e099` |
-| `lab3-starter` | `465dd40` | `lab3-solution` | `ce22f20` |
-| `lab4-starter` | `9791451` | `lab4-solution` | `e4b5682` |
-| `lab5-starter` | `3e7de80` | `lab5-solution` | `03328ae` |
-| `lab6-starter` | `4286712` | `lab6-solution` | `78ef77a` |
-| `lab7-starter` | `47ce0d4` | `lab7-solution` | `5749a48` |
+| `main` | `18182c1` | `p0-minimal-qemu-baseline` | `9dd630a` |
+| `lab1-starter` | `4f2bdfc` | `lab1-solution` | `0b294be` |
+| `lab2-starter` | `9f2f2da` | `lab2-solution` | `6e3a3c5` |
+| `lab3-starter` | `702998e` | `lab3-solution` | `b4302bf` |
+| `lab4-starter` | `d83e5c8` | `lab4-solution` | `e1da166` |
+| `lab5-starter` | `2e83fb2` | `lab5-solution` | `9304591` |
+| `lab6-starter` | `449555c` | `lab6-solution` | `ad15c61` |
+| `lab7-starter` | `ea4bc7d` | `lab7-solution` | `ed67c4a` |
 
-所有文档同步均基于上述远程提交完成；没有使用落后的本地教学分支作为事实来源。
+以上为首次集成发布后的远端提交，用于说明本轮内容来源，不冒充后续修正文档所在分支的最新 HEAD。可视化分支为 `e1047ca`，教师评分分支为 `36a37f7`；`agent-mvp` `d46cbba` 保留为开发历史来源。所有同步均以发布前最新远端为基线，没有使用落后的传统本地备份分支作为事实来源。
 
 ## P0-Lab7 路线
 
@@ -65,7 +65,7 @@ AI 教学助教通过本地 `/api/agent` 调用火山方舟 Agent Plan，六个�
 - 8 月 8 日可靠性同步曾覆盖 Stage 参数；本轮以回归测试恢复，并保留显式目标、旧产物清理、退出码和超时处理。
 - 看到 PASS 不足以证明理解或排除硬编码，教师必须检查禁止修改范围和真实控制流。
 - 本轮合并前 `origin/main` Node 基线 176/176 通过；合并后基线 577 项中 571 通过、6 跳过、0 失败；新增学生端与上下文定向测试 80/80 通过；集成完成后的最终全量回归为 585 项中 579 通过、6 跳过、0 失败。
-- 本轮已完成 Rust 格式、RISC-V 构建、Clippy、46 项主机库测试、main 与 solution 的 42 组 Stage、starter 三类语义、P0 QEMU、18 个分支零断链及 24 页 PPT 视觉验收；通用 workspace test 的裸机目标限制保留为真实失败。在线 Agent Plan 与远程 CI 仍未运行。
+- 本轮已完成 Rust 格式、RISC-V 构建、Clippy、46 项主机库测试、main 与 solution 的 42 组 Stage、starter 三类语义、P0 QEMU、18 个分支零断链及 24 页 PPT 视觉验收；通用 workspace test 的裸机目标限制保留为真实失败。18 个既有目标分支已推送成功；在线 Agent Plan 未运行，远程 CI 结果尚未核实。
 
 ## 当前审计提醒
 
