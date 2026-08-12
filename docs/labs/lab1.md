@@ -1,5 +1,7 @@
 # Lab1: Boot and SBI Console
 
+> 智能体使用：先用本地预测、QEMU 事件和规则诊断形成证据，再手动提问。starter 只获得引导式提示，智能体不能读取 solution/教师文件；回答不能代替 SBI 调用链代码审查和 Stage 验收。
+
 > 验收约定：学生按 `-Stage 1/2/3` 逐步验证；教师只用 `-ExpectIncomplete` 检查原始 starter 未泄露答案。运行记录可从可视化页面导出，供 `main` 的教师评分工具人工复核。
 
 ## 实验背景

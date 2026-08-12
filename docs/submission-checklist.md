@@ -1,82 +1,67 @@
-﻿# 比赛提交检查清单
+# 比赛提交检查清单
 
-本文档用于提交官方 GitLab 仓库前的最终检查。
+## 分支与工作区
 
-## Git 分支
+- [ ] 不直接在 `main/master` 修改。
+- [ ] 以最新远程 P0、Lab1-Lab7 starter/solution 为基线。
+- [ ] starter 不包含 `SOLUTION.md`、`TEACHER_GUIDE.md`、答案函数体或可复制补丁。
+- [ ] `git status --short` 中只有计划内文件，未包含 `target/`、日志、缓存和 PPT 临时文件。
 
-- [ ] 当前不在 `main/master` 上进行开发修改。
-- [ ] `p0-minimal-qemu-baseline` 已推送。
-- [ ] `lab1-starter` 和 `lab1-solution` 已推送。
-- [ ] `lab2-starter` 和 `lab2-solution` 已推送。
-- [ ] `lab3-starter` 和 `lab3-solution` 已推送。
-- [ ] `lab4-starter` 和 `lab4-solution` 已推送。
-- [ ] `lab5-starter` 和 `lab5-solution` 已推送。
-- [ ] `lab6-starter` 和 `lab6-solution` 已推送。
-- [ ] `lab7-starter` 和 `lab7-solution` 已推送。
-- [ ] `git status --short` 输出为空。
+## 教学智能体与数据边界
 
-## 环境与构建
+- [ ] `/api/context.agent` 只含协议、配置状态、提供方、模型和 `remoteStore`，不含密钥或请求头。
+- [ ] 未同意时不发送；同意只使用 `os-teaching-agent-consent-v1` 会话键。
+- [ ] 4000/4001 字符、纯文本危险 HTML、固定中文错误、上下文变化和任务锁均有测试。
+- [ ] 演示模式不自动提问，“清空当前显示”不声称删除持久化数据。
+- [ ] 不再笼统声称“完全本地”“不使用 AI”“不上传代码和日志”；四层数据边界分别说明。
+- [ ] 智能体回答不作为标准答案、根因判定或自动评分，教师仍完成代码审查、口试、报告和人工确认。
+- [ ] 在线八项联调仅在真实通过后勾选，密钥不进入命令日志和截图。
 
-- [ ] `rustc`、`cargo`、`rustup` 可用。
-- [ ] 已安装 `riscv64gc-unknown-none-elf` target。
-- [ ] `qemu-system-riscv64` 可用。
-- [ ] Windows PowerShell 环境下 `scripts/check-env.ps1` 通过。
-- [ ] WSL2/Ubuntu 环境下 `scripts/check-env.sh` 通过。
+## 反馈、文档与视觉
 
-## 本地验证
+- [ ] 8890/8891、JSONL、邀请码、筛选导出和备份边界已说明。
+- [ ] 全部正式分支 Markdown 相对链接为零断链，starter 无答案/教师文件或链接。
+- [ ] 24 页 PPT 已全页渲染，页码、换行、溢出、截图清晰度和来源备注已检查。
+- [ ] 远程 CI 只有推送后才记录；未推送时明确“未运行”。
 
-提交前建议执行：
+## Rust 与 QEMU
 
-```powershell
-cargo fmt --all -- --check
-cargo build -p ai-os-kernel
-cargo clippy -p ai-os-kernel -- -D warnings
-cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab1.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab3.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab4.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab5.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab6.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1
-git diff --check
-```
+- [ ] `cargo fmt --all -- --check`。
+- [ ] `cargo build -p ai-os-kernel --target riscv64gc-unknown-none-elf`。
+- [ ] `cargo clippy -p ai-os-kernel --target riscv64gc-unknown-none-elf -- -D warnings`。
+- [ ] host unit tests。
+- [ ] P0 QEMU 验收。
+- [ ] 每个 solution 的 Stage 1/2/3。
+- [ ] 每个 starter 的 `-ExpectIncomplete`，并确认默认最终 PASS 不成立。
+- [ ] `-Stage` 与 `-ExpectIncomplete` 同时使用时明确拒绝。
 
-验收成功时应看到：
+## 可视化与评分工具
 
-- `[Lab1] PASS`
-- `[Lab2] PASS`
-- `[Lab3] PASS`
-- `[Lab4] PASS`
-- `[Lab5] PASS`
-- `[Lab6] PASS`
-- `[Lab7] PASS`
+- [ ] 可视化全部 Node tests 和 JavaScript 语法检查。
+- [ ] 教师评分核心测试和离线页面检查。
+- [ ] `os-demo.run/v1` 可被评分工具导入。
+- [ ] 损坏、超限、错误协议或错误 Lab 文件被拒绝。
+- [ ] 教学反馈与教师评分在文档中明确分开。
+- [ ] 页面和文档未声称自动上传、AI 自动诊断根因或 AI 自动评分。
+
+## 文档与 PPT
+
+- [ ] 18 个正式同步分支 Markdown 相对链接零断链。
+- [ ] 文档命令与实际脚本参数一致。
+- [ ] 没有“PPT 待制作”“CI 待同步”和未经本轮验证的旧测试数字。
+- [ ] README、设计、架构、测试、演示脚本、验收报告和评审指南互相一致。
+- [ ] PPT 使用真实本地页面截图，所有测试数字来自同一提交的实际命令。
+- [ ] PPT 全页渲染，逐页检查溢出、重叠、标题换行、截图清晰度和来源备注。
 
 ## 安全与隐私
 
-- [ ] 仓库中没有 API Key、Token、密码或私有仓库地址。
-- [ ] 仓库中没有比赛账号、个人隐私或本机绝对路径。
-- [ ] `target/`、QEMU 日志、临时文件和 IDE 缓存未提交。
-- [ ] 官方截图或参考资料已经脱敏。
+- [ ] 无 API Key、Token、密码、Cookie、私有仓库地址或本机绝对路径。
+- [ ] 官方截图已脱敏。
+- [ ] 学生姓名、成绩、教师评语和提交标识未进入公开仓库。
+- [ ] Demo/评分导出文件在公开分享前已人工匿名化。
 
-## 文档
+## 官方材料
 
-- [ ] 根 `README.md` 能说明项目状态、依赖、构建和测试方法。
-- [ ] `docs/requirements.md` 覆盖赛题要求映射。
-- [ ] `docs/architecture.md` 覆盖系统架构和模块边界。
-- [ ] `docs/testing.md` 覆盖主机测试、QEMU 测试和 CI 策略。
-- [ ] `docs/labs/README.md` 覆盖 7 个实验路线。
-- [ ] `docs/labs/lab1.md` 到 `docs/labs/lab7.md` 覆盖实验目标、任务边界、测试和教师验收。
-- [ ] `docs/ai-collaboration.md` 记录 AI 协作过程。
-- [ ] `docs/final-report.md` 可作为设计方案与开发文档。
-- [ ] `docs/slides/AI-OS-Teaching-Defense-Final.pptx` 可作为答辩汇报幻灯片。
-- [ ] `docs/demo-script.md` 可作为演示视频或答辩讲稿。
-
-## 提交说明
-
-建议在官方提交说明中强调：
-
-- P0 不计入正式实验，只作为可重复运行工程基线。
-- 正式实验共 7 个，均有 starter/solution 分支。
-- 基础实验难度面向普通本科生，复杂能力放入扩展任务或思考题。
-- Lab7 当前使用内存文件系统，virtio-block 和真实磁盘是扩展方向。
+- [ ] 题目、评分和提交格式已经人工对照比赛平台最新通知。
+- [ ] PPT 文件可打开，演示视频实际状态已由项目成员确认。
+- [ ] 未完成或未运行的项目如实标记，不写成“已通过”。
