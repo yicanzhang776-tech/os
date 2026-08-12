@@ -467,12 +467,14 @@ function createArkModelClient(options = {}) {
             output: validated.toolOutput.output
           }]
           : validated.message,
-        tools: validated.tools,
-        stream: false
+        stream: false,
+        store: true,
+        parallel_tool_calls: false
       };
       if (validated.continuationState) {
-        body.instructions = SERVER_INSTRUCTIONS;
         body.previous_response_id = validated.continuationState.previousResponseId;
+      } else {
+        body.tools = validated.tools;
       }
       return parseStepResponse(await request(body), apiKey);
     }

@@ -180,10 +180,14 @@ test("step parses one function call and ignores intermediate assistant text", as
   assert.equal(result.toolName, "get_context");
   assert.deepEqual(result.arguments, { observe: true });
   assert.equal(Object.isFrozen(result.continuationState), true);
-  assert.deepEqual(Object.keys(captured).sort(), ["input", "model", "stream", "tools"]);
+  assert.deepEqual(Object.keys(captured).sort(), [
+    "input", "model", "parallel_tool_calls", "store", "stream", "tools"
+  ]);
   assert.equal(captured.model, DEFAULT_ARK_MODEL);
   assert.equal(captured.input, REQUEST.message);
   assert.equal(captured.stream, false);
+  assert.equal(captured.store, true);
+  assert.equal(captured.parallel_tool_calls, false);
   assert.equal(captured.tools.length, 1);
   assert.deepEqual(captured.tools, TOOLS);
   assert.equal(captured.tools[0].type, "function");
@@ -194,7 +198,6 @@ test("step parses one function call and ignores intermediate assistant text", as
   assert.equal(Object.hasOwn(captured, "instructions"), false);
   assert.equal(Object.hasOwn(captured, "previous_response_id"), false);
   assert.equal(Object.hasOwn(captured, "function_call_output"), false);
-  assert.equal(Object.hasOwn(captured, "parallel_tool_calls"), false);
   assert.equal(Object.hasOwn(captured, "tool_choice"), false);
   assert.equal(Object.hasOwn(captured.tools[0], "strict"), false);
   assert.doesNotMatch(JSON.stringify(result), /I will inspect|hidden/);
@@ -226,14 +229,22 @@ test("step uses previous_response_id and one matching function_call_output", asy
   }));
   assert.equal(second.kind, "final");
   assert.equal(second.answer, "Context received.");
-  assert.equal(bodies[1].instructions, SERVER_INSTRUCTIONS);
+  assert.deepEqual(Object.keys(bodies[1]).sort(), [
+    "input", "model", "parallel_tool_calls", "previous_response_id", "store", "stream"
+  ]);
+  assert.equal(bodies[1].model, DEFAULT_ARK_MODEL);
+  assert.equal(bodies[1].stream, false);
+  assert.equal(bodies[1].store, true);
+  assert.equal(bodies[1].parallel_tool_calls, false);
   assert.equal(bodies[1].previous_response_id, "resp-test-1");
   assert.deepEqual(bodies[1].input, [{
     type: "function_call_output",
     call_id: "call-test-1",
     output
   }]);
-  assert.deepEqual(bodies[1].tools, TOOLS);
+  assert.equal(Object.hasOwn(bodies[1], "instructions"), false);
+  assert.equal(Object.hasOwn(bodies[1], "tools"), false);
+  assert.equal(Object.hasOwn(bodies[1], "tool_choice"), false);
 });
 
 test("step rejects wrong call_id and untrusted continuation state before fetch", async () => {
