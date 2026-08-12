@@ -1410,6 +1410,81 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.agent-panel {
+  grid-column: 1 / -1;
+}
+
+.agent-boundary,
+.agent-actions span,
+.agent-status {
+  color: var(--muted);
+}
+
+.agent-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.agent-facts > div,
+.agent-consent-box {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.agent-facts dt {
+  color: var(--muted);
+  font-size: .72rem;
+}
+
+.agent-facts dd {
+  margin: 4px 0 0;
+}
+
+.agent-consent-box {
+  margin: 15px 0;
+}
+
+.agent-consent-box label {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  font-weight: 650;
+}
+
+.agent-form {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.agent-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.agent-status[data-status="error"] { color: var(--red); }
+.agent-status[data-status="success"] { color: var(--mint); }
+
+.agent-answer {
+  min-height: 64px;
+  margin-top: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .agent-facts { grid-template-columns: 1fr; }
+}
+
 .diagnostics-summary {
   max-width: 520px;
   color: var(--cyan);

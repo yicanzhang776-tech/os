@@ -1,5 +1,7 @@
 # Lab2: Trap and Exception Handling
 
+> 智能体使用：可结合 `stvec`、Trap 与 `sepc` 结构化事件解释现象，但 starter 只获得证据化提示，不能读取 solution/教师文件；回答不能代替 TrapFrame、CSR 和返回路径审查。
+
 > 验收约定：学生按 `-Stage 1/2/3` 逐步验证；教师只用 `-ExpectIncomplete` 检查原始 starter 未泄露答案。运行记录可从可视化页面导出，供 `main` 的教师评分工具人工复核。
 
 ## 实验背景
