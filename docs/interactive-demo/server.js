@@ -15,6 +15,7 @@ const {
   parseBranchContext,
   parseKernelLine
 } = require("./protocol");
+const { createAgentApi } = require("./agent/api");
 const { createGetContextTool, createRunTestTool } = require("./agent/tools");
 const { getApprovedTest } = require("./agent/test-registry");
 const {
@@ -89,6 +90,10 @@ const runTestTool = createRunTestTool({
   readWorkspaceContext,
   readPreflight: readLinuxPreflight,
   startApprovedRun: startAgentApprovedRun
+});
+const agentApi = createAgentApi({
+  expectedOrigin: `http://${host}:${port}`,
+  readWorkspaceContext
 });
 const agentToolDispatch = Object.freeze({
   get_context: getContextTool,
@@ -585,10 +590,11 @@ function refreshBranchContext() {
   console.log(`[demo] Workspace branch changed: ${previous.branch} -> ${currentContext.branch}`);
 }
 
-function writeJson(response, statusCode, value) {
+function writeJson(response, statusCode, value, headers = {}) {
   response.writeHead(statusCode, {
     "Cache-Control": "no-store",
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    ...headers
   });
   response.end(JSON.stringify(value));
 }
@@ -603,7 +609,7 @@ function isInsideRepo(candidate) {
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-const server = http.createServer((request, response) => {
+const server = http.createServer(async (request, response) => {
   let requestPath;
   try {
     requestPath = decodeURIComponent(new URL(request.url, `http://${host}`).pathname);
@@ -621,6 +627,16 @@ const server = http.createServer((request, response) => {
       context: currentContext,
       runState
     });
+    return;
+  }
+
+  if (requestPath === "/api/agent") {
+    const result = await agentApi.handleHttpRequest({
+      method: request.method,
+      headers: request.headers,
+      body: request
+    });
+    writeJson(response, result.statusCode, result.body, result.headers);
     return;
   }
 

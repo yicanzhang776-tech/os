@@ -56,6 +56,8 @@ function waitForMessage(socket, predicate) {
 
 test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
   const source = fs.readFileSync(serverPath, "utf8");
+  assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
+  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext/);
   assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
   assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
   assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
@@ -63,6 +65,14 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   assert.match(source, /function startAgentApprovedRun\([\s\S]*?startKernelRun\(\{[\s\S]*?taskKind: "agent-test"/);
   assert.match(source, /requestPath === "\/api\/run"[\s\S]*?startKernelRun\(\{ taskKind: "interactive-run" \}\)/);
   assert.match(source, /activeTask\?\.kind === "agent-test"\) runLifecycle\.stop\(\)/);
+
+  const agentRouteStart = source.indexOf('if (requestPath === "/api/agent")');
+  const contextRouteStart = source.indexOf('if (requestPath === "/api/context"', agentRouteStart);
+  const agentRoute = source.slice(agentRouteStart, contextRouteStart);
+  assert.ok(agentRouteStart >= 0 && contextRouteStart > agentRouteStart);
+  assert.match(agentRoute, /agentApi\.handleHttpRequest\(\{[\s\S]*?method: request\.method,[\s\S]*?headers: request\.headers,[\s\S]*?body: request/);
+  assert.match(agentRoute, /writeJson\(response, result\.statusCode, result\.body, result\.headers\)/);
+  assert.doesNotMatch(agentRoute, /taskLock|runLifecycle|startKernelRun|spawn|exec|agentToolDispatch/);
 
   const runRouteStart = source.indexOf('if (requestPath === "/api/run"');
   const stopRouteStart = source.indexOf('if (requestPath === "/api/stop"', runRouteStart);
@@ -106,6 +116,89 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(health.context.variant, "starter");
   assert.equal(health.protocol, "os-demo.event/v1");
   assert.equal(health.target, "riscv64gc-unknown-none-elf");
+
+  const getAgent = await fetch(`${url}/api/agent`);
+  assert.equal(getAgent.status, 405);
+  assert.equal(getAgent.headers.get("allow"), "POST");
+  const getAgentBody = await getAgent.json();
+  assert.equal(getAgentBody.contractVersion, "os-tutor.agent/v1");
+  assert.equal(getAgentBody.error.code, "method_not_allowed");
+
+  const missingOrigin = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(missingOrigin.status, 403);
+  assert.equal((await missingOrigin.json()).error.code, "origin_not_allowed");
+
+  const wrongOrigin = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:8888"
+    },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(wrongOrigin.status, 403);
+  assert.equal((await wrongOrigin.json()).error.code, "origin_not_allowed");
+
+  const authorized = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: url,
+      authorization: "Bearer browser-secret"
+    },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(authorized.status, 403);
+  const authorizedBody = await authorized.json();
+  assert.equal(authorizedBody.error.code, "authorization_not_allowed");
+  assert.doesNotMatch(JSON.stringify(authorizedBody), /Bearer|browser-secret/);
+
+  const malformed = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: url },
+    body: "{"
+  });
+  assert.equal(malformed.status, 400);
+  assert.equal((await malformed.json()).error.code, "invalid_json");
+
+  const oversized = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: url },
+    body: JSON.stringify({ message: "x".repeat(17000) })
+  });
+  assert.equal(oversized.status, 413);
+  assert.equal((await oversized.json()).error.code, "request_too_large");
+
+  const notConfigured = await fetch(`${url}/api/agent`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ message: "为什么 Lab5 没有切换任务？" })
+  });
+  assert.equal(notConfigured.status, 503);
+  const notConfiguredBody = await notConfigured.json();
+  assert.equal(notConfiguredBody.contractVersion, "os-tutor.agent/v1");
+  assert.equal(notConfiguredBody.ok, false);
+  assert.equal(notConfiguredBody.error.code, "agent_not_configured");
+  assert.equal(notConfiguredBody.meta.branch, "lab5-starter");
+  assert.equal(notConfiguredBody.meta.lab, "lab5");
+  assert.equal(notConfiguredBody.meta.variant, "starter");
+
+  const contextResponse = await fetch(`${url}/api/context`);
+  assert.equal(contextResponse.status, 200);
+  const contextBody = await contextResponse.json();
+  assert.equal(contextBody.protocol, "os-demo.event/v1");
+  assert.equal(contextBody.context.branch, "lab5-starter");
+
+  const rejectedRun = await fetch(`${url}/api/run`, {
+    method: "POST",
+    headers: { origin: "http://not-local.invalid" }
+  });
+  assert.equal(rejectedRun.status, 403);
+  assert.deepEqual(await rejectedRun.json(), { ok: false, error: "Origin is not local." });
 
   const page = await fetch(url);
   assert.equal(page.status, 200);
