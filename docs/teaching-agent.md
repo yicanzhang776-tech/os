@@ -76,14 +76,14 @@ Windows PowerShell：
 
 ```powershell
 $env:ARK_API_KEY = "在当前终端安全设置的方舟密钥"
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-interactive-demo.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
 ```
 
 Ubuntu/Linux：
 
 ```bash
 export ARK_API_KEY='在当前 shell 安全设置的方舟密钥'
-./scripts/start-interactive-demo.sh
+sh scripts/run-interactive-demo.sh
 ```
 
 不要把密钥写入仓库、命令历史、截图或日志。关闭桥接器进程即可停止教学智能体入口；不配置 `ARK_API_KEY` 时，页面仍可完整使用本地预测、运行、规则诊断、回放和分支比较，提问会返回固定的“模型未配置”说明。
