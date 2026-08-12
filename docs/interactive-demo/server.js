@@ -2,7 +2,8 @@
 
 // Dependency-free local bridge:
 // current Git branch + build/QEMU output -> normalized teaching events -> browser.
-// The server only listens on loopback and never sends experiment output online.
+// The browser bridge is loopback-only; the Agent route may send bounded results
+// from the six server-owned teaching tools to the configured model service.
 
 const crypto = require("crypto");
 const fs = require("fs");
@@ -15,6 +16,28 @@ const {
   parseBranchContext,
   parseKernelLine
 } = require("./protocol");
+const { createAgentApi } = require("./agent/api");
+const { createAgentLoop } = require("./agent/agent-loop");
+const { createArkModelClient, isTrustedModelClientError } = require("./agent/model-client");
+const { createProductionAgentHandler } = require("./agent/model-handler");
+const {
+  createGetCodeDiffTool,
+  createGetContextTool,
+  createGetQemuEventsTool,
+  createGetRunResultTool,
+  createReadCodeTool,
+  createRunTestTool
+} = require("./agent/tools");
+const { getApprovedTest } = require("./agent/test-registry");
+const {
+  DEFAULT_RUN_TIMEOUTS,
+  RunLifecycleManager,
+  RunStore,
+  SharedTaskLock,
+  isLegacyLab2Panic,
+  resolveLegacyPanicEvent,
+  terminateChildProcess
+} = require("./agent/run-store");
 
 const publicDir = __dirname;
 const repoDir = path.resolve(__dirname, "..", "..");
@@ -41,6 +64,9 @@ const staticAssetNames = [
   "state-diff.js",
   "run-history.js",
   "run-transfer.js",
+  "run-submission.js",
+  "agent-client.js",
+  "agent-panel.js",
   "timeline-controller.js",
   "diagnostics.js",
   "presentation-mode.js",
@@ -49,13 +75,9 @@ const staticAssetNames = [
 let sequence = 0;
 let currentChild = null;
 let runPromise = null;
-let activeRunContext = null;
-let activeRunId = null;
-let activeRunStartedAt = null;
-let activeBuildResult = null;
-let activeQemuResult = null;
-let stopRequested = false;
 let currentContext = readWorkspaceContext();
+const runStore = new RunStore();
+const taskLock = new SharedTaskLock();
 let runState = {
   phase: "idle",
   running: false,
@@ -64,6 +86,55 @@ let runState = {
 };
 let lastEventKey = "";
 let lastEventTime = 0;
+const getContextTool = createGetContextTool({
+  repoDir,
+  target: rustTarget,
+  readWorkspaceContext,
+  getTaskSnapshot: readCurrentTaskSnapshot
+});
+const readCodeTool = createReadCodeTool({ repoDir, readWorkspaceContext });
+const getQemuEventsTool = createGetQemuEventsTool({ readWorkspaceContext, runStore });
+const getRunResultTool = createGetRunResultTool({ readWorkspaceContext, runStore });
+const getCodeDiffTool = createGetCodeDiffTool({ repoDir, readWorkspaceContext });
+const runLifecycle = new RunLifecycleManager({
+  store: runStore,
+  taskLock,
+  timeouts: DEFAULT_RUN_TIMEOUTS,
+  onRunStarted: handleRunStarted,
+  onRunUpdated: handleRunUpdated,
+  onRunCompleted: handleRunCompleted
+});
+const runTestTool = createRunTestTool({
+  readWorkspaceContext,
+  readPreflight: readLinuxPreflight,
+  startApprovedRun: startAgentApprovedRun
+});
+const agentToolDispatch = Object.freeze({
+  get_context: getContextTool,
+  read_code: readCodeTool,
+  get_qemu_events: getQemuEventsTool,
+  get_run_result: getRunResultTool,
+  get_code_diff: getCodeDiffTool,
+  run_test: runTestTool
+});
+const arkModelClient = createArkModelClient({
+  fetchImpl: globalThis.fetch,
+  apiKeyProvider: () => process.env.ARK_API_KEY,
+  baseUrl: process.env.ARK_BASE_URL,
+  model: process.env.ARK_MODEL
+});
+const agentLoop = createAgentLoop({
+  model: arkModelClient,
+  toolDispatch: agentToolDispatch,
+  readContext: readWorkspaceContext,
+  isTrustedModelError: isTrustedModelClientError
+});
+const handleAgentRequest = createProductionAgentHandler({ agentLoop });
+const agentApi = createAgentApi({
+  expectedOrigin: `http://${host}:${port}`,
+  readWorkspaceContext,
+  handleAgentRequest
+});
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("--port must be an integer from 1 to 65535.");
@@ -95,6 +166,20 @@ function readWorkspaceContext() {
     || gitValue(["rev-parse", "--abbrev-ref", "HEAD"], "unknown");
   const commit = gitValue(["rev-parse", "--short", "HEAD"], "unknown");
   return { ...parseBranchContext(branch), commit };
+}
+
+function readCurrentTaskSnapshot() {
+  const task = taskLock.getActiveTask();
+  const activeRun = runStore.getActiveRun();
+  const running = Boolean(task);
+  return {
+    running,
+    kind: running ? task.kind : null,
+    phase: running ? runState.phase : "idle",
+    runId: running ? task.runId : null,
+    startedAt: running ? activeRun?.startedAt || task.startedAt : null,
+    canStop: running
+  };
 }
 
 function createRunId() {
@@ -176,11 +261,16 @@ function publishConsole(line, channel) {
   };
   consoleHistory.push(item);
   if (consoleHistory.length > 60) consoleHistory.shift();
+  const activeRun = runStore.getActiveRun();
+  if (activeRun) runStore.recordOutput(activeRun.runId, item.line);
   broadcast(item);
 }
 
 function publishTelemetry(parsed, rawLine) {
-  const normalized = normalizeTeachingEvent(parsed);
+  const activeRun = runStore.getActiveRun();
+  const contextualRun = activeRun || { lab: currentContext.lab, activeObservedLab: null };
+  const attributed = resolveLegacyPanicEvent(parsed, rawLine, contextualRun);
+  const normalized = normalizeTeachingEvent(attributed);
   if (!normalized) return;
   const now = Date.now();
   const key = `${normalized.lab}:${normalized.step}:${normalized.status}`;
@@ -192,15 +282,20 @@ function publishTelemetry(parsed, rawLine) {
   const item = {
     type: "telemetry",
     ...normalized,
-    raw: rawLine,
-    branch: activeRunContext?.branch || currentContext.branch,
-    commit: activeRunContext?.commit || currentContext.commit,
-    runId: activeRunId || `external-${process.pid}`,
+    raw: String(rawLine || "").slice(0, 500),
+    branch: activeRun?.branch || currentContext.branch,
+    commit: activeRun?.commit || currentContext.commit,
+    runId: activeRun?.runId || `external-${process.pid}`,
     sequence,
     timestamp: now
   };
   eventHistory.push(item);
   if (eventHistory.length > 512) eventHistory.shift();
+  if (activeRun) {
+    runStore.recordEvent(activeRun.runId, item, {
+      observeLab: !isLegacyLab2Panic(rawLine)
+    });
+  }
   broadcast(item);
 }
 
@@ -224,52 +319,89 @@ function bridgeTextStream(stream) {
   stream.on("end", () => inspectKernelLine(remainder, "stdin"));
 }
 
+function processStartError(label, error) {
+  const failure = new Error(`${label} could not start: ${error?.message || "unknown error"}`);
+  failure.code = "process_start_failed";
+  return failure;
+}
+
 function streamProcess(command, args, label, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
+  let child = null;
+  let settled = false;
+  let resolvePromise;
+  let rejectPromise;
+  const remainder = { stdout: "", stderr: "" };
+  const promise = new Promise((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+
+  const finish = (error, code = null) => {
+    if (settled) return;
+    settled = true;
+    if (currentChild === child) currentChild = null;
+    if (error) rejectPromise(error);
+    else resolvePromise(code);
+  };
+  const consume = (source, chunk) => {
+    if (settled) return;
+    const text = chunk.toString();
+    process[source].write(text);
+    remainder[source] += text;
+    const lines = remainder[source].split("\n");
+    remainder[source] = lines.pop();
+    for (const line of lines) {
+      if (options.parseKernel) inspectKernelLine(line, source);
+      else publishConsole(line, options.channel || label.toLowerCase());
+    }
+  };
+
+  try {
+    child = spawn(command, args, {
       cwd: repoDir,
+      detached: process.platform !== "win32",
       windowsHide: true
     });
     currentChild = child;
-    const remainder = { stdout: "", stderr: "" };
-
-    const consume = (source, chunk) => {
-      const text = chunk.toString();
-      process[source].write(text);
-      remainder[source] += text;
-      const lines = remainder[source].split("\n");
-      remainder[source] = lines.pop();
-      for (const line of lines) {
-        if (options.parseKernel) inspectKernelLine(line, source);
-        else publishConsole(line, options.channel || label.toLowerCase());
-      }
-    };
-
-    child.stdout.on("data", (chunk) => consume("stdout", chunk));
-    child.stderr.on("data", (chunk) => consume("stderr", chunk));
-    child.on("error", (error) => {
-      currentChild = null;
-      reject(new Error(`${label} could not start: ${error.message}`));
-    });
-    child.on("close", (code) => {
+    child.stdout?.on("data", (chunk) => consume("stdout", chunk));
+    child.stderr?.on("data", (chunk) => consume("stderr", chunk));
+    child.once("error", (error) => finish(processStartError(label, error)));
+    child.once("close", (code) => {
+      if (settled) return;
       for (const source of ["stdout", "stderr"]) {
         if (!remainder[source]) continue;
         if (options.parseKernel) inspectKernelLine(remainder[source], source);
         else publishConsole(remainder[source], options.channel || label.toLowerCase());
       }
-      currentChild = null;
-      resolve(code);
+      finish(null, code);
     });
-  });
+  } catch (error) {
+    finish(processStartError(label, error));
+  }
+
+  return {
+    promise,
+    terminate(reason) {
+      if (settled) return false;
+      terminateChildProcess(child);
+      const error = new Error(`The ${label} process was terminated (${reason}).`);
+      error.code = "process_terminated";
+      finish(error);
+      return true;
+    }
+  };
 }
 
-async function runQemuAndBridge() {
-  currentContext = readWorkspaceContext();
-  activeRunContext = currentContext;
-  activeRunId = createRunId();
-  activeRunStartedAt = Date.now();
-  activeBuildResult = null;
-  activeQemuResult = null;
+function contextForRun(run) {
+  return run.context || {
+    branch: run.branch,
+    commit: run.commit,
+    lab: run.lab,
+    variant: run.variant
+  };
+}
+
+function handleRunStarted(run) {
   sequence = 0;
   eventHistory.length = 0;
   consoleHistory.length = 0;
@@ -277,164 +409,191 @@ async function runQemuAndBridge() {
   broadcast({
     type: "run-start",
     protocol: EVENT_PROTOCOL,
-    runId: activeRunId,
-    context: activeRunContext,
-    timestamp: activeRunStartedAt
+    runId: run.runId,
+    context: contextForRun(run),
+    timestamp: run.startedAt
   });
-
-  setRunState("building", `正在构建 ${activeRunContext.branch}`, {
-    branch: activeRunContext.branch,
-    runId: activeRunId,
-    target: rustTarget
-  });
-  console.log(`[demo] Building branch ${activeRunContext.branch}...`);
-  const buildCode = await streamProcess(
-    cargoCommand,
-    ["build", "-p", "ai-os-kernel", "--target", rustTarget, "--color", "never"],
-    "cargo",
-    { channel: "build" }
-  );
-  if (stopRequested) {
-    finishStoppedRun();
-    return;
-  }
-  if (buildCode !== 0) {
-    activeBuildResult = "failure";
-    throw new Error(`cargo build failed with exit code ${buildCode}.`);
-  }
-  activeBuildResult = "success";
-
-  const kernel = path.join(
-    repoDir,
-    "target",
-    rustTarget,
-    "debug",
-    "ai-os-kernel"
-  );
-  setRunState("running", `QEMU 正在运行 ${activeRunContext.branch}`, {
-    branch: activeRunContext.branch,
-    runId: activeRunId,
-    target: rustTarget,
-    buildResult: activeBuildResult,
-    runResult: "running"
-  });
-  console.log("[demo] Starting QEMU; serial output is now forwarded to the browser.");
-  const qemuCode = await streamProcess(
-    qemuCommand,
-    ["-machine", "virt", "-nographic", "-bios", "default", "-kernel", kernel],
-    "QEMU",
-    { parseKernel: true, channel: "serial" }
-  );
-  if (stopRequested) {
-    finishStoppedRun();
-    return;
-  }
-
-  activeQemuResult = qemuCode === 0 ? "finished" : "failure";
-
-  setRunState("finished", `QEMU 已退出（code ${qemuCode}）`, {
-    branch: activeRunContext.branch,
-    exitCode: qemuCode,
-    runId: activeRunId,
-    buildResult: activeBuildResult,
-    runResult: activeQemuResult
-  });
-  broadcast({
-    type: "run-end",
-    protocol: EVENT_PROTOCOL,
-    runId: activeRunId,
-    context: activeRunContext,
-    exitCode: qemuCode,
-    buildResult: activeBuildResult,
-    runResult: activeQemuResult,
-    startedAt: activeRunStartedAt,
-    timestamp: Date.now()
-  });
-  console.log(`[demo] QEMU exited with code ${qemuCode}.`);
-  activeRunContext = null;
-  activeRunId = null;
-  activeRunStartedAt = null;
-  activeBuildResult = null;
-  activeQemuResult = null;
 }
 
-function finishStoppedRun() {
-  const context = activeRunContext || currentContext;
-  const runId = activeRunId;
-  const stoppedRunResult = activeBuildResult === "success" ? "stopped" : null;
-  setRunState("stopped", `已停止 ${context.branch}`, {
-    branch: context.branch,
-    buildResult: activeBuildResult,
-    runResult: stoppedRunResult
-  });
-  broadcast({
-    type: "run-end",
-    protocol: EVENT_PROTOCOL,
-    runId,
-    context,
-    stopped: true,
-    exitCode: null,
-    buildResult: activeBuildResult,
-    runResult: stoppedRunResult,
-    startedAt: activeRunStartedAt,
-    timestamp: Date.now()
-  });
-  console.log(`[demo] Stopped run for ${context.branch}.`);
-  activeRunContext = null;
-  activeRunId = null;
-  activeRunStartedAt = null;
-  activeBuildResult = null;
-  activeQemuResult = null;
-}
-
-function startRun() {
-  if (runPromise) return false;
-  stopRequested = false;
-  runPromise = runQemuAndBridge()
-    .catch((error) => {
-      if (stopRequested) {
-        finishStoppedRun();
-        return;
-      }
-      const branch = activeRunContext?.branch || currentContext.branch;
-      if (activeBuildResult !== "success") activeBuildResult = "failure";
-      else activeQemuResult = "failure";
-      console.error(`[demo] ${error.message}`);
-      setRunState("error", error.message, {
-        branch,
-        buildResult: activeBuildResult,
-        runResult: activeQemuResult
-      });
-      broadcast({
-        type: "run-error",
-        protocol: EVENT_PROTOCOL,
-        runId: activeRunId,
-        context: activeRunContext || currentContext,
-        message: error.message,
-        buildResult: activeBuildResult,
-        runResult: activeQemuResult,
-        branch,
-        startedAt: activeRunStartedAt,
-        timestamp: Date.now()
-      });
-      activeRunContext = null;
-      activeRunId = null;
-      activeRunStartedAt = null;
-      activeBuildResult = null;
-      activeQemuResult = null;
-    })
-    .finally(() => {
-      runPromise = null;
+function handleRunUpdated(run, transition) {
+  if (transition === "build-running") {
+    setRunState("building", `正在构建 ${run.branch}`, {
+      branch: run.branch,
+      runId: run.runId,
+      target: run.target,
+      buildResult: "running",
+      runResult: "not-started"
     });
-  return true;
+    console.log(`[demo] Building branch ${run.branch}...`);
+  }
+  if (transition === "qemu-running") {
+    setRunState("running", `QEMU 正在运行 ${run.branch}`, {
+      branch: run.branch,
+      runId: run.runId,
+      target: run.target,
+      buildResult: run.build.status,
+      runResult: "running"
+    });
+    console.log("[demo] Starting QEMU; serial output is now forwarded to the browser.");
+  }
+}
+
+function handleRunCompleted(run) {
+  const context = contextForRun(run);
+  const qemuStarted = run.qemu.status !== "not-started";
+  const runResult = qemuStarted
+    ? run.qemu.status
+    : run.timedOut ? "timeout" : run.manuallyStopped ? null : run.qemu.status;
+  const message = {
+    protocol: EVENT_PROTOCOL,
+    runId: run.runId,
+    context,
+    stopped: run.manuallyStopped,
+    timedOut: run.timedOut,
+    exitCode: run.qemu.exitCode,
+    buildResult: run.build.status,
+    runResult,
+    finalResult: run.finalResult,
+    message: run.error?.message || "",
+    startedAt: run.startedAt,
+    timestamp: run.endedAt,
+    durationMs: run.durationMs,
+    eventCount: run.eventCount
+  };
+
+  if (run.manuallyStopped) {
+    setRunState("stopped", `已停止 ${run.branch}`, {
+      branch: run.branch,
+      runId: run.runId,
+      buildResult: run.build.status,
+      runResult
+    });
+    broadcast({ type: "run-end", ...message });
+    console.log(`[demo] Stopped run for ${run.branch}.`);
+    return;
+  }
+  if (run.timedOut) {
+    setRunState("error", `运行超时：${run.error?.message || "timeout"}`, {
+      branch: run.branch,
+      runId: run.runId,
+      buildResult: run.build.status,
+      runResult: "timeout"
+    });
+    broadcast({ type: "run-end", ...message });
+    console.error(`[demo] ${run.error?.message || "Run timed out."}`);
+    return;
+  }
+  if (["finished", "qemu-failure"].includes(run.finalResult)) {
+    setRunState("finished", `QEMU 已退出（code ${run.qemu.exitCode}）`, {
+      branch: run.branch,
+      exitCode: run.qemu.exitCode,
+      runId: run.runId,
+      buildResult: run.build.status,
+      runResult
+    });
+    broadcast({ type: "run-end", ...message });
+    console.log(`[demo] QEMU exited with code ${run.qemu.exitCode}.`);
+    return;
+  }
+
+  setRunState("error", run.error?.message || "The run failed.", {
+    branch: run.branch,
+    runId: run.runId,
+    buildResult: run.build.status,
+    runResult
+  });
+  broadcast({ type: "run-error", ...message });
+  console.error(`[demo] ${run.error?.message || "The run failed."}`);
+}
+
+function startKernelRun(options = {}) {
+  const taskKind = options.taskKind;
+  if (!["interactive-run", "agent-test"].includes(taskKind)) {
+    throw new TypeError("A server-owned taskKind is required.");
+  }
+  if (taskKind === "agent-test"
+    && (!options.approvedTest
+      || getApprovedTest(options.approvedTest.testId) !== options.approvedTest
+      || options.approvedTest.runner !== "kernel-build-qemu")) {
+    throw new TypeError("An approved registry test is required.");
+  }
+  if (taskKind === "agent-test"
+    && (!options.context
+      || typeof options.context !== "object"
+      || options.context.branch !== options.approvedTest.branchPolicy.branch
+      || options.context.lab !== options.approvedTest.lab
+      || options.context.variant !== options.approvedTest.variant
+      || typeof options.context.commit !== "string"
+      || !options.context.commit)) {
+    throw new TypeError("A verified approved-test context is required.");
+  }
+
+  currentContext = taskKind === "agent-test"
+    ? { ...options.context }
+    : readWorkspaceContext();
+  const runId = createRunId();
+  const startedAt = Date.now();
+  const kernel = path.join(repoDir, "target", rustTarget, "debug", "ai-os-kernel");
+  const started = runLifecycle.start({
+    runId,
+    taskKind,
+    branch: currentContext.branch,
+    commit: currentContext.commit,
+    lab: currentContext.lab,
+    variant: currentContext.variant,
+    target: rustTarget,
+    context: currentContext,
+    startedAt
+  }, {
+    build: () => streamProcess(
+      cargoCommand,
+      ["build", "-p", "ai-os-kernel", "--target", rustTarget, "--color", "never"],
+      "cargo",
+      { channel: "build" }
+    ),
+    qemu: () => streamProcess(
+      qemuCommand,
+      ["-machine", "virt", "-nographic", "-bios", "default", "-kernel", kernel],
+      "QEMU",
+      { parseKernel: true, channel: "serial" }
+    )
+  });
+  if (!started.started) {
+    return {
+      started: false,
+      runId: null,
+      startedAt: null,
+      activeTask: started.activeTask
+    };
+  }
+
+  const trackedPromise = started.promise.finally(() => {
+    if (runPromise === trackedPromise) runPromise = null;
+  });
+  runPromise = trackedPromise;
+  return {
+    started: true,
+    runId,
+    startedAt,
+    activeTask: started.activeTask
+  };
+}
+
+function startAgentApprovedRun({ approvedTest, context }) {
+  return startKernelRun({
+    taskKind: "agent-test",
+    approvedTest,
+    context
+  });
 }
 
 function stopRun() {
-  if (!runPromise) return false;
-  stopRequested = true;
-  const branch = activeRunContext?.branch || currentContext.branch;
-  setRunState("stopping", `正在停止 ${branch}`, { branch, runId: activeRunId });
-  if (currentChild && !currentChild.killed) currentChild.kill();
+  const activeRun = runStore.getActiveRun();
+  if (!activeRun || !runLifecycle.stop()) return false;
+  setRunState("stopping", `正在停止 ${activeRun.branch}`, {
+    branch: activeRun.branch,
+    runId: activeRun.runId
+  });
   return true;
 }
 
@@ -444,7 +603,9 @@ function refreshBranchContext() {
 
   const previous = currentContext;
   currentContext = next;
-  if (!runPromise) {
+  const activeTask = taskLock.getActiveTask();
+  if (activeTask?.kind === "agent-test") runLifecycle.stop();
+  if (!taskLock.getActiveTask()) {
     eventHistory.length = 0;
     consoleHistory.length = 0;
     sequence = 0;
@@ -454,10 +615,10 @@ function refreshBranchContext() {
     context: currentContext,
     previous,
     protocol: EVENT_PROTOCOL,
-    activeRunBranch: activeRunContext?.branch || null,
+    activeRunBranch: runStore.getActiveRun()?.branch || null,
     timestamp: Date.now()
   });
-  if (!runPromise) {
+  if (!taskLock.getActiveTask()) {
     setRunState("idle", `已切换到 ${currentContext.branch}，等待运行`, {
       branch: currentContext.branch
     });
@@ -465,10 +626,11 @@ function refreshBranchContext() {
   console.log(`[demo] Workspace branch changed: ${previous.branch} -> ${currentContext.branch}`);
 }
 
-function writeJson(response, statusCode, value) {
+function writeJson(response, statusCode, value, headers = {}) {
   response.writeHead(statusCode, {
     "Cache-Control": "no-store",
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    ...headers
   });
   response.end(JSON.stringify(value));
 }
@@ -483,7 +645,7 @@ function isInsideRepo(candidate) {
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-const server = http.createServer((request, response) => {
+const server = http.createServer(async (request, response) => {
   let requestPath;
   try {
     requestPath = decodeURIComponent(new URL(request.url, `http://${host}`).pathname);
@@ -504,12 +666,38 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (requestPath === "/api/agent") {
+    const result = await agentApi.handleHttpRequest({
+      method: request.method,
+      headers: request.headers,
+      body: request
+    });
+    writeJson(response, result.statusCode, result.body, result.headers);
+    return;
+  }
+
   if (requestPath === "/api/context" && request.method === "GET") {
+    const toolResult = agentToolDispatch.get_context({});
+    if (toolResult.ok) {
+      currentContext = {
+        branch: toolResult.data.branch,
+        commit: toolResult.data.commit,
+        lab: toolResult.data.lab,
+        stageIndex: toolResult.data.stageIndex,
+        variant: toolResult.data.variant,
+        variantLabel: toolResult.data.variantLabel,
+        expectedBranch: toolResult.data.expectedBranch
+      };
+    }
     writeJson(response, 200, {
       protocol: EVENT_PROTOCOL,
       target: rustTarget,
       context: currentContext,
-      runState
+      runState,
+      workspace: toolResult.ok ? toolResult.data.workspace : null,
+      task: toolResult.ok ? toolResult.data.task : readCurrentTaskSnapshot(),
+      contextError: toolResult.ok ? null : toolResult.error,
+      agent: arkModelClient.getCapabilities()
     });
     return;
   }
@@ -534,8 +722,13 @@ const server = http.createServer((request, response) => {
       });
       return;
     }
-    if (!startRun()) {
-      writeJson(response, 409, { ok: false, error: "A build or QEMU run is already active." });
+    const started = startKernelRun({ taskKind: "interactive-run" });
+    if (!started.started) {
+      writeJson(response, 409, {
+        ok: false,
+        error: "A build or QEMU run is already active.",
+        errorCode: "run_busy"
+      });
       return;
     }
     writeJson(response, 202, {
@@ -617,15 +810,16 @@ server.on("upgrade", (request, socket) => {
     ""
   ].join("\r\n"));
   clients.add(socket);
+  const activeRun = runStore.getActiveRun();
   sendWebSocketMessage(socket, {
     type: "history",
     protocol: EVENT_PROTOCOL,
     context: currentContext,
     runState,
-    activeRun: activeRunId ? {
-      runId: activeRunId,
-      context: activeRunContext,
-      startedAt: activeRunStartedAt
+    activeRun: activeRun ? {
+      runId: activeRun.runId,
+      context: contextForRun(activeRun),
+      startedAt: activeRun.startedAt
     } : null,
     events: eventHistory,
     console: consoleHistory
@@ -647,12 +841,13 @@ server.listen(port, host, () => {
     console.log("[demo] Reading serial lines from standard input.");
     bridgeTextStream(process.stdin);
   }
-  if (runKernelOnStart) startRun();
+  if (runKernelOnStart) startKernelRun({ taskKind: "interactive-run" });
 });
 
 function shutdown() {
   clearInterval(branchTimer);
-  if (currentChild && !currentChild.killed) currentChild.kill();
+  runLifecycle.stop();
+  if (currentChild && !currentChild.killed) terminateChildProcess(currentChild);
   server.close(() => process.exit(0));
 }
 
