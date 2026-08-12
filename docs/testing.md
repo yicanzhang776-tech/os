@@ -2,6 +2,20 @@
 
 本文档记录当前 P0-Lab7 的测试分层、脚本入口和 CI 策略。测试目标是保证每个实验既能作为学生 starter 验证，也能作为教师 solution 验收。
 
+## 教学智能体与远程反馈测试
+
+Node 总套件应覆盖交互演示、智能体 API/循环/模型客户端/六个工具、学生端面板、反馈接收、8891 管理页和教师评分。学生端必须验证：未同意不发送；同意只写 `sessionStorage` 固定键；4000 字符通过、4001 拒绝；回答使用 `textContent`；未配置、认证、限流、超时、任务繁忙和上下文变化使用固定中文说明；演示模式不自动提问；“清空当前显示”不声称删除持久化数据。
+
+在线测试只有在安全注入具有 Agent Plan 权限的 `ARK_API_KEY` 后才执行，且不得打印密钥。必须分别验证直接回答、`get_context`、运行证据、允许源码、拒绝答案/教师路径、批准测试、上下文变化和完整页面流程。未运行时必须如实记录。
+
+```powershell
+$node = "node"
+$tests = Get-ChildItem docs/interactive-demo,docs/teacher-grading,scripts -Recurse -Filter *.test.js
+& $node --test ($tests.FullName)
+```
+
+分阶段验收保持 `-Stage 1/2/3` 和原始 starter 的 `-ExpectIncomplete`；两参数同时使用必须明确拒绝。P0 不在智能体 `run_test` 登记表中。
+
 ## 当前可用测试
 
 ### 环境检查

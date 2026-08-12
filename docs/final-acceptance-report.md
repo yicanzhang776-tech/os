@@ -1,7 +1,34 @@
 # 项目验收状态报告
 
-日期：2026-08-09
-取证基线：`origin/main` 提交 `ef6e401`
+日期：2026-08-13
+远程事实基线：`origin/main` `4e606380cc4c3e9a349d41d5700114d1435bb2c2`，`origin/agent-mvp` `d46cbba54e6d0db06ec6bf5fe364245c9c39bb1e`
+集成工作分支：`codex/agent-docs-integration`（未提交、未推送）
+
+> 本报告只把实际执行结果记为通过。远程 CI 和 Agent Plan 在线八项联调仍标记为“未运行”；本地 Rust/QEMU、全分支同步、链接与 24 页 PPT 视觉验收均引用截至 2026-08-13 的实际输出，不沿用 8 月 9 日数字。
+
+## 本轮已确认结果
+
+| 项目 | 结果 |
+|---|---|
+| 合并前 `origin/main` Node 基线 | 176/176 通过 |
+| 合并后完整 Node 基线 | 577 项：571 通过、6 跳过、0 失败；跳过项为在线方舟与 Windows 不支持的链接节点场景 |
+| 学生端与上下文定向测试 | 80/80 通过 |
+| 集成完成后的最终 Node 全量回归 | 585 项：579 通过、6 跳过、0 失败；包含新增学生端同意、错误映射、纯文本渲染和演示模式测试 |
+| `cargo fmt --all -- --check` | 通过 |
+| RISC-V 交叉构建 | `cargo build --workspace --target riscv64gc-unknown-none-elf` 通过 |
+| Clippy | `cargo clippy --workspace --target riscv64gc-unknown-none-elf -- -D warnings` 通过 |
+| 主机单元测试 | `cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc`：46/46 通过 |
+| 通用 `cargo test --workspace` | 失败：仓库默认 RISC-V 目标没有 `test` crate；显式主机 workspace 测试又因裸机 binary 的 `panic_impl` 与 `std` 冲突；未修改内核来掩盖该事实 |
+| main P0 与 Stage | P0 QEMU 通过；Lab1-Lab7 的 Stage 1/2/3 共 21/21 通过 |
+| 七个 solution 分支 | Stage 1/2/3 共 21/21 通过 |
+| 七个 starter 分支 | `-ExpectIncomplete` 7/7 通过；默认完整验收 7/7 按预期失败且无当前 Lab PASS；冲突参数 7/7 明确拒绝 |
+| P0 正式分支 | QEMU smoke 通过 |
+| 18 个同步工作分支核心 Node 回归 | 18/18 进程退出码为 0 |
+| 18 个工作分支 Markdown 相对链接 | 18/18 零断链 |
+| starter 答案隔离 | 7/7 无答案/教师文件、无对应 Markdown 链接、无内核改动；工具策略含拒绝规则 |
+| 24 页正式 PPT | 24 页；仓库溢出检查通过；PowerPoint 全页复渲染检查通过；真实 8891 管理页截图已替换 |
+| `git diff --check` | 集成分支与 17 个同步工作分支全部通过 |
+| Agent Plan 在线八项联调 | 未运行，尚未在本轮进程中安全取得有效密钥 |
 
 ## 分支与材料状态
 
@@ -11,28 +38,9 @@
 - 远程教学分支均包含当前 CI 配置；CI 文件存在不等于远程流水线已经成功，需另查平台记录。
 - 正式 PPT 已存在。演示视频是否录制完成尚未由项目成员确认。
 
-## 本轮已实际执行
+## 历史验收记录的处理
 
-| 验证 | 结果 |
-|---|---|
-| `cargo fmt --all -- --check` | 通过 |
-| host unit tests | 46 passed，0 failed |
-| RISC-V 显式目标构建 | 通过 |
-| RISC-V Clippy（`-D warnings`） | 通过 |
-| 可视化与评分工具 Node tests | 133 passed，0 failed（使用桌面应用捆绑 Node） |
-| JavaScript / PowerShell / Linux Shell 语法 | 通过；Shell 使用 Git for Windows Bash |
-| `main` 的 Stage 1/2/3 QEMU 验收 | 21 组通过，包含 `[Lab1] PASS` 至 `[Lab7] PASS` |
-| 7 个 solution 的 Stage 1/2/3 | 21 组通过，并观察到对应 T1/T2 任务标志 |
-| 7 个 starter 的 `-ExpectIncomplete` | 7 组通过 |
-| 7 个 starter 的默认 Stage 3 | 7 组按预期失败，串口均没有当前 Lab 最终 PASS |
-| `-Stage` 与 `-ExpectIncomplete` 互斥 | main、solution、starter 共 21 个脚本入口均明确拒绝 |
-| P0 QEMU 基线 | 通过，观察到 `[P0] PASS` |
-| 16 个正式分支 Markdown 相对链接 | 全部通过，零断链 |
-| starter 答案隔离 | 同步未修改实现代码；不存在 `SOLUTION.md` / `TEACHER_GUIDE.md` 文件或链接 |
-| 22 页正式 PPT | 全页渲染通过，溢出检查通过，真实页面截图和来源备注已加入 |
-| `git diff --check` | 16 个工作分支全部通过 |
-
-上述结果只对应 2026-08-09 的隔离工作区和下列 `origin/*` 基线。远程 CI 未在本轮触发，因此不能把本地通过写成远程流水线成功；演示视频状态也仍待项目成员确认。
+8 月 9 日报告中的 host、Node、Stage、分支链接和 22 页 PPT 数字只代表当时旧基线，不作为本轮集成证据。上表已经写入本轮 Rust、QEMU、全分支和 24 页 PPT 结果；在线 Agent Plan 与远程 CI 继续保持“未运行”，演示视频状态仍待项目成员确认。
 
 ## Stage 回归原因与修复边界
 
@@ -43,5 +51,5 @@
 - Lab5 不包含抢占、多核或复杂优先级。
 - Lab6 不包含 ELF、多进程或完整用户指针校验。
 - Lab7 不包含 virtio-block、真实磁盘或复杂目录树。
-- 可视化、反馈和评分记录默认只保存在本地浏览器，无服务器、数据库、登录或云同步。
+- 预测、回放、规则诊断和教师评分保持本地；反馈/脱敏运行记录可主动提交到负责人服务，教学智能体可在同意后发送受限证据到火山方舟。
 - 教学反馈不计算成绩；教师评分不能只凭 PASS，必须人工复核代码、报告和口试。

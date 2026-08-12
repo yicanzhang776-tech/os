@@ -2,6 +2,14 @@
 
 本目录保存“AI 合作的操作系统教学实验环境”的需求、架构、计划、测试、AI 协作和实验设计文档。
 
+## 按读者进入
+
+- 学生：从 [实验路线](labs/README.md) 和 [交互可视化](interactive-demo/README.md) 开始；需要云端教学提示时先阅读 [AI 教学助教与数据边界](teaching-agent.md)。
+- 教师与助教：使用 [教师评分工具](teacher-grading/README.md) 人工复核，项目负责人通过 [反馈管理](feedback-admin/README.md) 接收自愿提交；智能体回答不参与自动计分。
+- 评委与答辩成员：阅读 [最终报告](final-report.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
+
+预测/回放/规则诊断、主动远程反馈、方舟教学智能体和本地教师评分是四条边界不同的链路，不能再统一描述为“完全本地”。
+
 ## P0 与正式教学实验的区别
 
 P0 是工程运行基线，不计入正式教学实验。P0 只负责 Rust 裸机工程、RISC-V 64 目标、QEMU/OpenSBI 启动和可重复测试。

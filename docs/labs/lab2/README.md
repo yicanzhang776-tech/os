@@ -1,5 +1,7 @@
 # Lab2：Trap 与异常处理
 
+> 可视化页面提供本地证据与可选 AI 教学助教。starter 中助教只给证据化提示，不能读取或链接 solution/教师文件；回答不替代 Stage 验收。
+
 本实验在 Lab1 的控制台基础上，引入 RISC-V S-mode trap。你会设置 `stvec`，触发一个可控 breakpoint 异常，读取 `scause/sepc/stval`，最后正确推进 `sepc` 并返回。
 
 推荐学习闭环：先预测 breakpoint 事件链，再运行当前分支；完成每项任务后执行对应 `-Stage`，最后回放 trap 证据并填写教学反馈。反馈不计分。
