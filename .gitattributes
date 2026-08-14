@@ -4,6 +4,7 @@ docs/interactive-demo/*.md text eol=lf
 docs/interactive-demo/*.html text eol=lf
 docs/interactive-demo/*.css text eol=lf
 docs/interactive-demo/*.js text eol=lf
+docs/interactive-demo/agent/*.js text eol=lf
 docs/feedback-admin/*.html text eol=lf
 docs/feedback-admin/*.css text eol=lf
 docs/feedback-admin/*.js text eol=lf
