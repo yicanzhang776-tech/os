@@ -1,5 +1,9 @@
 # Lab7 测试说明
 
+> 智能体 `run_test` 只能启动登记的本 Lab starter/solution 测试，并与页面交互运行共用任务锁；模型回答和工具返回不能替代脚本最终结果。
+
+`-Stage 1/2/3` 分别验证三个任务阶段；`-ExpectIncomplete` 只验证原始 starter。两者互斥。
+
 ## 环境检查
 
 ```powershell
