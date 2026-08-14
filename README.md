@@ -1,5 +1,12 @@
 # AI 合作的操作系统教学实验环境
 
+## 交互学习与数据边界
+
+本分支已同步[可视化学习环境](docs/interactive-demo/README.md)和[AI 教学助教说明](docs/teaching-agent.md)。预测、回放、分支比较和规则诊断继续在本地处理；教学反馈与脱敏运行记录只在主动预览、同意后远程提交；教学智能体会把问题及按需读取的受限证据发送到火山方舟，API Key 只保存在服务端环境变量中。
+
+P0 可让智能体读取分支上下文和已有运行证据，但 `run_test` 只登记 Lab1–Lab7，不能从智能体启动 P0 测试。
+
+
 本项目参加 2026 年全国大学生计算机系统能力大赛，赛项为操作系统设计赛，题目为 OS 功能挑战赛道第 20 题：AI 合作的操作系统教学实验环境。
 
 项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
@@ -266,3 +273,10 @@ winget install --id SoftwareFreedomConservancy.QEMU -e
 - ELF 加载、多用户程序、多进程地址空间。
 - virtio-block、真实磁盘文件系统和复杂路径解析。
 - 更完整的演示视频和答辩 PPT 可基于 `docs/demo-script.md` 与 `docs/final-report.md` 继续制作。
+
+## 本轮文档与验收说明（2026-08-09）
+
+- 当前分支是 P0 最小启动基线；使用 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-qemu.ps1` 验收。
+- 可视化页面用于学习启动链和导出本地运行证据；它不会自动运行 QEMU 或切换分支。
+- 教师评分工具只放在 `main`。需要评分时切换到 `main`，打开 `docs/teacher-grading/index.html`。
+- 本轮未在此工作分支触发远程 CI；构建、QEMU 与链接状态以最终验收报告中的实际命令为准。
