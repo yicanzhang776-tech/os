@@ -44,6 +44,19 @@ cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc
 
 主机单元测试覆盖与硬件无关的纯 Rust 逻辑，例如地址转换、物理页分配器、Sv39 页表算法、任务状态机、系统调用分发和内存文件系统。
 
+### 独立事件协议 Crate
+
+`os-demo-event` 使用当前主机目标执行单元测试，避免根目录的 RISC-V 默认目标影响 `std` 测试运行器：
+
+```sh
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
+cargo test -p os-demo-event --target "$HOST_TARGET"
+cargo doc -p os-demo-event --no-deps
+cargo package -p os-demo-event --allow-dirty
+```
+
+单元测试覆盖协议版本、P0 与 Lab1-Lab7 标识、状态推导、确定性编码、字段长度和字符检查、特殊字符拒绝、固定栈缓冲区编码以及典型 Lab 事件。`cargo package` 仅验证包元数据和内容，不执行发布。浏览器兼容性由 `docs/interactive-demo/protocol.test.js` 中的字节兼容事件样例验证。
+
 ### QEMU 系统测试
 
 P0：

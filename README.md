@@ -159,6 +159,8 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ```text
 .
 ├── .cargo/                 # Rust 目标配置
+├── crates/
+│   └── os-demo-event/      # no_std 事件协议校验与编码 Crate
 ├── docs/                   # 需求、架构、测试、AI协作和实验文档
 ├── kernel/                 # RISC-V 教学内核 crate
 │   ├── linker.ld
@@ -177,6 +179,23 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ├── Makefile
 └── README.md
 ```
+
+## 独立事件协议 Crate
+
+`crates/os-demo-event/` 提供小型、独立且可复用的 `os-demo-event` Crate。它集中定义 `os-demo.event/v1` 协议版本、Lab 标识、事件状态，以及 `lab + step` 字段的校验和无堆编码接口。该 Crate 不实现任何 Lab 逻辑，不包含学生答案或教师评分内容。
+
+`kernel/src/telemetry.rs` 已实际依赖这个 Crate，并通过 `core::fmt::Write` 将编码结果直接写入现有控制台。串口格式仍为 `[OS_DEMO] lab=<lab> step=<step>`，因此浏览器端 `protocol.js`、事件目录稳定键和已有 PASS/TODO 判定保持兼容。Crate 使用 `#![no_std]`，不依赖 `alloc`、文件系统、网络、进程或第三方库。
+
+在装有 Rust 工具链的 Ubuntu/Linux 环境中可以独立验证：
+
+```sh
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
+cargo test -p os-demo-event --target "$HOST_TARGET"
+cargo doc -p os-demo-event --no-deps
+cargo package -p os-demo-event --allow-dirty
+```
+
+`cargo package` 只检查打包条件；本项目不会在验收流程中自动执行 `cargo publish`。
 
 ## 环境依赖
 

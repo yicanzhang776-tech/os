@@ -655,3 +655,20 @@ flowchart LR
 8891 增加运行记录区域，按 Lab、starter/solution 和最终结果筛选，并显示运行编号、提交短编号、时长、事件数、最终结果、预测对照和可选关联评价。事件展示复用 `event-catalog.js`，只用 `textContent` 生成“事件名称—知识点—状态—时间—相邻耗时”时间线，同时提供 JSON、CSV 摘要和 Markdown 运行总结；不执行记录中的任何内容，不进行成绩、排名或身份推断。
 
 该实现适合学生团队进行小规模课堂验证，但不是监控系统：没有后台上传、批量收集、断点续传、长期账号和高并发数据库。学生每次都必须自行选择和确认；超过事件或大小限制的记录只能保留在本机。未来如有稳定服务器和维护人员，可在继续保留自愿同意、数据最小化与本地管理边界的前提下，再增加备份恢复、SQLite 和正式访问控制。
+
+### 10.13 独立事件协议 Crate
+
+公共事件编码被适度抽取到 `crates/os-demo-event/`，内核中的 Lab 实现仍只调用原有 `telemetry::event(lab, step)` 入口。`kernel/src/telemetry.rs` 将控制台包装为 `core::fmt::Write`，再调用 `os-demo-event` 完成字段校验和串口编码，避免批量修改实验调用点或触碰学生 TODO、solution 答案边界。
+
+```mermaid
+flowchart LR
+  A["Lab/P0 内核调用点"] --> B["kernel/src/telemetry.rs"]
+  B --> C["os-demo-event：校验与编码"]
+  C --> D["控制台 / OpenSBI / UART"]
+  D --> E["protocol.js：解析与标准化"]
+  E --> F["event-catalog.js 与可视化"]
+```
+
+Crate 只拥有现有串口事件的公共常量、Lab 标识、事件状态推导和 `[OS_DEMO] lab=<lab> step=<step>` 编码规则，不新增协议字段。浏览器端仍负责把串口事实标准化为 `os-demo.event/v1` 事件，并按原有规则补充 `status`、`detail` 和 `source`；`lab + step` 稳定键及未知事件降级路径没有改变。因此，同一内核调用在抽取前后产生兼容的串口文本，已有运行历史和解析器不需要迁移。
+
+`os-demo-event` 使用 `#![no_std]`，不引入 `alloc`、第三方依赖或不安全代码。所有事件都借用调用者提供的字符串，并写入调用者提供的 `core::fmt::Write`，不访问网络、文件系统、进程或 Shell。长度和字符集在写入前完成校验，非法字段不会产生半条结构化事件；这一边界使 Crate 可以独立进行主机单元测试、生成 API 文档和验证 Cargo 打包，同时不承载任何 Lab 核心实现。
