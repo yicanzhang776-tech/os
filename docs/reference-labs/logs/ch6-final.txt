@@ -1,0 +1,22 @@
+TG-RCORE CHAPTER 6 - FINAL VERIFICATION
+Timestamp: 2026-08-14T13:21:53-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Current HEAD: 3c70482
+Stage: final pass before local chapter commit
+
+cargo build --features exercise
+  exit=0  elapsed=8s
+
+./test.sh base
+  Test PASSED: 15/15  exit=0  elapsed=25s
+
+./test.sh exercise
+  Test PASSED: 33/33  exit=0  elapsed=53s
+  Test file0 OK!
+  Test fstat OK!
+  Test link OK!
+  Test mass open/unlink OK!
+
+git diff --check: PASS
+Workspace: 7 intended modified files, no untracked files

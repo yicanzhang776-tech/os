@@ -1,0 +1,38 @@
+=== CH5 IMPLEMENTATION DIFF ===
+captured_at=2026-08-14T13:02:22-07:00
+official_upstream=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+current_commit=420ae4f27afe6e8704792618738e88f2f8918ccd
+worktree_status:
+ M tg-rcore-tutorial-ch5/src/main.rs
+ M tg-rcore-tutorial-ch5/src/process.rs
+ M tg-rcore-tutorial-ch5/src/processor.rs
+
+--- actual diff statistics ---
+ tg-rcore-tutorial-ch5/src/main.rs      | 156 ++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch5/src/process.rs   |  24 +++--
+ tg-rcore-tutorial-ch5/src/processor.rs |  20 ++++-
+ 3 files changed, 160 insertions(+), 40 deletions(-)
+124	32	tg-rcore-tutorial-ch5/src/main.rs
+18	6	tg-rcore-tutorial-ch5/src/process.rs
+18	2	tg-rcore-tutorial-ch5/src/processor.rs
+
+--- selected added implementation lines ---
++        fn spawn(&self, _caller: Caller, path: usize, count: usize) -> isize {
++            current.priority = prio as usize;
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++            current.address_space.map_extern(
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++            current.address_space.unmap(range);
++pub const DEFAULT_PRIORITY: usize = 16;
++    pub stride: usize,
++    pub priority: usize,
++            stride: self.stride,
++            priority: self.priority,
++            stride: 0,
++            priority: DEFAULT_PRIORITY,
++        const BIG_STRIDE: usize = 65_536;
++            if (candidate.wrapping_sub(current) as isize) < 0 {
++        process.stride = process.stride.wrapping_add(BIG_STRIDE / process.priority);

@@ -1,0 +1,12 @@
+TG-RCORE CHAPTER 3 - BASELINE FAILURE
+Timestamp: 2026-08-14T12:25:33-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+QEMU: 8.2.10
+Workspace: clean
+
+Command: ./test.sh exercise
+Observed: trace syscall reported "not implemented"
+Result: Test FAILED: 5/7
+
+Evidence source: actual QEMU and test.sh output

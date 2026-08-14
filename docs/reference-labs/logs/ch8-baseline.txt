@@ -1,0 +1,16 @@
+TG-RCORE CHAPTER 8 - BASELINE FAILURE
+Timestamp: 2026-08-14T13:32:03-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Current HEAD: a46815a
+Workspace: clean
+Stage: original unimplemented deadlock detector
+
+TIMEOUT_SEC=300 ./test.sh exercise
+  qemu terminated by timeout after 300s
+  enable_deadlock_detect: not implemented
+  FAIL: missing deadlock test mutex 1 OK!
+  Test FAILED: 24/25
+  exit=1  elapsed=300s
+
+Evidence source: actual QEMU/test.sh output

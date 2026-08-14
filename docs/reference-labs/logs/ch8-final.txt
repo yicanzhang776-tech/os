@@ -1,0 +1,27 @@
+Stage: Chapter 8 final verification
+ISO time: 2026-08-14T13:48:23-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Current HEAD (pre-commit): a46815a616d3299c0f359d00d68ff500cedb8797
+Worktree:
+ M tg-rcore-tutorial-ch8/src/main.rs
+ M tg-rcore-tutorial-ch8/src/process.rs
+
+Commands and results:
+cargo build --features exercise        exit 0 (3.554s)
+TIMEOUT_SEC=300 ./test.sh base        exit 0 (22/22)
+TIMEOUT_SEC=300 ./test.sh exercise    exit 0 (25/25)
+TIMEOUT_SEC=300 ./test.sh all         exit 0 (2m18.820s)
+cargo clippy --features exercise       attempted; upstream lint blocked
+
+Deadlock exercise assertions:
+PASS mutex self-deadlock -> -0xDEAD
+PASS semaphore circular wait rejected
+PASS safe semaphore allocation accepted
+
+Changed files / lines:
+ tg-rcore-tutorial-ch8/src/main.rs    | 470 ++++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch8/src/process.rs | 249 +++++++++++++++++--
+ 2 files changed, 607 insertions(+), 112 deletions(-)
+
+Evidence logs: build-debug-2, base-final, exercise-debug, all-final, clippy-final

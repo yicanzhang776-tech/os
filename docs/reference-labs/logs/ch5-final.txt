@@ -1,0 +1,50 @@
+=== CH5 FINAL PASS ===
+captured_at=2026-08-14T13:02:10-07:00
+official_upstream=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+current_commit=420ae4f27afe6e8704792618738e88f2f8918ccd
+qemu=QEMU emulator version 8.2.10
+worktree_status:
+ M tg-rcore-tutorial-ch5/src/main.rs
+ M tg-rcore-tutorial-ch5/src/process.rs
+ M tg-rcore-tutorial-ch5/src/processor.rs
+
+--- cargo fmt ---
+command=cargo fmt --manifest-path tg-rcore-tutorial-ch5/Cargo.toml
+exit_code=0
+elapsed_seconds=0
+source_hashes_unchanged=yes
+
+--- build ---
+command=cargo build --features exercise
+exit_code=0
+elapsed_seconds=4
+
+--- base test ---
+command=./test.sh base
+Test PASSED: 14/14
+exit_code=0
+elapsed_seconds=11
+
+--- exercise test ---
+command=./test.sh exercise
+Test PASSED: 17/17
+exit_code=0
+elapsed_seconds=21
+priority = 5, exitcode = 399200, ratio = 79840
+priority = 6, exitcode = 479600, ratio = 79933
+priority = 7, exitcode = 559600, ratio = 79942
+priority = 8, exitcode = 640000, ratio = 80000
+priority = 9, exitcode = 720400, ratio = 80044
+priority = 10, exitcode = 801200, ratio = 80120
+
+--- clippy ---
+command=cargo clippy --features exercise
+exit_code=0
+elapsed_seconds=9
+
+modified_files=3
+ tg-rcore-tutorial-ch5/src/main.rs      | 156 ++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch5/src/process.rs   |  24 +++--
+ tg-rcore-tutorial-ch5/src/processor.rs |  20 ++++-
+ 3 files changed, 160 insertions(+), 40 deletions(-)

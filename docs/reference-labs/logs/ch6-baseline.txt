@@ -1,0 +1,13 @@
+TG-RCORE CHAPTER 6 - BASELINE FAILURE
+Timestamp: 2026-08-14T13:04:00-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Previous chapter: 3c704828616a9f7f8796ac91bad6d04b011286d4
+QEMU: 8.2.10
+Workspace: clean
+
+Command: ./test.sh exercise
+Observed: linkat, unlinkat and fstat exercise evidence was absent
+Result: Test FAILED: 4/33
+
+Evidence source: actual QEMU and test.sh output

@@ -1,0 +1,26 @@
+TG-RCORE CHAPTER 6 - IMPLEMENTATION DIFF
+Timestamp: 2026-08-14T13:21:53-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Current HEAD: 3c70482
+Stage: hard-link implementation after baseline 4/33
+
+Key changes
+  - persistent DiskInode.nlink and stable inode number
+  - directory-entry link/unlink with reusable empty slots
+  - final-link data-block and inode-bitmap reclamation
+  - linkat(37), unlinkat(35), fstat(80) with user checks
+  - migrated mmap/munmap, spawn, priority and stride
+
+Actual git diff --stat
+ tg-rcore-tutorial-ch6/src/fs.rs         |   8 +-
+ tg-rcore-tutorial-ch6/src/main.rs       | 245 +++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch6/src/process.rs    |  11 ++
+ tg-rcore-tutorial-ch6/src/processor.rs  |  19 ++-
+ tg-rcore-tutorial-easy-fs/src/efs.rs    |   8 +-
+ tg-rcore-tutorial-easy-fs/src/layout.rs |   3 +
+ tg-rcore-tutorial-easy-fs/src/vfs.rs    | 161 +++++++++++++++++++--
+ 7 files changed, 387 insertions(+), 68 deletions(-)
+
+Modified files: 7
+Actual lines: +387 / -68

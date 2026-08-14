@@ -1,0 +1,703 @@
+From a46815a616d3299c0f359d00d68ff500cedb8797 Mon Sep 17 00:00:00 2001
+From: OS Competition Student <os-lab@local.invalid>
+Date: Fri, 14 Aug 2026 13:26:19 -0700
+Subject: [PATCH] feat(ch6): implement hard-link exercises
+
+---
+ tg-rcore-tutorial-ch6/src/fs.rs         |   8 +-
+ tg-rcore-tutorial-ch6/src/main.rs       | 245 +++++++++++++++++++-----
+ tg-rcore-tutorial-ch6/src/process.rs    |  11 ++
+ tg-rcore-tutorial-ch6/src/processor.rs  |  19 +-
+ tg-rcore-tutorial-easy-fs/src/efs.rs    |   8 +-
+ tg-rcore-tutorial-easy-fs/src/layout.rs |   3 +
+ tg-rcore-tutorial-easy-fs/src/vfs.rs    | 161 ++++++++++++++--
+ 7 files changed, 387 insertions(+), 68 deletions(-)
+
+diff --git a/tg-rcore-tutorial-ch6/src/fs.rs b/tg-rcore-tutorial-ch6/src/fs.rs
+index fc7fb24..8f72a32 100644
+--- a/tg-rcore-tutorial-ch6/src/fs.rs
++++ b/tg-rcore-tutorial-ch6/src/fs.rs
+@@ -83,13 +83,13 @@ impl FSManager for FileSystem {
+     }
+
+     /// 创建硬链接（TODO 练习题）
+-    fn link(&self, _src: &str, _dst: &str) -> isize {
+-        unimplemented!()
++    fn link(&self, src: &str, dst: &str) -> isize {
++        self.root.link(src, dst)
+     }
+
+     /// 删除硬链接（TODO 练习题）
+-    fn unlink(&self, _path: &str) -> isize {
+-        unimplemented!()
++    fn unlink(&self, path: &str) -> isize {
++        self.root.unlink(path)
+     }
+ }
+
+diff --git a/tg-rcore-tutorial-ch6/src/main.rs b/tg-rcore-tutorial-ch6/src/main.rs
+index d151a92..0077590 100644
+--- a/tg-rcore-tutorial-ch6/src/main.rs
++++ b/tg-rcore-tutorial-ch6/src/main.rs
+@@ -444,6 +444,56 @@ mod impls {
+     /// 可写权限标志
+     const WRITEABLE: VmFlags<Sv39> = build_flags("W_V");
+
++    fn read_user_bytes(process: &ProcStruct, address: usize, count: usize) -> Option<Vec<u8>> {
++        if count > 256 {
++            return None;
++        }
++        let mut bytes = Vec::with_capacity(count);
++        for offset in 0..count {
++            let address = address.checked_add(offset)?;
++            let ptr = process
++                .address_space
++                .translate::<u8>(VAddr::new(address), READABLE)?;
++            bytes.push(unsafe { *ptr.as_ptr() });
++        }
++        Some(bytes)
++    }
++
++    fn read_user_string(process: &ProcStruct, address: usize) -> Option<String> {
++        let mut bytes = Vec::new();
++        for offset in 0..256 {
++            let address = address.checked_add(offset)?;
++            let ptr = process
++                .address_space
++                .translate::<u8>(VAddr::new(address), READABLE)?;
++            let byte = unsafe { *ptr.as_ptr() };
++            if byte == 0 {
++                return String::from_utf8(bytes).ok();
++            }
++            bytes.push(byte);
++        }
++        None
++    }
++
++    fn write_user_stat(process: &ProcStruct, address: usize, stat: &Stat) -> Option<()> {
++        // SAFETY: Stat is a fully initialized #[repr(C)] value and the slice
++        // remains valid for the duration of this function.
++        let bytes = unsafe {
++            core::slice::from_raw_parts(
++                (stat as *const Stat).cast::<u8>(),
++                core::mem::size_of::<Stat>(),
++            )
++        };
++        for (offset, byte) in bytes.iter().enumerate() {
++            let address = address.checked_add(offset)?;
++            let mut destination = process
++                .address_space
++                .translate::<u8>(VAddr::new(address), WRITEABLE)?;
++            unsafe { *destination.as_mut() = *byte };
++        }
++        Some(())
++    }
++
+     /// IO 系统调用实现：read、write、open、close
+     ///
+     /// 与第五章的关键区别：
+@@ -537,25 +587,12 @@ mod impls {
+         /// 通过 easy-fs 文件系统打开文件，分配新的文件描述符。
+         fn open(&self, _caller: Caller, path: usize, flags: usize) -> isize {
+             let current = PROCESSOR.get_mut().current().unwrap();
+-            if let Some(ptr) = current.address_space.translate(VAddr::new(path), READABLE) {
+-                // 从用户空间逐字符读取文件路径（需要地址翻译）
+-                let mut string = String::new();
+-                let mut raw_ptr: *mut u8 = ptr.as_ptr();
+-                loop {
+-                    unsafe {
+-                        let ch = *raw_ptr;
+-                        if ch == 0 {
+-                            break;
+-                        }
+-                        string.push(ch as char);
+-                        raw_ptr = (raw_ptr as usize + 1) as *mut u8;
+-                    }
+-                }
+-
++            if let Some(string) = read_user_string(current, path) {
+                 // 通过文件系统打开文件，分配新的文件描述符
+-                if let Some(fd) =
+-                    FS.open(string.as_str(), OpenFlags::from_bits(flags as u32).unwrap())
+-                {
++                let Some(flags) = OpenFlags::from_bits(flags as u32) else {
++                    return -1;
++                };
++                if let Some(fd) = FS.open(string.as_str(), flags) {
+                     let new_fd = current.fd_table.len();
+                     current.fd_table.push(Some(Mutex::new(fd.as_ref().clone())));
+                     new_fd as isize
+@@ -586,29 +623,51 @@ mod impls {
+             &self,
+             _caller: Caller,
+             _olddirfd: i32,
+-            _oldpath: usize,
++            oldpath: usize,
+             _newdirfd: i32,
+-            _newpath: usize,
++            newpath: usize,
+             _flags: u32,
+         ) -> isize {
+-            tg_console::log::info!("linkat: not implemented");
+-            -1
++            let current = PROCESSOR.get_mut().current().unwrap();
++            let Some(oldpath) = read_user_string(current, oldpath) else {
++                return -1;
++            };
++            let Some(newpath) = read_user_string(current, newpath) else {
++                return -1;
++            };
++            FS.link(&oldpath, &newpath)
+         }
+
+         /// unlinkat 系统调用：删除硬链接
+         ///
+         /// TODO: 实现 unlinkat 系统调用（练习题）
+-        fn unlinkat(&self, _caller: Caller, _dirfd: i32, _path: usize, _flags: u32) -> isize {
+-            tg_console::log::info!("unlinkat: not implemented");
+-            -1
++        fn unlinkat(&self, _caller: Caller, _dirfd: i32, path: usize, _flags: u32) -> isize {
++            let current = PROCESSOR.get_mut().current().unwrap();
++            read_user_string(current, path).map_or(-1, |path| FS.unlink(&path))
+         }
+
+         /// fstat 系统调用：获取文件状态
+         ///
+         /// TODO: 实现 fstat 系统调用（练习题）
+-        fn fstat(&self, _caller: Caller, _fd: usize, _st: usize) -> isize {
+-            tg_console::log::info!("fstat: not implemented");
+-            -1
++        fn fstat(&self, _caller: Caller, fd: usize, st: usize) -> isize {
++            let current = PROCESSOR.get_mut().current().unwrap();
++            let Some(Some(file)) = current.fd_table.get(fd) else {
++                return -1;
++            };
++            let file = file.lock();
++            let Some(inode) = file.inode.as_ref() else {
++                return -1;
++            };
++            let mut stat = Stat::new();
++            stat.dev = 0;
++            stat.ino = inode.inode_id() as u64;
++            stat.mode = if inode.is_dir() {
++                StatMode::DIR
++            } else {
++                StatMode::FILE
++            };
++            stat.nlink = inode.nlink();
++            write_user_stat(current, st, &stat).map_or(-1, |()| 0)
+         }
+     }
+
+@@ -693,14 +752,27 @@ mod impls {
+             current.pid.get_usize() as _
+         }
+
+-        /// spawn 系统调用（TODO 练习题）
+-        fn spawn(&self, _caller: Caller, _path: usize, _count: usize) -> isize {
+-            let current = PROCESSOR.get_mut().current().unwrap();
+-            tg_console::log::info!(
+-                "spawn: parent pid = {}, not implemented",
+-                current.pid.get_usize()
+-            );
+-            -1
++        /// spawn 系统调用：直接从文件系统中的 ELF 创建子进程。
++        fn spawn(&self, _caller: Caller, path: usize, count: usize) -> isize {
++            let processor: *mut PManager<ProcStruct, ProcManager> = PROCESSOR.get_mut() as *mut _;
++            let (parent_pid, name) = {
++                let current = unsafe { (*processor).current().unwrap() };
++                let name = read_user_bytes(current, path, count)
++                    .and_then(|bytes| String::from_utf8(bytes).ok());
++                (current.pid, name)
++            };
++            let Some(name) = name else {
++                return -1;
++            };
++            let Some(input) = FS.open(&name, OpenFlags::RDONLY).map(read_all) else {
++                return -1;
++            };
++            let Some(child) = ElfFile::new(&input).ok().and_then(ProcStruct::from_elf) else {
++                return -1;
++            };
++            let pid = child.pid;
++            unsafe { (*processor).add(pid, child, parent_pid) };
++            pid.get_usize() as isize
+         }
+
+         /// sbrk 系统调用：调整堆大小
+@@ -721,15 +793,14 @@ mod impls {
+             0
+         }
+
+-        /// set_priority 系统调用（TODO 练习题）
++        /// set_priority 系统调用：设置当前进程的 stride 权重。
+         fn set_priority(&self, _caller: Caller, prio: isize) -> isize {
++            if prio < 2 {
++                return -1;
++            }
+             let current = PROCESSOR.get_mut().current().unwrap();
+-            tg_console::log::info!(
+-                "set_priority: pid = {}, prio = {}, not implemented",
+-                current.pid.get_usize(),
+-                prio
+-            );
+-            -1
++            current.priority = prio as usize;
++            prio
+         }
+     }
+
+@@ -765,7 +836,7 @@ mod impls {
+
+     /// 内存管理系统调用实现
+     impl Memory for SyscallContext {
+-        /// mmap 系统调用（TODO 练习题）
++        /// mmap 系统调用：建立匿名用户页映射。
+         fn mmap(
+             &self,
+             _caller: Caller,
+@@ -776,16 +847,90 @@ mod impls {
+             _fd: i32,
+             _offset: usize,
+         ) -> isize {
+-            tg_console::log::info!(
+-                "mmap: addr = {addr:#x}, len = {len}, prot = {prot}, not implemented"
++            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
++            const PAGE_MASK: usize = PAGE_SIZE - 1;
++
++            if len == 0 || addr & PAGE_MASK != 0 || !(1..=7).contains(&prot) {
++                return -1;
++            }
++            let Some(end) = addr
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++                .map(|end| end & !PAGE_MASK)
++            else {
++                return -1;
++            };
++            if end > crate::PROTAL_TRANSIT.base().val() {
++                return -1;
++            }
++            let range = VAddr::<Sv39>::new(addr).floor()..VAddr::<Sv39>::new(end).floor();
++            let current = PROCESSOR.get_mut().current().unwrap();
++            if current
++                .address_space
++                .areas
++                .iter()
++                .any(|area| area.start < range.end && range.start < area.end)
++            {
++                return -1;
++            }
++            let flags = match prot {
++                1 => build_flags("URV"),
++                2 => build_flags("UWV"),
++                3 => build_flags("UWRV"),
++                4 => build_flags("UXV"),
++                5 => build_flags("UXRV"),
++                6 => build_flags("UXWV"),
++                7 => build_flags("UXWRV"),
++                _ => return -1,
++            } | Sv39Manager::OWNED;
++            let Ok(layout) = Layout::from_size_align(end - addr, PAGE_SIZE) else {
++                return -1;
++            };
++            let Some(pages) = NonNull::new(unsafe { alloc_zeroed(layout) }) else {
++                return -1;
++            };
++            current.address_space.map_extern(
++                range,
++                PPN::new(pages.as_ptr() as usize >> Sv39::PAGE_BITS),
++                flags,
+             );
+-            -1
++            0
+         }
+
+-        /// munmap 系统调用（TODO 练习题）
++        /// munmap 系统调用：验证完整区间后移除映射。
+         fn munmap(&self, _caller: Caller, addr: usize, len: usize) -> isize {
+-            tg_console::log::info!("munmap: addr = {addr:#x}, len = {len}, not implemented");
+-            -1
++            const PAGE_SIZE: usize = 1 << Sv39::PAGE_BITS;
++            const PAGE_MASK: usize = PAGE_SIZE - 1;
++
++            if len == 0 || addr & PAGE_MASK != 0 {
++                return -1;
++            }
++            let Some(end) = addr
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++                .map(|end| end & !PAGE_MASK)
++            else {
++                return -1;
++            };
++            if end > crate::PROTAL_TRANSIT.base().val() {
++                return -1;
++            }
++            let range = VAddr::<Sv39>::new(addr).floor()..VAddr::<Sv39>::new(end).floor();
++            let current = PROCESSOR.get_mut().current().unwrap();
++            let mut vpn = range.start;
++            while vpn < range.end {
++                if !current
++                    .address_space
++                    .areas
++                    .iter()
++                    .any(|area| area.start <= vpn && vpn < area.end)
++                {
++                    return -1;
++                }
++                vpn += 1;
++            }
++            current.address_space.unmap(range);
++            0
+         }
+     }
+ }
+diff --git a/tg-rcore-tutorial-ch6/src/process.rs b/tg-rcore-tutorial-ch6/src/process.rs
+index 985e77a..727af2e 100644
+--- a/tg-rcore-tutorial-ch6/src/process.rs
++++ b/tg-rcore-tutorial-ch6/src/process.rs
+@@ -34,6 +34,9 @@ use xmas_elf::{
+     program, ElfFile,
+ };
+
++/// Default process priority used by stride scheduling.
++pub const DEFAULT_PRIORITY: usize = 16;
++
+ /// 进程结构体
+ ///
+ /// 与第五章相比新增了 `fd_table` 字段。
+@@ -56,6 +59,10 @@ pub struct Process {
+     pub heap_bottom: usize,
+     /// 当前程序 break 位置（堆顶）
+     pub program_brk: usize,
++    /// Accumulated stride used to select the next runnable process.
++    pub stride: usize,
++    /// Scheduling priority. Larger values receive more CPU time.
++    pub priority: usize,
+ }
+
+ impl Process {
+@@ -100,6 +107,8 @@ impl Process {
+             fd_table: new_fd_table,
+             heap_bottom: self.heap_bottom,
+             program_brk: self.program_brk,
++            stride: self.stride,
++            priority: self.priority,
+         })
+     }
+
+@@ -193,6 +202,8 @@ impl Process {
+             ],
+             heap_bottom,
+             program_brk: heap_bottom,
++            stride: 0,
++            priority: DEFAULT_PRIORITY,
+         })
+     }
+
+diff --git a/tg-rcore-tutorial-ch6/src/processor.rs b/tg-rcore-tutorial-ch6/src/processor.rs
+index a4bb41f..9f06db2 100644
+--- a/tg-rcore-tutorial-ch6/src/processor.rs
++++ b/tg-rcore-tutorial-ch6/src/processor.rs
+@@ -79,8 +79,23 @@ impl Schedule<ProcId> for ProcManager {
+     fn add(&mut self, id: ProcId) {
+         self.ready_queue.push_back(id);
+     }
+-    /// 从就绪队列头部取出
++    /// Select the runnable process with the smallest stride.
+     fn fetch(&mut self) -> Option<ProcId> {
+-        self.ready_queue.pop_front()
++        const BIG_STRIDE: usize = 65_536;
++
++        let mut selected = 0;
++        for index in 1..self.ready_queue.len() {
++            let candidate = self.tasks.get(&self.ready_queue[index])?.stride;
++            let current = self.tasks.get(&self.ready_queue[selected])?.stride;
++            if (candidate.wrapping_sub(current) as isize) < 0 {
++                selected = index;
++            }
++        }
++        let id = self.ready_queue.remove(selected)?;
++        let process = self.tasks.get_mut(&id)?;
++        process.stride = process
++            .stride
++            .wrapping_add(BIG_STRIDE / process.priority);
++        Some(id)
+     }
+ }
+diff --git a/tg-rcore-tutorial-easy-fs/src/efs.rs b/tg-rcore-tutorial-easy-fs/src/efs.rs
+index 1693f0e..ce85300 100644
+--- a/tg-rcore-tutorial-easy-fs/src/efs.rs
++++ b/tg-rcore-tutorial-easy-fs/src/efs.rs
+@@ -108,7 +108,7 @@ impl EasyFileSystem {
+         // acquire efs lock temporarily
+         let (block_id, block_offset) = efs.lock().get_disk_inode_pos(0);
+         // release efs lock
+-        Inode::new(block_id, block_offset, Arc::clone(efs), block_device)
++        Inode::new(0, block_id, block_offset, Arc::clone(efs), block_device)
+     }
+     /// Get inode by id
+     pub fn get_disk_inode_pos(&self, inode_id: u32) -> (u32, usize) {
+@@ -129,6 +129,12 @@ impl EasyFileSystem {
+         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
+     }
+
++    /// Return an inode number to the inode bitmap.
++    pub fn dealloc_inode(&mut self, inode_id: u32) {
++        self.inode_bitmap
++            .dealloc(&self.block_device, inode_id as usize);
++    }
++
+     /// Allocate a data block
+     pub fn alloc_data(&mut self) -> u32 {
+         self.data_bitmap.alloc(&self.block_device).unwrap() as u32 + self.data_area_start_block
+diff --git a/tg-rcore-tutorial-easy-fs/src/layout.rs b/tg-rcore-tutorial-easy-fs/src/layout.rs
+index fce7724..12ed4ed 100644
+--- a/tg-rcore-tutorial-easy-fs/src/layout.rs
++++ b/tg-rcore-tutorial-easy-fs/src/layout.rs
+@@ -82,6 +82,8 @@ type DataBlock = [u8; BLOCK_SZ];
+ #[repr(C)]
+ pub struct DiskInode {
+     pub size: u32,
++    /// Number of directory entries that refer to this inode.
++    pub nlink: u32,
+     pub direct: [u32; INODE_DIRECT_COUNT],
+     pub indirect1: u32,
+     pub indirect2: u32,
+@@ -93,6 +95,7 @@ impl DiskInode {
+     /// indirect1 and indirect2 block are allocated only when they are needed
+     pub fn initialize(&mut self, type_: DiskInodeType) {
+         self.size = 0;
++        self.nlink = 1;
+         self.direct.iter_mut().for_each(|v| *v = 0);
+         self.indirect1 = 0;
+         self.indirect2 = 0;
+diff --git a/tg-rcore-tutorial-easy-fs/src/vfs.rs b/tg-rcore-tutorial-easy-fs/src/vfs.rs
+index e142619..ed23df5 100644
+--- a/tg-rcore-tutorial-easy-fs/src/vfs.rs
++++ b/tg-rcore-tutorial-easy-fs/src/vfs.rs
+@@ -8,6 +8,7 @@ use alloc::vec::Vec;
+ use spin::{Mutex, MutexGuard};
+ /// Virtual filesystem layer over easy-fs
+ pub struct Inode {
++    inode_id: u32,
+     block_id: usize,
+     block_offset: usize,
+     fs: Arc<Mutex<EasyFileSystem>>,
+@@ -17,12 +18,14 @@ pub struct Inode {
+ impl Inode {
+     /// Create a vfs inode
+     pub fn new(
++        inode_id: u32,
+         block_id: u32,
+         block_offset: usize,
+         fs: Arc<Mutex<EasyFileSystem>>,
+         block_device: Arc<dyn BlockDevice>,
+     ) -> Self {
+         Self {
++            inode_id,
+             block_id: block_id as usize,
+             block_offset,
+             fs,
+@@ -70,6 +73,7 @@ impl Inode {
+             self.find_inode_id(name, disk_inode).map(|inode_id| {
+                 let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
+                 Arc::new(Self::new(
++                    inode_id,
+                     block_id,
+                     block_offset,
+                     self.fs.clone(),
+@@ -101,6 +105,9 @@ impl Inode {
+     /// Create inode under current inode by name.
+     /// Attention: use find previously to ensure the new file not existing.
+     pub fn create(&self, name: &str) -> Option<Arc<Inode>> {
++        if name.is_empty() || self.find(name).is_some() {
++            return None;
++        }
+         let mut fs = self.fs.lock();
+         // 1) 分配新 inode
+         let new_inode_id = fs.alloc_inode();
+@@ -113,24 +120,28 @@ impl Inode {
+             });
+         // 3) 在当前目录追加 dirent 项
+         self.modify_disk_inode(|root_inode| {
+-            // append file in the dirent
+             let file_count = (root_inode.size as usize) / DIRENT_SZ;
+-            let new_size = (file_count + 1) * DIRENT_SZ;
+-            // increase size
+-            self.increase_size(new_size as u32, root_inode, &mut fs);
+-            // write dirent
++            let mut slot = file_count;
++            let mut entry = DirEntry::empty();
++            for index in 0..file_count {
++                root_inode.read_at(index * DIRENT_SZ, entry.as_bytes_mut(), &self.block_device);
++                if entry.name().is_empty() {
++                    slot = index;
++                    break;
++                }
++            }
++            if slot == file_count {
++                self.increase_size(((file_count + 1) * DIRENT_SZ) as u32, root_inode, &mut fs);
++            }
+             let dirent = DirEntry::new(name, new_inode_id);
+-            root_inode.write_at(
+-                file_count * DIRENT_SZ,
+-                dirent.as_bytes(),
+-                &self.block_device,
+-            );
++            root_inode.write_at(slot * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+         });
+
+         let (block_id, block_offset) = fs.get_disk_inode_pos(new_inode_id);
+         block_cache_sync_all();
+         // 4) 返回新文件的 Inode 句柄
+         Some(Arc::new(Self::new(
++            new_inode_id,
+             block_id,
+             block_offset,
+             self.fs.clone(),
+@@ -151,7 +162,9 @@ impl Inode {
+                     disk_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device,),
+                     DIRENT_SZ,
+                 );
+-                v.push(String::from(dirent.name()));
++                if !dirent.name().is_empty() {
++                    v.push(String::from(dirent.name()));
++                }
+             }
+             v
+         })
+@@ -187,4 +200,130 @@ impl Inode {
+         });
+         block_cache_sync_all();
+     }
++
++    /// Return the stable inode number stored in directory entries.
++    pub fn inode_id(&self) -> u32 {
++        self.inode_id
++    }
++
++    /// Return whether this inode represents a directory.
++    pub fn is_dir(&self) -> bool {
++        let _fs = self.fs.lock();
++        self.read_disk_inode(DiskInode::is_dir)
++    }
++
++    /// Return the persisted hard-link count.
++    pub fn nlink(&self) -> u32 {
++        let _fs = self.fs.lock();
++        self.read_disk_inode(|inode| inode.nlink)
++    }
++
++    /// Add a directory entry that refers to the same inode as `src`.
++    pub fn link(&self, src: &str, dst: &str) -> isize {
++        if src.is_empty() || dst.is_empty() || src == dst {
++            return -1;
++        }
++        let mut fs = self.fs.lock();
++        let (source_id, empty_slot, file_count) = self.read_disk_inode(|root_inode| {
++            if !root_inode.is_dir() {
++                return (None, None, 0);
++            }
++            let file_count = root_inode.size as usize / DIRENT_SZ;
++            let mut source_id = None;
++            let mut empty_slot = None;
++            let mut entry = DirEntry::empty();
++            for index in 0..file_count {
++                root_inode.read_at(index * DIRENT_SZ, entry.as_bytes_mut(), &self.block_device);
++                match entry.name() {
++                    name if name == dst => return (None, None, file_count),
++                    name if name == src => source_id = Some(entry.inode_number()),
++                    "" if empty_slot.is_none() => empty_slot = Some(index),
++                    _ => {}
++                }
++            }
++            (source_id, empty_slot, file_count)
++        });
++        let Some(source_id) = source_id else {
++            return -1;
++        };
++        let (source_block, source_offset) = fs.get_disk_inode_pos(source_id);
++        let linked = get_block_cache(source_block as usize, Arc::clone(&self.block_device))
++            .lock()
++            .modify(source_offset, |inode: &mut DiskInode| {
++                if inode.is_dir() || inode.nlink == u32::MAX {
++                    false
++                } else {
++                    inode.nlink += 1;
++                    true
++                }
++            });
++        if !linked {
++            return -1;
++        }
++        self.modify_disk_inode(|root_inode| {
++            let slot = empty_slot.unwrap_or(file_count);
++            if slot == file_count {
++                self.increase_size(((file_count + 1) * DIRENT_SZ) as u32, root_inode, &mut fs);
++            }
++            let entry = DirEntry::new(dst, source_id);
++            root_inode.write_at(slot * DIRENT_SZ, entry.as_bytes(), &self.block_device);
++        });
++        block_cache_sync_all();
++        0
++    }
++
++    /// Remove a directory entry and reclaim its inode after the final link.
++    pub fn unlink(&self, path: &str) -> isize {
++        if path.is_empty() {
++            return -1;
++        }
++        let mut fs = self.fs.lock();
++        let target = self.read_disk_inode(|root_inode| {
++            let file_count = root_inode.size as usize / DIRENT_SZ;
++            let mut entry = DirEntry::empty();
++            for index in 0..file_count {
++                root_inode.read_at(index * DIRENT_SZ, entry.as_bytes_mut(), &self.block_device);
++                if entry.name() == path {
++                    return Some((index, entry.inode_number()));
++                }
++            }
++            None
++        });
++        let Some((slot, inode_id)) = target else {
++            return -1;
++        };
++        let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
++        let result = get_block_cache(block_id as usize, Arc::clone(&self.block_device))
++            .lock()
++            .modify(block_offset, |inode: &mut DiskInode| {
++                if inode.nlink == 0 || inode.is_dir() {
++                    return None;
++                }
++                inode.nlink -= 1;
++                let blocks = if inode.nlink == 0 {
++                    inode.clear_size(&self.block_device)
++                } else {
++                    Vec::new()
++                };
++                Some((inode.nlink == 0, blocks))
++            });
++        let Some((reclaim_inode, blocks)) = result else {
++            return -1;
++        };
++        self.modify_disk_inode(|root_inode| {
++            root_inode.write_at(
++                slot * DIRENT_SZ,
++                DirEntry::empty().as_bytes(),
++                &self.block_device,
++            );
++        });
++        if reclaim_inode {
++            for data_block in blocks {
++                fs.dealloc_data(data_block);
++            }
++            fs.dealloc_inode(inode_id);
++        }
++        block_cache_sync_all();
++        0
++    }
+ }
+--
+2.25.1

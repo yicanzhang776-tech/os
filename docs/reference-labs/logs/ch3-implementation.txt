@@ -1,0 +1,65 @@
+=== CH3 IMPLEMENTATION DIFF ===
+captured_at=2026-08-14T12:38:27-07:00
+source_commit=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+
+--- diff stat ---
+ tg-rcore-tutorial-ch3/src/main.rs | 40 ++++++++++++++++++++-------------------
+ tg-rcore-tutorial-ch3/src/task.rs | 22 ++++++++++++++++++---
+ 2 files changed, 40 insertions(+), 22 deletions(-)
+
+--- added implementation lines (git diff) ---
++++ b/tg-rcore-tutorial-ch3/src/main.rs
+@@ -44,3 +43,0 @@ use tg_console::log;
+@@ -67 +64,3 @@ unsafe extern "C" fn _start() -> ! {
++    // The kernel stack also holds the complete TCB array. Account for each
++    // task's user stack and its Chapter 3 syscall counter table.
++    const STACK_SIZE: usize = (APP_CAPACITY + 2) * 16384;
+@@ -212,0 +212 @@ mod impls {
++    use crate::task::SYSCALL_COUNT_LIMIT;
+@@ -276,6 +276 @@ mod impls {
++        fn clock_gettime(&self, _caller: Caller, clock_id: ClockId, tp: usize) -> isize {
+@@ -306,9 +301,16 @@ mod impls {
++        fn trace(&self, caller: Caller, trace_request: usize, id: usize, data: usize) -> isize {
++            match trace_request {
++                // Chapter 3 has no address-space isolation yet. The exercise
++                // therefore intentionally operates on the supplied address.
++                0 => unsafe { (id as *const u8).read() as isize },
++                1 => {
++                    unsafe { (id as *mut u8).write(data as u8) };
++                    0
++                }
++                2 if id < SYSCALL_COUNT_LIMIT => {
++                    // handle_syscall passes the current task's stable counter
++                    // table address and increments it before dispatching here.
++                    unsafe { (caller.entity as *const usize).add(id).read() as isize }
++                }
++                _ => -1,
++            }
++++ b/tg-rcore-tutorial-ch3/src/task.rs
+@@ -20,0 +21,3 @@ use tg_syscall::{Caller, SyscallId};
++/// Number of syscall slots tracked for each task.
++pub const SYSCALL_COUNT_LIMIT: usize = 500;
+@@ -31,0 +35,2 @@ pub struct TaskControlBlock {
++    /// Per-task syscall counters, indexed by syscall number.
++    syscall_counts: [usize; SYSCALL_COUNT_LIMIT],
+@@ -56,0 +62 @@ impl TaskControlBlock {
++        syscall_counts: [0; SYSCALL_COUNT_LIMIT],
+@@ -67,0 +74 @@ impl TaskControlBlock {
++        self.syscall_counts.fill(0);
+@@ -87 +93,0 @@ impl TaskControlBlock {
+@@ -88,0 +95 @@ impl TaskControlBlock {
++        use tg_syscall::{SyscallId as Id, SyscallResult as Ret};
+@@ -91 +98 @@ impl TaskControlBlock {
++        let id: SyscallId = self.ctx.a(7).into();
+@@ -101 +108,10 @@ impl TaskControlBlock {
++        if let Some(count) = self.syscall_counts.get_mut(id.0) {
++            *count += 1;
++        }
++        let caller = Caller {
++            // The dispatcher is synchronous, so this address stays valid for
++            // the complete syscall and identifies this task's counter table.
++            entity: self.syscall_counts.as_ptr() as usize,
++            flow: 0,
++        };
++        match tg_syscall::handle(caller, id, args) {

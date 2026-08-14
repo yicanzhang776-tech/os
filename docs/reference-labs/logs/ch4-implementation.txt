@@ -1,0 +1,37 @@
+=== CH4 IMPLEMENTATION DIFF ===
+captured_at=2026-08-14T12:50:12-07:00
+official_upstream=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+current_commit=dc496894bc6e88fb18772c79dbb72b6c1e9313c9
+worktree_status:
+ M tg-rcore-tutorial-ch4/src/main.rs
+ M tg-rcore-tutorial-ch4/src/process.rs
+
+--- actual diff statistics ---
+ tg-rcore-tutorial-ch4/src/main.rs    | 160 ++++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch4/src/process.rs |  28 ++++--
+ 2 files changed, 154 insertions(+), 34 deletions(-)
+131	29	tg-rcore-tutorial-ch4/src/main.rs
+23	5	tg-rcore-tutorial-ch4/src/process.rs
+
+--- selected added implementation lines ---
++                unsafe { PROCESSES.get_mut()[0].record_syscall(raw_id) };
++        fn trace(&self, caller: Caller, trace_request: usize, id: usize, data: usize) -> isize {
++            const USER_READABLE: VmFlags<Sv39> = build_flags("URV");
++            const USER_WRITABLE: VmFlags<Sv39> = build_flags("UWV");
++                    .translate::<u8>(VAddr::new(id), USER_READABLE)
++                    .translate::<u8>(VAddr::new(id), USER_WRITABLE)
++                2 => process.syscall_count(id).map_or(-1, |count| count as isize),
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++            process.address_space.map_extern(
++        fn munmap(&self, caller: Caller, addr: usize, len: usize) -> isize {
++                .checked_add(len)
++                .and_then(|end| end.checked_add(PAGE_MASK))
++            process.address_space.unmap(range);
++    syscall_counts: Box<[usize]>,
++            syscall_counts: alloc::vec![0; SYSCALL_COUNT_LIMIT].into_boxed_slice(),
++    pub fn record_syscall(&mut self, id: usize) {
++        if let Some(count) = self.syscall_counts.get_mut(id) {
++    pub fn syscall_count(&self, id: usize) -> Option<usize> {
++        self.syscall_counts.get(id).copied()

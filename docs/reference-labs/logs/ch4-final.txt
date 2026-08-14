@@ -1,0 +1,48 @@
+=== CH4 FINAL PASS ===
+captured_at=2026-08-14T12:53:02-07:00
+official_upstream=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+current_commit=dc496894bc6e88fb18772c79dbb72b6c1e9313c9
+qemu=QEMU emulator version 8.2.10
+worktree_status:
+ M tg-rcore-tutorial-ch4/src/main.rs
+ M tg-rcore-tutorial-ch4/src/process.rs
+
+--- cargo fmt ---
+command=cargo fmt --manifest-path tg-rcore-tutorial-ch4/Cargo.toml
+exit_code=0
+elapsed_seconds=0
+source_hashes_unchanged=yes
+
+--- build ---
+command=cargo build --features exercise
+exit_code=0
+elapsed_seconds=0
+
+--- base test ---
+command=./test.sh base
+Test PASSED: 6/6
+exit_code=0
+elapsed_seconds=2
+
+--- exercise test ---
+command=./test.sh exercise
+Test trace OK!
+Test 04_1 OK!
+Test 04_4 test OK!
+Test 04_5 ummap OK!
+Test 04_6 ummap2 OK!
+Test trace_1 OK!
+Test PASSED: 16/16
+exit_code=0
+elapsed_seconds=5
+
+--- clippy ---
+command=cargo clippy --features exercise
+exit_code=0
+elapsed_seconds=0
+
+modified_files=2
+ tg-rcore-tutorial-ch4/src/main.rs    | 160 ++++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch4/src/process.rs |  28 ++++--
+ 2 files changed, 154 insertions(+), 34 deletions(-)

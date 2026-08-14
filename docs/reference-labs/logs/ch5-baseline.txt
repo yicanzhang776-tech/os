@@ -1,0 +1,13 @@
+TG-RCORE CHAPTER 5 - BASELINE FAILURE
+Timestamp: 2026-08-14T12:54:16-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Previous chapter: 420ae4f27afe6e8704792618738e88f2f8918ccd
+QEMU: 8.2.10
+Workspace: clean
+
+Command: ./test.sh exercise
+Observed: spawn reported "not implemented"; stride results were absent
+Result: Test FAILED: 4/17
+
+Evidence source: actual QEMU and test.sh output

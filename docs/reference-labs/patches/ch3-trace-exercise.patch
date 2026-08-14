@@ -1,0 +1,162 @@
+From dc496894bc6e88fb18772c79dbb72b6c1e9313c9 Mon Sep 17 00:00:00 2001
+From: OS Competition Student <os-lab@local.invalid>
+Date: Fri, 14 Aug 2026 12:39:59 -0700
+Subject: [PATCH] feat(ch3): implement trace exercise
+
+---
+ tg-rcore-tutorial-ch3/src/main.rs | 40 ++++++++++++++++---------------
+ tg-rcore-tutorial-ch3/src/task.rs | 22 ++++++++++++++---
+ 2 files changed, 40 insertions(+), 22 deletions(-)
+
+diff --git a/tg-rcore-tutorial-ch3/src/main.rs b/tg-rcore-tutorial-ch3/src/main.rs
+index 2debcba..03bda84 100644
+--- a/tg-rcore-tutorial-ch3/src/main.rs
++++ b/tg-rcore-tutorial-ch3/src/main.rs
+@@ -41,9 +41,6 @@ use riscv::register::*;
+ use task::TaskControlBlock;
+ // 日志模块
+ use tg_console::log;
+-// SBI 调用：set_timer、console_putchar、shutdown 等
+-use tg_sbi;
+-
+ // ========== 启动相关 ==========
+
+ // 将用户程序的二进制数据内联到内核镜像的 .data 段中
+@@ -64,7 +61,9 @@ const APP_CAPACITY: usize = 32;
+ #[unsafe(no_mangle)]
+ #[unsafe(link_section = ".text.entry")]
+ unsafe extern "C" fn _start() -> ! {
+-    const STACK_SIZE: usize = (APP_CAPACITY + 2) * 8192;
++    // The kernel stack also holds the complete TCB array. Account for each
++    // task's user stack and its Chapter 3 syscall counter table.
++    const STACK_SIZE: usize = (APP_CAPACITY + 2) * 16384;
+     #[unsafe(link_section = ".boot.stack")]
+     static mut STACK: [u8; STACK_SIZE] = [0u8; STACK_SIZE];
+
+@@ -210,6 +209,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
+
+ /// 各依赖库所需接口的具体实现
+ mod impls {
++    use crate::task::SYSCALL_COUNT_LIMIT;
+     use tg_syscall::*;
+
+     /// 控制台实现：通过 SBI 逐字符输出
+@@ -273,12 +273,7 @@ mod impls {
+     /// QEMU virt 平台的时钟频率为 12.5 MHz（10000/125 = 80 ns/tick）。
+     impl Clock for SyscallContext {
+         #[inline]
+-        fn clock_gettime(
+-            &self,
+-            _caller: Caller,
+-            clock_id: ClockId,
+-            tp: usize,
+-        ) -> isize {
++        fn clock_gettime(&self, _caller: Caller, clock_id: ClockId, tp: usize) -> isize {
+             match clock_id {
+                 ClockId::CLOCK_MONOTONIC => {
+                     // 将 RISC-V time 寄存器的值转换为纳秒
+@@ -303,15 +298,22 @@ mod impls {
+     /// - 查询系统调用计数（trace_request=2）
+     impl Trace for SyscallContext {
+         #[inline]
+-        fn trace(
+-            &self,
+-            _caller: Caller,
+-            _trace_request: usize,
+-            _id: usize,
+-            _data: usize,
+-        ) -> isize {
+-            tg_console::log::info!("trace: not implemented");
+-            -1
++        fn trace(&self, caller: Caller, trace_request: usize, id: usize, data: usize) -> isize {
++            match trace_request {
++                // Chapter 3 has no address-space isolation yet. The exercise
++                // therefore intentionally operates on the supplied address.
++                0 => unsafe { (id as *const u8).read() as isize },
++                1 => {
++                    unsafe { (id as *mut u8).write(data as u8) };
++                    0
++                }
++                2 if id < SYSCALL_COUNT_LIMIT => {
++                    // handle_syscall passes the current task's stable counter
++                    // table address and increments it before dispatching here.
++                    unsafe { (caller.entity as *const usize).add(id).read() as isize }
++                }
++                _ => -1,
++            }
+         }
+     }
+ }
+diff --git a/tg-rcore-tutorial-ch3/src/task.rs b/tg-rcore-tutorial-ch3/src/task.rs
+index 6f8ca1e..6155bb3 100644
+--- a/tg-rcore-tutorial-ch3/src/task.rs
++++ b/tg-rcore-tutorial-ch3/src/task.rs
+@@ -18,6 +18,9 @@
+ use tg_kernel_context::LocalContext;
+ use tg_syscall::{Caller, SyscallId};
+
++/// Number of syscall slots tracked for each task.
++pub const SYSCALL_COUNT_LIMIT: usize = 500;
++
+ /// 任务控制块（Task Control Block, TCB）
+ ///
+ /// 每个用户程序对应一个 TCB，包含：
+@@ -29,6 +32,8 @@ pub struct TaskControlBlock {
+     ctx: LocalContext,
+     /// 任务完成标志：true 表示已退出或被杀死
+     pub finish: bool,
++    /// Per-task syscall counters, indexed by syscall number.
++    syscall_counts: [usize; SYSCALL_COUNT_LIMIT],
+     /// 用户栈：8 KiB（1024 个 usize = 1024 × 8 = 8192 字节）
+     /// 每个任务拥有独立的栈空间，避免栈溢出影响其他任务
+     stack: [usize; 1024],
+@@ -54,6 +59,7 @@ impl TaskControlBlock {
+     pub const ZERO: Self = Self {
+         ctx: LocalContext::empty(),
+         finish: false,
++        syscall_counts: [0; SYSCALL_COUNT_LIMIT],
+         stack: [0; 1024],
+     };
+
+@@ -65,6 +71,7 @@ impl TaskControlBlock {
+     pub fn init(&mut self, entry: usize) {
+         self.stack.fill(0);
+         self.finish = false;
++        self.syscall_counts.fill(0);
+         self.ctx = LocalContext::user(entry);
+         // 栈从高地址向低地址增长，所以 sp 指向栈顶（数组末尾之后的地址）
+         *self.ctx.sp_mut() = self.stack.as_ptr() as usize + core::mem::size_of_val(&self.stack);
+@@ -84,11 +91,11 @@ impl TaskControlBlock {
+     /// 从用户上下文中提取系统调用 ID（a7 寄存器）和参数（a0-a5 寄存器），
+     /// 分发到对应的处理函数，并将返回值写回 a0 寄存器。
+     pub fn handle_syscall(&mut self) -> SchedulingEvent {
+-        use tg_syscall::{SyscallId as Id, SyscallResult as Ret};
+         use SchedulingEvent as Event;
++        use tg_syscall::{SyscallId as Id, SyscallResult as Ret};
+
+         // a7 寄存器存放 syscall ID
+-        let id = self.ctx.a(7).into();
++        let id: SyscallId = self.ctx.a(7).into();
+         // a0-a5 寄存器存放系统调用参数
+         let args = [
+             self.ctx.a(0),
+@@ -98,7 +105,16 @@ impl TaskControlBlock {
+             self.ctx.a(4),
+             self.ctx.a(5),
+         ];
+-        match tg_syscall::handle(Caller { entity: 0, flow: 0 }, id, args) {
++        if let Some(count) = self.syscall_counts.get_mut(id.0) {
++            *count += 1;
++        }
++        let caller = Caller {
++            // The dispatcher is synchronous, so this address stays valid for
++            // the complete syscall and identifies this task's counter table.
++            entity: self.syscall_counts.as_ptr() as usize,
++            flow: 0,
++        };
++        match tg_syscall::handle(caller, id, args) {
+             Ret::Done(ret) => match id {
+                 // exit 系统调用：返回退出事件
+                 Id::EXIT => Event::Exit(self.ctx.a(0)),
+--
+2.25.1

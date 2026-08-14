@@ -1,0 +1,13 @@
+TG-RCORE CHAPTER 4 - BASELINE FAILURE
+Timestamp: 2026-08-14T12:40:32-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Previous chapter: dc496894bc6e88fb18772c79dbb72b6c1e9313c9
+QEMU: 8.2.10
+Workspace: clean
+
+Command: ./test.sh exercise
+Observed: trace and mmap reported "not implemented"
+Result: Test FAILED: 9/16
+
+Evidence source: actual QEMU and test.sh output

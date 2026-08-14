@@ -1,0 +1,37 @@
+Stage: Chapter 8 implementation diff
+ISO time: 2026-08-14T13:43:13-07:00
+Upstream: d6330a6db1f81c8c1cfba5ec3db9923199398f24
+Branch: codex/five-basic-exercises
+Current HEAD: a46815a616d3299c0f359d00d68ff500cedb8797
+Worktree:
+ M tg-rcore-tutorial-ch8/src/main.rs
+ M tg-rcore-tutorial-ch8/src/process.rs
+
+Changed files:
+ tg-rcore-tutorial-ch8/src/main.rs    | 470 ++++++++++++++++++++++++++++-------
+ tg-rcore-tutorial-ch8/src/process.rs | 249 +++++++++++++++++--
+ 2 files changed, 607 insertions(+), 112 deletions(-)
+
+Key implementation symbols:
++        process::AcquireResult,
++                .semaphore_resources
++                .register_resource(id, res_count);
++            current_proc.semaphore_resources.release(
++            let result = current_proc.semaphore_resources.acquire(
++                current_proc.deadlock_detect_enabled,
++                AcquireResult::Deadlock => -0xdead,
++                AcquireResult::Invalid => -1,
++                AcquireResult::Granted | AcquireResult::Wait => {
++                    if (acquired && result == AcquireResult::Granted)
++                        || (!acquired && result == AcquireResult::Wait)
++                            .semaphore_resources
++                    .mutex_resources
++                    .register_resource(id as usize, 1);
++            current_proc.mutex_resources.release(
++            let result = current_proc.mutex_resources.acquire(
++                current_proc.deadlock_detect_enabled,
++                AcquireResult::Deadlock => -0xdead,
++                AcquireResult::Invalid => -1,
++                AcquireResult::Granted | AcquireResult::Wait => {
++                    if (acquired && result == AcquireResult::Granted)
++                        || (!acquired && result == AcquireResult::Wait)

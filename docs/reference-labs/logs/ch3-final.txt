@@ -1,0 +1,37 @@
+=== CH3 FINAL PASS ===
+captured_at=2026-08-14T12:38:27-07:00
+upstream_commit=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+branch=codex/five-basic-exercises
+current_commit=d6330a6db1f81c8c1cfba5ec3db9923199398f24
+qemu=QEMU emulator version 8.2.10
+worktree_status:
+ M tg-rcore-tutorial-ch3/src/main.rs
+ M tg-rcore-tutorial-ch3/src/task.rs
+
+--- build ---
+command=cargo build --features exercise
+exit_code=0
+elapsed_seconds=0
+
+--- base test ---
+command=./test.sh base
+Test PASSED: 4/4
+exit_code=0
+elapsed_seconds=1
+
+--- exercise test ---
+command=./test.sh exercise
+Test trace OK!
+Test PASSED: 7/7
+exit_code=0
+elapsed_seconds=4
+
+--- clippy ---
+command=cargo clippy --features exercise
+exit_code=0
+elapsed_seconds=0
+
+modified_files=2
+ tg-rcore-tutorial-ch3/src/main.rs | 40 ++++++++++++++++++++-------------------
+ tg-rcore-tutorial-ch3/src/task.rs | 22 ++++++++++++++++++---
+ 2 files changed, 40 insertions(+), 22 deletions(-)
