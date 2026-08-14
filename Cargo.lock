@@ -5,3 +5,10 @@ version = 4
 [[package]]
 name = "ai-os-kernel"
 version = "0.1.0"
+dependencies = [
+ "os-demo-event",
+]
+
+[[package]]
+name = "os-demo-event"
+version = "0.1.0"
