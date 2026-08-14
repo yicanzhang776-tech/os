@@ -20,6 +20,7 @@
 - AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
 - 完整实验教学资料（评委/教师入口）：[docs/labs/README.md](docs/labs/README.md)
 - 教师验收与评分工具：[docs/teacher-grading/README.md](docs/teacher-grading/README.md)
+- MIT xv6、rCore/LearningOS 与本项目三方比较：[docs/three-way-comparison.md](docs/three-way-comparison.md)
 
 ## 如何阅读当前分支
 
