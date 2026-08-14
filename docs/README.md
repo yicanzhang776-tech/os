@@ -2,22 +2,52 @@
 
 本目录保存“AI 合作的操作系统教学实验环境”的需求、架构、计划、测试、AI 协作和实验设计文档。
 
+## 按读者进入
+
+- 学生：从 [实验路线](labs/README.md) 和 [交互可视化](interactive-demo/README.md) 开始；需要云端教学提示时先阅读 [AI 教学助教与数据边界](teaching-agent.md)。
+- 教师与助教：使用 [教师评分工具](teacher-grading/README.md) 人工复核，项目负责人通过 [反馈管理](feedback-admin/README.md) 接收自愿提交；智能体回答不参与自动计分。
+- 评委与答辩成员：阅读 [最终报告](final-report.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
+
+预测/回放/规则诊断、主动远程反馈、方舟教学智能体和本地教师评分是四条边界不同的链路，不能再统一描述为“完全本地”。
+
 ## P0 与正式教学实验的区别
 
 P0 是工程运行基线，不计入正式教学实验。P0 只负责 Rust 裸机工程、RISC-V 64 目标、QEMU/OpenSBI 启动和可重复测试。
 
 Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概念逐步展开，并配套 starter code、学生任务、参考实现和自动测试。
 
-## 文档索引
+## 按读者进入
+
+### 学生
+
+- [教学实验路线](labs/README.md)
+- [OS 实验可视化、预测与回放](interactive-demo/README.md)
+- 当前 `labN-starter` 根目录 `README.md` 及对应 `TASKS.md`、`HINTS.md`、`TESTING.md`
+
+### 教师与助教
+
+- [完整实验教学资料](labs/README.md)
+- [教师验收与评分工具](teacher-grading/README.md)
+- 各实验 `TEACHER_GUIDE.md` 与 `SOLUTION.md`
+
+### 评委与项目维护者
+
+- [设计方案](../DESIGN.md)
+- [赛题要求映射](requirements.md)
+- [系统架构](architecture.md)
+- [最终验收记录](final-acceptance-report.md)
+- [答辩与视频演示脚本](demo-script.md)
+
+## 主题索引
 
 - [赛题要求映射](requirements.md)
 - [系统架构](architecture.md)
 - [开发计划与当前进度](development-plan.md)
 - [测试设计](testing.md)
 - [AI 协作记录](ai-collaboration.md)
-- [教学实验路线](labs/README.md)
-- [完整实验教学资料与教师入口](labs/README.md)
+- [教学实验路线与完整材料](labs/README.md)
 - [教师验收与评分工具](teacher-grading/README.md)
+- [可视化学习地图与运行证据](interactive-demo/README.md)
 - [官方资料整理](references/problem-statement.md)
 - [最终设计方案与开发文档](final-report.md)
 - [比赛提交检查清单](submission-checklist.md)

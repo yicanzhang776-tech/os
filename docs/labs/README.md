@@ -2,6 +2,12 @@
 
 P0 是工程运行基线，不计入正式教学实验。Lab1 到 Lab7 是面向学生的正式教学实验，每个实验继续使用 starter/solution 两个分支。
 
+## 可视化与 AI 教学助教
+
+每个正式分支可启动同一套学习页面：先预测，再真实运行 QEMU，使用本地规则诊断、时间线回放和 starter/solution 对比。学生可在首次数据同意后手动使用 AI 教学助教获得证据化提示；它只能调用六个白名单工具，不提供或读取 solution、教师指南和评分记录，也不作为成绩依据。P0 可读取上下文和已有运行证据，但智能体 `run_test` 不支持 P0。完整边界见 [AI 教学助教与数据边界](../teaching-agent.md)。
+
+starter 分支只保留学生任务、提示、测试和可视化入口；solution 分支额外提供参考实现和教师验收材料。原始 starter 用 `-ExpectIncomplete` 检查答案隔离，学生完成任务后使用 `-Stage 1/2/3`，两参数互斥。
+
 ## 分支策略
 
 - `labN-starter`: 学生起点，保留清晰 TODO，要求可编译、可启动，但不输出该实验成功标志。
@@ -67,6 +73,22 @@ Starter 分支使用对应脚本的 `-ExpectIncomplete` 模式，例如:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -ExpectIncomplete
 ```
+
+学生完成任务时应使用 `-Stage 1/2/3` 逐步验收；`-ExpectIncomplete` 只验证发布给学生的原始 starter 没有泄露最终答案：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-lab7.ps1 -Stage 3
+```
+
+## 可视化学习与教师证据
+
+1. 在当前教学分支启动 [OS 实验可视化](../interactive-demo/README.md)。
+2. 先保存对构建、运行结果和关键事件的预测，再启动真实 QEMU。
+3. 保存运行记录，回放事件并与同一 Lab 的 starter/solution 记录比较。
+4. 学习者可填写教学反馈；反馈不计算成绩。
+5. 教师可导出 `os-demo.run/v1`，在 `main` 的[教师评分工具](../teacher-grading/README.md)中导入客观证据，再结合代码审查、报告和口试评分。
 
 ## 评委与教师完整材料
 

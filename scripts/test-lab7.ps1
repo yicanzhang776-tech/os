@@ -1,8 +1,14 @@
 param(
+    [ValidateSet(1, 2, 3)]
+    [int]$Stage = 3,
     [switch]$ExpectIncomplete
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($ExpectIncomplete -and $PSBoundParameters.ContainsKey("Stage")) {
+    throw "Use either -ExpectIncomplete or -Stage, not both."
+}
 
 $repo = Split-Path -Parent $PSScriptRoot
 $kernel = Join-Path $repo "target/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
@@ -10,6 +16,16 @@ $qemu = "qemu-system-riscv64"
 $log = Join-Path $repo "target/qemu-lab7.log"
 $errLog = Join-Path $repo "target/qemu-lab7.err.log"
 $timeoutSeconds = 20
+
+function Assert-Marker {
+    param(
+        [string]$Output,
+        [string]$Marker
+    )
+    if ($Output -notmatch [regex]::Escape($Marker)) {
+        throw "Expected marker '$Marker' was not found in QEMU output."
+    }
+}
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
 Remove-Item -LiteralPath $log -ErrorAction SilentlyContinue
@@ -19,7 +35,7 @@ Remove-Item -LiteralPath $kernel -ErrorAction SilentlyContinue
 Push-Location $repo
 $buildExitCode = $null
 try {
-    cargo build -p ai-os-kernel
+    cargo build -p ai-os-kernel --target riscv64gc-unknown-none-elf
     $buildExitCode = $LASTEXITCODE
 }
 finally {
@@ -74,33 +90,32 @@ if ($process.ExitCode -ne 0) {
     throw "QEMU exited with code $($process.ExitCode)."
 }
 
-if ($output -notmatch "\[Lab6\] PASS") {
-    throw "Expected Lab6 success marker [Lab6] PASS was not found in QEMU output."
-}
+Assert-Marker $output "[Lab6] PASS"
+Assert-Marker $output "[Lab7] start"
 
 if ($ExpectIncomplete) {
     if ($output -match "\[Lab7\] PASS") {
         throw "Unexpected Lab7 success marker [Lab7] PASS was found in starter output."
     }
-    foreach ($marker in @(
-        "\[Lab7\] start",
-        "\[Lab7\] TODO: implement memory file system"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab7 starter marker $marker was not found in QEMU output."
-        }
-    }
-    Write-Output "Lab7 QEMU starter incomplete test passed."
+    Assert-Marker $output "[Lab7-T1] TODO: implement RAM byte device"
+    Assert-Marker $output "[Lab7-T2] TODO: implement simple file system"
+    Assert-Marker $output "[Lab7] TODO: implement memory file system"
+    Write-Output "Lab7 starter incomplete test passed."
+    exit 0
 }
-else {
-    foreach ($marker in @(
-        "\[Lab7\] file opened",
-        "\[Lab7\] write/read verified",
-        "\[Lab7\] PASS"
-    )) {
-        if ($output -notmatch $marker) {
-            throw "Expected Lab7 solution marker $marker was not found in QEMU output."
-        }
-    }
-    Write-Output "Lab7 QEMU smoke test passed."
+
+if ($Stage -ge 1) {
+    Assert-Marker $output "[Lab7] start"
 }
+if ($Stage -ge 2) {
+    Assert-Marker $output "[Lab7] file opened"
+    Assert-Marker $output "[OS_DEMO] lab=lab7 step=file-write"
+    Assert-Marker $output "[OS_DEMO] lab=lab7 step=file-read"
+}
+if ($Stage -ge 3) {
+    Assert-Marker $output "[Lab7] file opened"
+    Assert-Marker $output "[Lab7] write/read verified"
+    Assert-Marker $output "[Lab7] PASS"
+}
+
+Write-Output "Lab7 Stage $Stage test passed."
