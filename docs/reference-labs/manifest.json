@@ -1,7 +1,7 @@
 {
   "schema": "tg-rcore-five-lab-evidence/v1",
-  "generatedAt": "2026-08-15T05:06:34+08:00",
-  "status": "awaiting-post-self-assessment-and-final-pdf",
+  "generatedAt": "2026-08-15T14:24:06.1530681+08:00",
+  "status": "complete",
   "source": {
     "repository": "https://github.com/rcore-os/tg-rcore-tutorial.git",
     "branch": "test",
@@ -40,7 +40,11 @@
       "rustAndRiscVImplementation": 3,
       "qemuTestingAndAiDebugging": 1
     },
-    "after": null
+    "after": {
+      "operatingSystemTheory": 4,
+      "rustAndRiscVImplementation": 4,
+      "qemuTestingAndAiDebugging": 4
+    }
   },
   "labs": [
     {
@@ -186,14 +190,20 @@
     ]
   },
   "report": {
-    "markdown": { "path": "tg-rcore-five-basic-experiments.md", "sha256": "2cf3b0f9a1b75170ab4a33bfe0a0f55192230d7ef45da4c232c3cbeb01858690" },
-    "pdf": null
+    "markdown": { "path": "tg-rcore-five-basic-experiments.md", "sha256": "9462320309262f2759216b5d7c1668d1a5315f2fd077ca8907d1821a630f6504" },
+    "pdf": {
+      "path": "tg-rcore-five-basic-experiments.pdf",
+      "bytes": 7513586,
+      "pages": 30,
+      "sha256": "72879c54a57b38830ff4990cb9b2d3b7c64f1b1852e566917d40def32e50ceeb"
+    }
   },
   "verification": {
     "patchesApplyInOrder": true,
     "patchApplyBase": "d6330a6db1f81c8c1cfba5ec3db9923199398f24",
     "cumulativePatchTreeMatches": "412a27e6fef47103f46f467ca37ef7c1088343f1",
     "privacyScan": "no matches in text evidence",
+    "pdfRenderedAndVisuallyChecked": true,
     "rawLogs": "retained only in the isolated Ubuntu reference repository"
   }
 }
