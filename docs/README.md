@@ -6,7 +6,7 @@
 
 - 学生：从 [实验路线](labs/README.md) 和 [交互可视化](interactive-demo/README.md) 开始；需要云端教学提示时先阅读 [AI 教学助教与数据边界](teaching-agent.md)。
 - 教师与助教：使用 [教师评分工具](teacher-grading/README.md) 人工复核，项目负责人通过 [反馈管理](feedback-admin/README.md) 接收自愿提交；智能体回答不参与自动计分。
-- 评委与答辩成员：阅读 [最终报告](final-report.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
+- 评委与答辩成员：阅读 [最终报告](final-report.md)、[30% 五个参考基础实验总结](reference-labs/tg-rcore-five-basic-experiments.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
 
 预测/回放/规则诊断、主动远程反馈、方舟教学智能体和本地教师评分是四条边界不同的链路，不能再统一描述为“完全本地”。
 
@@ -48,6 +48,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 - [教学实验路线与完整材料](labs/README.md)
 - [教师验收与评分工具](teacher-grading/README.md)
 - [可视化学习地图与运行证据](interactive-demo/README.md)
+- [赛题 30% 五个参考基础实验总结与证据](reference-labs/tg-rcore-five-basic-experiments.md)
 - [官方资料整理](references/problem-statement.md)
 - [最终设计方案与开发文档](final-report.md)
 - [比赛提交检查清单](submission-checklist.md)

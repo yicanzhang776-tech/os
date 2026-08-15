@@ -36,6 +36,8 @@
 
 项目仓库的参考资料指向 rCore Tutorial Book、rCore Tutorial Code、rCore Tutorial Guide 和 LearningOS 课程资源。2025S 教学代码使用 Rust、RISC-V 和 QEMU，按 `ch1` 到 `ch9` 组织；公开评分流程为章节 3、4、5、6、8 配置 checker 与测试仓库，正好形成五个可复核的重点练习。
 
+本项目已在固定上游 `d6330a6` 的隔离参考仓库中逐章完成这五个练习，最终参考提交为 `412a27e`。每章均保留未实现基线、实现差异、最终 QEMU 测试、补丁和本地提交；完整证据见 [tg-rCore 五个基础实验练习总结报告](reference-labs/tg-rcore-five-basic-experiments.md)。参考实现没有混入本项目内核，两部分不能按测例数量直接比较。
+
 五个重点练习为：
 
 - Chapter 3：多道程序与分时多任务；
@@ -99,6 +101,7 @@
 |---|---:|---|
 | 远端对应分支 | 19 | `main`、`agent-mvp`、P0、可视化、教师工具、Lab1-Lab7 starter/solution |
 | 正式教学实验 | 7 | `docs/labs/README.md` |
+| rCore 参考基础实验 | 5 | Chapter 3、4、5、6、8 的独立总结、日志、截图与补丁 |
 | 教学分支上下文映射 | 17 | `main`、可视化、P0、14 个 Lab 分支 |
 | Rust/汇编/链接脚本文件 | 19 | `kernel/` |
 | 内核相关代码行 | 3289 | 当前快照文本行统计 |

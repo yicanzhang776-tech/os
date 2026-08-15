@@ -1,0 +1,199 @@
+{
+  "schema": "tg-rcore-five-lab-evidence/v1",
+  "generatedAt": "2026-08-15T05:06:34+08:00",
+  "status": "awaiting-post-self-assessment-and-final-pdf",
+  "source": {
+    "repository": "https://github.com/rcore-os/tg-rcore-tutorial.git",
+    "branch": "test",
+    "baseCommit": "d6330a6db1f81c8c1cfba5ec3db9923199398f24",
+    "finalCommit": "412a27e6fef47103f46f467ca37ef7c1088343f1"
+  },
+  "isolation": {
+    "referenceBranch": "codex/five-basic-exercises",
+    "reportBranch": "codex/tg-rcore-five-lab-report",
+    "pushPerformed": false,
+    "mainModified": false,
+    "referenceWorktreeCleanAfterFinalCommit": true
+  },
+  "environment": {
+    "os": "Ubuntu 20.04 x86_64",
+    "git": "2.25.1",
+    "rustc": "1.97.1",
+    "cargo": "1.97.1",
+    "target": "riscv64gc-unknown-none-elf",
+    "qemu": "8.2.10",
+    "checker": "tg-rcore-tutorial-checker 0.4.8",
+    "openSbi": "not installed; reference QEMU command used -bios none",
+    "record": {
+      "path": "logs/environment.txt",
+      "sha256": "6ea10f7ec1cca297d83fc97b8048d6cfd41dd7ff3f019ac80cc6050b7a9ab0c7"
+    },
+    "screenshot": {
+      "path": "assets/environment/toolchain-baseline.png",
+      "sha256": "fc82e203e0e8bcea0036adde23763626c16aab98a92446c3c382c59e1acf6ba0"
+    }
+  },
+  "selfAssessment": {
+    "scale": "1-5",
+    "before": {
+      "operatingSystemTheory": 3,
+      "rustAndRiscVImplementation": 3,
+      "qemuTestingAndAiDebugging": 1
+    },
+    "after": null
+  },
+  "labs": [
+    {
+      "chapter": 3,
+      "title": "system call trace",
+      "commit": "dc496894bc6e88fb18772c79dbb72b6c1e9313c9",
+      "baseline": { "command": "./test.sh exercise", "passed": 5, "total": 7, "result": "failed" },
+      "verification": [
+        { "command": "cargo build --features exercise", "exitCode": 0 },
+        { "command": "./test.sh base", "exitCode": 0, "passed": 4, "total": 4 },
+        { "command": "./test.sh exercise", "exitCode": 0, "passed": 7, "total": 7 },
+        { "command": "cargo clippy --features exercise", "exitCode": 0 }
+      ],
+      "change": { "files": 2, "insertions": 40, "deletions": 22 },
+      "evidence": {
+        "screenshots": [
+          { "path": "assets/ch3/01-baseline-failure.png", "sha256": "0f9ffe4a2263ff2e0d56e263305b523581bdefc029047d6200f4dfd3ebd46207" },
+          { "path": "assets/ch3/02-implementation-diff.png", "sha256": "d177958c89cae55083ab6d207f0f1ddd17ba97b9311d0b8c806104bc8b1a6263" },
+          { "path": "assets/ch3/03-final-pass.png", "sha256": "3771969009eeb064cf389f72c7b1250ed0267d8ac87d055bf39cba5740fa516c" }
+        ],
+        "logs": [
+          { "path": "logs/ch3-baseline.txt", "sha256": "6bf52951e909529f929bec57e7f4fb92065e7b629b49bf2603fd32cea4e70cfe" },
+          { "path": "logs/ch3-implementation.txt", "sha256": "58df4085f5926291764dd07e106d70d131e9b184beecbaed33f73d0570b28c11" },
+          { "path": "logs/ch3-final.txt", "sha256": "7ab0828a940d2520e2a998fa9249c6a111d77018a98e0bdd225eb65c07ef8ffe" }
+        ],
+        "patch": { "path": "patches/ch3-trace-exercise.patch", "sha256": "beffa20ce81623604c0e416454a2cedb44414969dcba5d854a3d3e120a278047" }
+      }
+    },
+    {
+      "chapter": 4,
+      "title": "virtual memory",
+      "commit": "420ae4f27afe6e8704792618738e88f2f8918ccd",
+      "baseline": { "command": "./test.sh exercise", "passed": 9, "total": 16, "result": "failed" },
+      "verification": [
+        { "command": "cargo fmt --manifest-path tg-rcore-tutorial-ch4/Cargo.toml", "exitCode": 0 },
+        { "command": "cargo build --features exercise", "exitCode": 0 },
+        { "command": "./test.sh base", "exitCode": 0, "passed": 6, "total": 6 },
+        { "command": "./test.sh exercise", "exitCode": 0, "passed": 16, "total": 16 },
+        { "command": "cargo clippy --features exercise", "exitCode": 0 }
+      ],
+      "change": { "files": 2, "insertions": 154, "deletions": 34 },
+      "evidence": {
+        "screenshots": [
+          { "path": "assets/ch4/01-baseline-failure.png", "sha256": "71138292178e33b5820d1e224fc8044c78aa8914a91139d96c1fe604f4691c04" },
+          { "path": "assets/ch4/02-implementation-diff.png", "sha256": "b904ae58ba4eae1fccd2e6ab814d42f400be4e9cd4f6aaaea396cb360a3bd5ba" },
+          { "path": "assets/ch4/03-final-pass.png", "sha256": "ca6fcb3c602cb1b8736660c15b925335fbff5aa531de52e5d16efb4e70f288f5" }
+        ],
+        "logs": [
+          { "path": "logs/ch4-baseline.txt", "sha256": "bab695b13dabd4882e32a703b6c02682a36318572dfd4d180c86931d28dd52fb" },
+          { "path": "logs/ch4-implementation.txt", "sha256": "eeedd20c02a89eb0a93805f48178b5abd8bc4cc3c3f2116fec28d9b8d99f6bd5" },
+          { "path": "logs/ch4-final.txt", "sha256": "e0a82039ee351f75e2b50f81b696b68b8a8c49354549569e47a64d7af324a211" }
+        ],
+        "patch": { "path": "patches/ch4-virtual-memory.patch", "sha256": "8b939ed8806e1f6fe185c208e0765c0a9d2ed5f147b61b87ddda2265df6da25a" }
+      }
+    },
+    {
+      "chapter": 5,
+      "title": "process and stride scheduling",
+      "commit": "3c704828616a9f7f8796ac91bad6d04b011286d4",
+      "baseline": { "command": "./test.sh exercise", "passed": 4, "total": 17, "result": "failed" },
+      "verification": [
+        { "command": "cargo fmt --manifest-path tg-rcore-tutorial-ch5/Cargo.toml", "exitCode": 0 },
+        { "command": "cargo build --features exercise", "exitCode": 0 },
+        { "command": "./test.sh base", "exitCode": 0, "passed": 14, "total": 14 },
+        { "command": "./test.sh exercise", "exitCode": 0, "passed": 17, "total": 17 },
+        { "command": "cargo clippy --features exercise", "exitCode": 0 }
+      ],
+      "change": { "files": 3, "insertions": 160, "deletions": 40 },
+      "evidence": {
+        "screenshots": [
+          { "path": "assets/ch5/01-baseline-failure.png", "sha256": "7fc15877b25fc8c83a84e2ac9b9a1cfa923c396e26c6c28f298f4101716a2ee2" },
+          { "path": "assets/ch5/02-implementation-diff.png", "sha256": "74c2d498a89fd6fc34f11b3f89af0e76c015e9ccbd3352eaf7c4fdbec1315311" },
+          { "path": "assets/ch5/03-final-pass.png", "sha256": "91a7ddf13f99534fe2029c1f3a224e1bc3d0b184d42a4040f074ad5546477efa" }
+        ],
+        "logs": [
+          { "path": "logs/ch5-baseline.txt", "sha256": "d0d2dac75ac03133869e452f5a2115c2cf322f571f8b874d67338aa6a2c94db3" },
+          { "path": "logs/ch5-implementation.txt", "sha256": "00f84cb3c8cbe877ea6eae48f0b134653a7f2ff3d6c437f318400f9920b1d986" },
+          { "path": "logs/ch5-final.txt", "sha256": "aec7bc577430c3cb6c079f5fa44ff064fdeecbd84e3d20c38686af4ec8a27868" }
+        ],
+        "patch": { "path": "patches/ch5-process-stride.patch", "sha256": "532a8a8e82e1b372a192b2d1f64e9b2327dfab2915115a1d6447f2975a854c2a" }
+      }
+    },
+    {
+      "chapter": 6,
+      "title": "hard links and file status",
+      "commit": "a46815a616d3299c0f359d00d68ff500cedb8797",
+      "baseline": { "command": "./test.sh exercise", "passed": 4, "total": 33, "result": "failed" },
+      "verification": [
+        { "command": "cargo build --features exercise", "exitCode": 0 },
+        { "command": "./test.sh base", "exitCode": 0, "passed": 15, "total": 15 },
+        { "command": "./test.sh exercise", "exitCode": 0, "passed": 33, "total": 33 },
+        { "command": "cargo clippy --features exercise", "exitCode": null, "result": "blocked by pre-existing upstream lints" }
+      ],
+      "change": { "files": 7, "insertions": 387, "deletions": 68 },
+      "evidence": {
+        "screenshots": [
+          { "path": "assets/ch6/01-baseline-failure.png", "sha256": "88ca5a0cedd8bbe739bbec0112e1595c9ed7f663bf61a5868b82f434b057cdd0" },
+          { "path": "assets/ch6/02-implementation-diff.png", "sha256": "49613081be7d66614ebef7f7d20348a517caf8a1303fa52fb44b2af0526e1054" },
+          { "path": "assets/ch6/03-final-pass.png", "sha256": "5009a505b56b38dfeb6b0ef578d18371f8605956d7fb74eea9591bf8a23496cf" }
+        ],
+        "logs": [
+          { "path": "logs/ch6-baseline.txt", "sha256": "c1e250b6623a91f9131fa6f65500564a445f61432f6862b2b35a9315a1c0c450" },
+          { "path": "logs/ch6-implementation.txt", "sha256": "c98b04bb10db2d3d3c625dc3d41b4e9646f61b43f98890ce5d0b5c4f4638270b" },
+          { "path": "logs/ch6-final.txt", "sha256": "94c85ad532b0fa733a053038c0c5ed30dae01da723c56a56a39382172a7b2d8c" }
+        ],
+        "patch": { "path": "patches/ch6-hard-link-exercises.patch", "sha256": "20da876e346a81fe60f88e9bf4038100a91f7a658e4077238977354a5f6b3d4e" }
+      }
+    },
+    {
+      "chapter": 8,
+      "title": "deadlock detection",
+      "commit": "412a27e6fef47103f46f467ca37ef7c1088343f1",
+      "baseline": { "command": "TIMEOUT_SEC=300 ./test.sh exercise", "exitCode": 1, "elapsedSeconds": 300, "passed": 24, "total": 25, "result": "timeout" },
+      "verification": [
+        { "command": "cargo build --features exercise", "exitCode": 0, "elapsedSeconds": 3.554 },
+        { "command": "TIMEOUT_SEC=300 ./test.sh base", "exitCode": 0, "passed": 22, "total": 22 },
+        { "command": "TIMEOUT_SEC=300 ./test.sh exercise", "exitCode": 0, "passed": 25, "total": 25 },
+        { "command": "TIMEOUT_SEC=300 ./test.sh all", "exitCode": 0, "elapsedSeconds": 138.82 },
+        { "command": "cargo clippy --features exercise", "exitCode": null, "result": "blocked by pre-existing upstream lints" }
+      ],
+      "change": { "files": 2, "insertions": 607, "deletions": 112 },
+      "evidence": {
+        "screenshots": [
+          { "path": "assets/ch8/01-baseline-failure.png", "sha256": "10e286841881266aa28d42c979cec2cce220bf95eff06f7745fd0add383abe2e" },
+          { "path": "assets/ch8/02-implementation-diff.png", "sha256": "620de6c80139518cdf865fc6c1b1c0805742ea53dc07107d9b0561a9a79a76e9" },
+          { "path": "assets/ch8/03-final-pass.png", "sha256": "609229d7b4cd87da23447aed5cd97892591c2feff1f6c997254b4673e85a64c7" }
+        ],
+        "logs": [
+          { "path": "logs/ch8-baseline.txt", "sha256": "214ce75253d0f6679e3e6373ac937b03a065afb7df112637a8ca6cbf84b5abb8" },
+          { "path": "logs/ch8-implementation.txt", "sha256": "4e521082b3bd7b42d9b317ff17458db77cc07b0fda373b082ff55b81e05a2442" },
+          { "path": "logs/ch8-final.txt", "sha256": "83e5ae223a655d3547fce27f0c1445aab0102fd8ded7b1130a83c3db709e1a0f" }
+        ],
+        "patch": { "path": "patches/ch8-deadlock-detection-exercise.patch", "sha256": "c63dfb97f346ba5aebec880448fd14a2c5bd7cad9c737b87387fb508ddaf1fc7" }
+      }
+    }
+  ],
+  "supplementalEvidence": {
+    "aiCollaboration": { "path": "ai/collaboration-log.md", "sha256": "c5c228883cc38ddf1bb3fb2a9a30ca149c08e6b89bd3e5d0c2f0599bd3e65d5f" },
+    "xv6": [
+      { "path": "assets/xv6/01-page-table-tests.png", "sha256": "93c0e220fa68c73cdad2f71981b7a17af01398d4d383f88c080eb5aa4058c404" },
+      { "path": "assets/xv6/02-barrier-implementation.png", "sha256": "be2c343a7af1756e72440eff40685cc3784296994349f880e3ea1f446204b0dd" },
+      { "path": "assets/xv6/03-mmap-tests.png", "sha256": "71776398580ed662a470f3c6d163a159701d12e3d3d02b151c989f444f5b4c3b" }
+    ]
+  },
+  "report": {
+    "markdown": { "path": "tg-rcore-five-basic-experiments.md", "sha256": "2cf3b0f9a1b75170ab4a33bfe0a0f55192230d7ef45da4c232c3cbeb01858690" },
+    "pdf": null
+  },
+  "verification": {
+    "patchesApplyInOrder": true,
+    "patchApplyBase": "d6330a6db1f81c8c1cfba5ec3db9923199398f24",
+    "cumulativePatchTreeMatches": "412a27e6fef47103f46f467ca37ef7c1088343f1",
+    "privacyScan": "no matches in text evidence",
+    "rawLogs": "retained only in the isolated Ubuntu reference repository"
+  }
+}
