@@ -131,16 +131,16 @@ async function rejectsCode(promise, code) {
 }
 
 test("exports the fixed bounded orchestration limits", () => {
-  assert.equal(MAX_MODEL_TURNS, 4);
-  assert.equal(MAX_TOOL_CALLS, 3);
-  assert.equal(MAX_AGENT_DURATION_MS, 90_000);
+  assert.equal(MAX_MODEL_TURNS, 8);
+  assert.equal(MAX_TOOL_CALLS, 8);
+  assert.equal(MAX_AGENT_DURATION_MS, 180_000);
   assert.equal(MAX_TOTAL_TOOL_OUTPUT_BYTES, 512 * 1024);
   assert.deepEqual(TOOL_REPEAT_LIMITS, {
-    get_context: 1,
-    read_code: 3,
-    get_qemu_events: 2,
-    get_run_result: 1,
-    get_code_diff: 1,
+    get_context: 2,
+    read_code: 4,
+    get_qemu_events: 3,
+    get_run_result: 3,
+    get_code_diff: 2,
     run_test: 1
   });
 });
@@ -245,10 +245,15 @@ test("serially dispatches a validated read-only batch and returns ordered output
 
 test("rejects an oversized batch before dispatch", async () => {
   const h = harness([batch([
-    toolCall("call-1", "get_context"),
-    toolCall("call-2", "get_code_diff", { lab: "lab4" }),
-    toolCall("call-3", "read_code", { path: "kernel/src/lib.rs" }),
-    toolCall("call-4", "get_qemu_events", { limit: 1 })
+    toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    toolCall("call-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    toolCall("call-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    toolCall("call-4", "read_code", { path: "kernel/src/file-4.rs" }),
+    toolCall("call-5", "get_qemu_events", { limit: 1 }),
+    toolCall("call-6", "get_qemu_events", { limit: 2 }),
+    toolCall("call-7", "get_qemu_events", { limit: 3 }),
+    toolCall("call-8", "get_code_diff", { lab: "lab4" }),
+    toolCall("call-9", "get_code_diff", { lab: "lab5" })
   ])]);
   await rejectsCode(run(h), "agent_loop_limit");
   assert.equal(h.tools.calls.length, 0);
@@ -259,8 +264,13 @@ test("rejects a batch when prior calls plus the whole batch exceed the total lim
     call("call-1", "get_context"),
     call("call-2", "get_code_diff", { lab: "lab4" }),
     batch([
-      toolCall("call-3", "read_code", { path: "kernel/src/lib.rs" }),
-      toolCall("call-4", "get_qemu_events", { limit: 1 })
+      toolCall("call-3", "read_code", { path: "kernel/src/file-1.rs" }),
+      toolCall("call-4", "read_code", { path: "kernel/src/file-2.rs" }),
+      toolCall("call-5", "read_code", { path: "kernel/src/file-3.rs" }),
+      toolCall("call-6", "read_code", { path: "kernel/src/file-4.rs" }),
+      toolCall("call-7", "get_qemu_events", { limit: 1 }),
+      toolCall("call-8", "get_qemu_events", { limit: 2 }),
+      toolCall("call-9", "get_qemu_events", { limit: 3 })
     ])
   ]);
   await rejectsCode(run(h), "agent_loop_limit");
@@ -287,8 +297,11 @@ test("rejects canonical duplicate calls across one batch before dispatch", async
 
 test("enforces per-tool repeat limits across one batch before dispatch", async () => {
   const h = harness([batch([
-    toolCall("call-1", "get_context"),
-    toolCall("call-2", "get_context", { second: true })
+    toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    toolCall("call-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    toolCall("call-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    toolCall("call-4", "read_code", { path: "kernel/src/file-4.rs" }),
+    toolCall("call-5", "read_code", { path: "kernel/src/file-5.rs" })
   ])]);
   await rejectsCode(run(h), "agent_loop_limit");
   assert.equal(h.tools.calls.length, 0);
@@ -429,19 +442,29 @@ test("rejects canonically identical tool arguments", async () => {
 
 test("enforces per-tool repeat limits", async () => {
   const h = harness([
-    call("call-1", "get_context", {}),
-    call("call-2", "get_context", { second: true })
+    call("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("call-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("call-4", "read_code", { path: "kernel/src/file-4.rs" }),
+    call("call-5", "read_code", { path: "kernel/src/file-5.rs" })
   ]);
   await rejectsCode(run(h), "agent_loop_limit");
-  assert.equal(h.tools.calls.length, 1);
+  assert.equal(h.tools.calls.length, TOOL_REPEAT_LIMITS.read_code);
 });
 
 test("enforces maximum tool calls and bounded model turns", async () => {
   const h = harness([
-    call("call-1", "get_context"),
-    call("call-2", "get_code_diff", { lab: "lab4" }),
-    call("call-3", "read_code", { path: "kernel/src/lib.rs" }),
-    call("call-4", "get_qemu_events", { limit: 1 })
+    batch([
+      toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+      toolCall("call-2", "get_qemu_events", { limit: 1 })
+    ]),
+    call("call-3", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("call-4", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("call-5", "read_code", { path: "kernel/src/file-4.rs" }),
+    call("call-6", "get_qemu_events", { limit: 2 }),
+    call("call-7", "get_qemu_events", { limit: 3 }),
+    call("call-8", "get_code_diff", { lab: "lab4" }),
+    call("call-9", "get_run_result", { runId: "run-1" })
   ]);
   await rejectsCode(run(h), "agent_loop_limit");
   assert.equal(h.model.calls.length, MAX_MODEL_TURNS);
@@ -513,7 +536,9 @@ test("rejects per-tool oversized output without truncation or continuation", asy
     () => { throw new Error(sentinel); }
   ], {
     overrides: {
-      get_context: toolResult("get_context", { data: { text: "x".repeat(17 * 1024) + sentinel } })
+      get_context: toolResult("get_context", {
+        data: { text: "x".repeat(TOOL_OUTPUT_BUDGET_BYTES.get_context) + sentinel }
+      })
     }
   });
   await rejectsCode(run(h), "agent_tool_output_too_large");
@@ -594,9 +619,10 @@ test("get_run_result run_in_progress is returned once with no automatic polling"
 });
 
 test("enforces deadline before and after model execution", async () => {
+  const deadline = 1_000 + MAX_AGENT_DURATION_MS;
   for (const times of [
-    [1_000, 91_000],
-    [1_000, 1_000, 91_000]
+    [1_000, deadline],
+    [1_000, 1_000, deadline]
   ]) {
     let index = 0;
     const h = harness([final()], { now: () => times[Math.min(index++, times.length - 1)] });
@@ -605,7 +631,8 @@ test("enforces deadline before and after model execution", async () => {
 });
 
 test("enforces deadline after tool dispatch", async () => {
-  const times = [1_000, 1_000, 1_000, 1_000, 91_000];
+  const deadline = 1_000 + MAX_AGENT_DURATION_MS;
+  const times = [1_000, 1_000, 1_000, 1_000, deadline];
   let index = 0;
   const h = harness([call("call-1", "get_context")], {
     now: () => times[Math.min(index++, times.length - 1)]
@@ -740,11 +767,11 @@ test("contains no direct process, Git mutation, QEMU execution, write, or networ
 
 test("exports the approved per-tool output budgets", () => {
   assert.deepEqual(TOOL_OUTPUT_BUDGET_BYTES, {
-    get_context: 16 * 1024,
-    read_code: 96 * 1024,
-    get_qemu_events: 256 * 1024,
-    get_run_result: 32 * 1024,
-    get_code_diff: 96 * 1024,
-    run_test: 16 * 1024
+    get_context: 32 * 1024,
+    read_code: 192 * 1024,
+    get_qemu_events: 512 * 1024,
+    get_run_result: 64 * 1024,
+    get_code_diff: 192 * 1024,
+    run_test: 32 * 1024
   });
 });
