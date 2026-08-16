@@ -1,6 +1,6 @@
 {
   "schema": "tg-rcore-five-lab-evidence/v1",
-  "generatedAt": "2026-08-15T14:24:06.1530681+08:00",
+  "generatedAt": "2026-08-16T12:07:58.7335694+08:00",
   "status": "complete",
   "source": {
     "repository": "https://github.com/rcore-os/tg-rcore-tutorial.git",
@@ -10,8 +10,8 @@
   },
   "isolation": {
     "referenceBranch": "codex/five-basic-exercises",
-    "reportBranch": "codex/tg-rcore-five-lab-report",
-    "pushPerformed": false,
+    "reportBranch": "tg-rcore-five-lab-report",
+    "pushPerformed": true,
     "mainModified": false,
     "referenceWorktreeCleanAfterFinalCommit": true
   },
@@ -26,7 +26,7 @@
     "openSbi": "not installed; reference QEMU command used -bios none",
     "record": {
       "path": "logs/environment.txt",
-      "sha256": "6ea10f7ec1cca297d83fc97b8048d6cfd41dd7ff3f019ac80cc6050b7a9ab0c7"
+      "sha256": "15981789c59f42e378af2e66539b27e015f8b9b235d21b7b94a3be79d3a21515"
     },
     "screenshot": {
       "path": "assets/environment/toolchain-baseline.png",
@@ -66,11 +66,11 @@
           { "path": "assets/ch3/03-final-pass.png", "sha256": "3771969009eeb064cf389f72c7b1250ed0267d8ac87d055bf39cba5740fa516c" }
         ],
         "logs": [
-          { "path": "logs/ch3-baseline.txt", "sha256": "6bf52951e909529f929bec57e7f4fb92065e7b629b49bf2603fd32cea4e70cfe" },
-          { "path": "logs/ch3-implementation.txt", "sha256": "58df4085f5926291764dd07e106d70d131e9b184beecbaed33f73d0570b28c11" },
-          { "path": "logs/ch3-final.txt", "sha256": "7ab0828a940d2520e2a998fa9249c6a111d77018a98e0bdd225eb65c07ef8ffe" }
+          { "path": "logs/ch3-baseline.txt", "sha256": "7827aab20ace8b2d43c3fec245262707a3461ea99f152e0a2304d13e8c27be3e" },
+          { "path": "logs/ch3-implementation.txt", "sha256": "3e786531549111281cec772dbc50bd7df90e8cee744ed24354e6e567a4284b1c" },
+          { "path": "logs/ch3-final.txt", "sha256": "6ba234bdd820a146f00c14423224838ffcbd3ce5c96618e9b24bf03617f5c878" }
         ],
-        "patch": { "path": "patches/ch3-trace-exercise.patch", "sha256": "beffa20ce81623604c0e416454a2cedb44414969dcba5d854a3d3e120a278047" }
+        "patch": { "path": "patches/ch3-trace-exercise.patch", "sha256": "22d84221c677d648356539fdf1e80b5474c0681ccfdee7ca03976be29147215d" }
       }
     },
     {
@@ -93,11 +93,11 @@
           { "path": "assets/ch4/03-final-pass.png", "sha256": "ca6fcb3c602cb1b8736660c15b925335fbff5aa531de52e5d16efb4e70f288f5" }
         ],
         "logs": [
-          { "path": "logs/ch4-baseline.txt", "sha256": "bab695b13dabd4882e32a703b6c02682a36318572dfd4d180c86931d28dd52fb" },
-          { "path": "logs/ch4-implementation.txt", "sha256": "eeedd20c02a89eb0a93805f48178b5abd8bc4cc3c3f2116fec28d9b8d99f6bd5" },
-          { "path": "logs/ch4-final.txt", "sha256": "e0a82039ee351f75e2b50f81b696b68b8a8c49354549569e47a64d7af324a211" }
+          { "path": "logs/ch4-baseline.txt", "sha256": "e299f6e59737e51747ca77aed65f79e1267f078273ce44294caf196bf32ff7fc" },
+          { "path": "logs/ch4-implementation.txt", "sha256": "c87ba76827ce034f0feb9e541ec19710dd011d32cd6ad66e7126f59a587b2e35" },
+          { "path": "logs/ch4-final.txt", "sha256": "18a4b318527551f481660026fd006b22955f55dc8426023bb2c62130ec7ed365" }
         ],
-        "patch": { "path": "patches/ch4-virtual-memory.patch", "sha256": "8b939ed8806e1f6fe185c208e0765c0a9d2ed5f147b61b87ddda2265df6da25a" }
+        "patch": { "path": "patches/ch4-virtual-memory.patch", "sha256": "1eef9c442aa4bd765c4ebb6249916e1c98f5e52d454873f76f05d51a037dc070" }
       }
     },
     {
@@ -120,11 +120,11 @@
           { "path": "assets/ch5/03-final-pass.png", "sha256": "91a7ddf13f99534fe2029c1f3a224e1bc3d0b184d42a4040f074ad5546477efa" }
         ],
         "logs": [
-          { "path": "logs/ch5-baseline.txt", "sha256": "d0d2dac75ac03133869e452f5a2115c2cf322f571f8b874d67338aa6a2c94db3" },
-          { "path": "logs/ch5-implementation.txt", "sha256": "00f84cb3c8cbe877ea6eae48f0b134653a7f2ff3d6c437f318400f9920b1d986" },
-          { "path": "logs/ch5-final.txt", "sha256": "aec7bc577430c3cb6c079f5fa44ff064fdeecbd84e3d20c38686af4ec8a27868" }
+          { "path": "logs/ch5-baseline.txt", "sha256": "d19703fab715bb05b4ea81c35777663baa8d008ac7f9429c4188ba08ec8c1b30" },
+          { "path": "logs/ch5-implementation.txt", "sha256": "6258c776f438faa6966efe3adb21595c712135d5a641c3b830571108fe1b53e7" },
+          { "path": "logs/ch5-final.txt", "sha256": "ea54fd8b0e1649f3f97ca5a776dbf80f8a14fc7168208ccb44124fdd7e951c6d" }
         ],
-        "patch": { "path": "patches/ch5-process-stride.patch", "sha256": "532a8a8e82e1b372a192b2d1f64e9b2327dfab2915115a1d6447f2975a854c2a" }
+        "patch": { "path": "patches/ch5-process-stride.patch", "sha256": "f5414e9221ee8db53512e525dcd842ec29bf3caf52b8982823a90bc7e7fa1524" }
       }
     },
     {
@@ -146,11 +146,11 @@
           { "path": "assets/ch6/03-final-pass.png", "sha256": "5009a505b56b38dfeb6b0ef578d18371f8605956d7fb74eea9591bf8a23496cf" }
         ],
         "logs": [
-          { "path": "logs/ch6-baseline.txt", "sha256": "c1e250b6623a91f9131fa6f65500564a445f61432f6862b2b35a9315a1c0c450" },
-          { "path": "logs/ch6-implementation.txt", "sha256": "c98b04bb10db2d3d3c625dc3d41b4e9646f61b43f98890ce5d0b5c4f4638270b" },
-          { "path": "logs/ch6-final.txt", "sha256": "94c85ad532b0fa733a053038c0c5ed30dae01da723c56a56a39382172a7b2d8c" }
+          { "path": "logs/ch6-baseline.txt", "sha256": "416ef5c9f9dcc3e0a55eec063f22a887f432577600832b0e398dd9988096f74e" },
+          { "path": "logs/ch6-implementation.txt", "sha256": "d1f1067457af3e73b39d59ca8df0ca133236dbe9a6788e003879aa8449cee1a0" },
+          { "path": "logs/ch6-final.txt", "sha256": "a65212ef68d6e8352bf877c6e31dd8d5e81a45ea6b3d60806ca6af9a897f8319" }
         ],
-        "patch": { "path": "patches/ch6-hard-link-exercises.patch", "sha256": "20da876e346a81fe60f88e9bf4038100a91f7a658e4077238977354a5f6b3d4e" }
+        "patch": { "path": "patches/ch6-hard-link-exercises.patch", "sha256": "acb15da2dbad13399ac2663a77789bbc87fe4f9f6d18aef24479808458cd02ff" }
       }
     },
     {
@@ -173,16 +173,16 @@
           { "path": "assets/ch8/03-final-pass.png", "sha256": "609229d7b4cd87da23447aed5cd97892591c2feff1f6c997254b4673e85a64c7" }
         ],
         "logs": [
-          { "path": "logs/ch8-baseline.txt", "sha256": "214ce75253d0f6679e3e6373ac937b03a065afb7df112637a8ca6cbf84b5abb8" },
-          { "path": "logs/ch8-implementation.txt", "sha256": "4e521082b3bd7b42d9b317ff17458db77cc07b0fda373b082ff55b81e05a2442" },
-          { "path": "logs/ch8-final.txt", "sha256": "83e5ae223a655d3547fce27f0c1445aab0102fd8ded7b1130a83c3db709e1a0f" }
+          { "path": "logs/ch8-baseline.txt", "sha256": "12de5eedcf379c552d93fab1875ec6af43186675143f673d101bd983dcc46dca" },
+          { "path": "logs/ch8-implementation.txt", "sha256": "e19db9332f1f657bb64f6e0767d19e515e51f664ed951984ba36fbfc7719d3e9" },
+          { "path": "logs/ch8-final.txt", "sha256": "55eb19291f1a3a7bdcbbe956a286d35fc996c83b4ec1b156d350a24103e1562b" }
         ],
-        "patch": { "path": "patches/ch8-deadlock-detection-exercise.patch", "sha256": "c63dfb97f346ba5aebec880448fd14a2c5bd7cad9c737b87387fb508ddaf1fc7" }
+        "patch": { "path": "patches/ch8-deadlock-detection-exercise.patch", "sha256": "169216b333466a76f93e8fc92ffc0dcedb00dafb2e93f3e978174f245196942a" }
       }
     }
   ],
   "supplementalEvidence": {
-    "aiCollaboration": { "path": "ai/collaboration-log.md", "sha256": "c5c228883cc38ddf1bb3fb2a9a30ca149c08e6b89bd3e5d0c2f0599bd3e65d5f" },
+    "aiCollaboration": { "path": "ai/collaboration-log.md", "sha256": "a8b000b1808f8aa1439801c6ef9c6b0e24ac61a6c1e92260d5805aea6cc3fc59" },
     "xv6": [
       { "path": "assets/xv6/01-page-table-tests.png", "sha256": "93c0e220fa68c73cdad2f71981b7a17af01398d4d383f88c080eb5aa4058c404" },
       { "path": "assets/xv6/02-barrier-implementation.png", "sha256": "be2c343a7af1756e72440eff40685cc3784296994349f880e3ea1f446204b0dd" },
@@ -190,12 +190,12 @@
     ]
   },
   "report": {
-    "markdown": { "path": "tg-rcore-five-basic-experiments.md", "sha256": "9462320309262f2759216b5d7c1668d1a5315f2fd077ca8907d1821a630f6504" },
+    "markdown": { "path": "tg-rcore-five-basic-experiments.md", "sha256": "064d273462e39f90d2f4044e66656298424bb4ba8abf9f9af16edd44c3506866" },
     "pdf": {
       "path": "tg-rcore-five-basic-experiments.pdf",
-      "bytes": 7513586,
+      "bytes": 7514412,
       "pages": 30,
-      "sha256": "72879c54a57b38830ff4990cb9b2d3b7c64f1b1852e566917d40def32e50ceeb"
+      "sha256": "4a4e83d15b79a9733c5a43ea72eeec99484594c0a940a7d80c4a97601de0aa88"
     }
   },
   "verification": {
