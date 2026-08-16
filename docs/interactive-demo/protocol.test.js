@@ -5,10 +5,13 @@ const test = require("node:test");
 const {
   EVENT_PROTOCOL,
   EXPECTED_BRANCHES,
+  MAX_SERIAL_LINE_LENGTH,
+  createLineBuffer,
   normalizeBranchName,
   normalizeTeachingEvent,
   parseBranchContext,
-  parseKernelLine
+  parseKernelLine,
+  parseSerialLine
 } = require("./protocol");
 
 test("all 17 repository branches resolve to a teaching context", () => {
@@ -127,8 +130,104 @@ test("task checkpoints and failures keep semantic status", () => {
   assert.equal(parseKernelLine("[Lab4] FAIL: text mapping failed").status, "fail");
 });
 
-test("unrelated QEMU and OpenSBI lines are ignored", () => {
+test("the kernel marker parser remains limited to kernel telemetry", () => {
   assert.equal(parseKernelLine("OpenSBI v1.5"), null);
   assert.equal(parseKernelLine("Domain0 Next Address : 0x0000000080200000"), null);
   assert.equal(parseKernelLine(""), null);
+});
+
+test("serial parsing creates one OpenSBI event only from a real version banner", () => {
+  assert.deepEqual(parseSerialLine("OpenSBI v0.9", { lab: "lab1" }), {
+    protocol: EVENT_PROTOCOL,
+    lab: "lab1",
+    step: "opensbi-started",
+    status: "running",
+    detail: "串口已观察到 OpenSBI 固件版本信息；这不证明学生内核已经执行",
+    source: "console"
+  });
+  assert.equal(parseSerialLine("OpenSBI documentation", { lab: "lab1" }), null);
+  assert.equal(parseSerialLine("OpenSBI v0.9", {}), null);
+});
+
+test("serial parsing records S-mode handoff information without claiming kernel execution", () => {
+  const parsed = parseSerialLine("Domain0 Next Mode         : S-mode\r", { lab: "lab1" });
+  assert.equal(parsed.step, "s-mode-handoff-observed");
+  assert.equal(parsed.status, "running");
+  assert.match(parsed.detail, /不证明内核入口或 kernel_main 已经执行/);
+  assert.notEqual(parsed.step, "kernel-started");
+  assert.notEqual(parsed.step, "kernel-main-entered");
+  assert.equal(parseSerialLine(
+    "Domain0 Next Address      : 0x0000000080200000",
+    { lab: "lab1" }
+  ), null);
+});
+
+test("the shared line buffer parses markers split across arbitrary chunks", () => {
+  const events = [];
+  const buffer = createLineBuffer((line, channel) => {
+    const parsed = parseSerialLine(line, { lab: "lab1" });
+    if (parsed) events.push({ ...parsed, channel });
+  });
+  buffer.push("stdout", "Domain0 Next Mo");
+  buffer.push("stdout", "de : S-mode\n");
+  assert.deepEqual(events.map((event) => event.step), ["s-mode-handoff-observed"]);
+  assert.equal(events[0].channel, "stdout");
+
+  buffer.push("stderr", "OpenSBI v0.9");
+  assert.equal(events.length, 1);
+  buffer.flush("stderr");
+  assert.deepEqual(events.map((event) => event.step), [
+    "s-mode-handoff-observed", "opensbi-started"
+  ]);
+});
+
+test("serial parsing preserves Lab markers and requires real panic or exception evidence", () => {
+  assert.equal(parseSerialLine("[Lab1-T1] PASS", { lab: "lab1" }).step, "task-1-pass");
+  assert.equal(parseSerialLine("[Lab1] PASS", { lab: "lab1" }).status, "pass");
+  assert.equal(parseSerialLine("[Lab1] kernel panic", { lab: "lab1" }).step, "panic");
+  assert.equal(
+    parseSerialLine("[Lab2] trap: breakpoint exception", { lab: "lab2" }).step,
+    "breakpoint-decoded"
+  );
+  for (const line of [
+    "panic handling documentation",
+    "no panic was observed",
+    "exception notes",
+    "ordinary serial text"
+  ]) {
+    assert.equal(parseSerialLine(line, { lab: "lab1" }), null, line);
+  }
+});
+
+test("a realistic OpenSBI fixture yields only the two useful firmware events", () => {
+  const fixture = [
+    "OpenSBI v0.9",
+    "",
+    "Platform Name             : riscv-virtio,qemu",
+    "Platform Features         : timer,mfdeleg",
+    "Platform HART Count       : 1",
+    "Firmware Base             : 0x80000000",
+    "",
+    "Domain0 Name              : root",
+    "Domain0 Next Address      : 0x0000000080200000",
+    "Domain0 Next Arg1         : 0x0000000082200000",
+    "Domain0 Next Mode         : S-mode",
+    "",
+    "Boot HART ID              : 0",
+    "Boot HART Domain          : root"
+  ];
+  const events = fixture
+    .map((line) => parseSerialLine(line, { lab: "lab1" }))
+    .filter(Boolean);
+  assert.deepEqual(events.map((event) => event.step), [
+    "opensbi-started", "s-mode-handoff-observed"
+  ]);
+});
+
+test("oversized untrusted serial lines are discarded rather than parsed", () => {
+  const lines = [];
+  const buffer = createLineBuffer((line) => lines.push(line));
+  buffer.push("stdout", "x".repeat(MAX_SERIAL_LINE_LENGTH + 1));
+  buffer.push("stdout", "\nOpenSBI v0.9\n");
+  assert.deepEqual(lines, ["OpenSBI v0.9"]);
 });

@@ -10,6 +10,7 @@
  */
 
 const EVENT_PROTOCOL = "os-demo.event/v1";
+const MAX_SERIAL_LINE_LENGTH = 16 * 1024;
 const EVENT_STATUSES = new Set(["running", "todo", "pass", "fail"]);
 const EVENT_SOURCES = new Set(["tagged", "console", "lifecycle"]);
 
@@ -207,6 +208,27 @@ function parseGenericLabMarker(clean) {
   return null;
 }
 
+function parseFirmwareLine(clean, lab) {
+  if (!Object.hasOwn(STAGE_INDEX, lab)) return null;
+  if (/^OpenSBI\s+v[0-9][0-9A-Za-z.+_-]*$/i.test(clean)) {
+    return event(
+      lab,
+      "opensbi-started",
+      "running",
+      "串口已观察到 OpenSBI 固件版本信息；这不证明学生内核已经执行"
+    );
+  }
+  if (/^Domain0\s+Next\s+Mode\s*:\s*S-mode$/i.test(clean)) {
+    return event(
+      lab,
+      "s-mode-handoff-observed",
+      "running",
+      "OpenSBI 报告下一执行模式为 S-mode；这不证明内核入口或 kernel_main 已经执行"
+    );
+  }
+  return null;
+}
+
 function parseKernelLine(line) {
   const clean = String(line || "").replace(/\r/g, "").trim();
   if (!clean) return null;
@@ -222,13 +244,67 @@ function parseKernelLine(line) {
   return parseTaskMarker(clean) || parseGenericLabMarker(clean);
 }
 
+function parseSerialLine(line, options = {}) {
+  const clean = String(line || "").replace(/\r/g, "").trim();
+  if (!clean) return null;
+  return parseKernelLine(clean)
+    || parseFirmwareLine(clean, String(options.lab || "").toLowerCase());
+}
+
+function createLineBuffer(onLine) {
+  if (typeof onLine !== "function") throw new TypeError("onLine is required.");
+  const channels = Object.create(null);
+
+  function stateFor(channel) {
+    const key = String(channel || "serial");
+    if (!channels[key]) channels[key] = { remainder: "", overflow: false };
+    return { key, state: channels[key] };
+  }
+
+  function emitLine(line, key, state) {
+    if (state.overflow) {
+      state.overflow = false;
+      return;
+    }
+    if (line.length <= MAX_SERIAL_LINE_LENGTH) onLine(line, key);
+  }
+
+  return Object.freeze({
+    push(channel, chunk) {
+      const { key, state } = stateFor(channel);
+      const lines = `${state.remainder}${String(chunk || "")}`.split("\n");
+      state.remainder = lines.pop();
+      for (const line of lines) emitLine(line, key, state);
+      if (state.remainder.length > MAX_SERIAL_LINE_LENGTH) {
+        state.remainder = "";
+        state.overflow = true;
+      }
+    },
+    flush(channel) {
+      const { key, state } = stateFor(channel);
+      if (state.remainder || state.overflow) emitLine(state.remainder, key, state);
+      state.remainder = "";
+    },
+    flushAll() {
+      for (const key of Object.keys(channels)) {
+        const state = channels[key];
+        if (state.remainder || state.overflow) emitLine(state.remainder, key, state);
+        state.remainder = "";
+      }
+    }
+  });
+}
+
 module.exports = {
   BRANCH_CATALOG,
   EVENT_PROTOCOL,
   EXPECTED_BRANCHES,
+  MAX_SERIAL_LINE_LENGTH,
   STAGE_INDEX,
+  createLineBuffer,
   normalizeBranchName,
   normalizeTeachingEvent,
   parseBranchContext,
-  parseKernelLine
+  parseKernelLine,
+  parseSerialLine
 };

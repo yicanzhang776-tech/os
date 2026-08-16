@@ -60,7 +60,7 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   assert.match(source, /const \{[\s\S]*?createQemuArguments,[\s\S]*?resolveOpenSbiFirmware[\s\S]*?\} = require\("\.\/qemu-firmware"\)/);
   assert.match(source, /const openSbiFirmware = resolveOpenSbiFirmware\(\)/);
   assert.match(source, /qemu: \(\) => streamProcess\([\s\S]*?qemuCommand,[\s\S]*?createQemuArguments\(\{ firmware: openSbiFirmware, kernel \}\)/);
-  assert.match(source, /\{ parseKernel: true, channel: "serial", killProcessGroup: false \}/);
+  assert.match(source, /parseKernel: true,[\s\S]*?channel: "serial",[\s\S]*?killProcessGroup: false,[\s\S]*?onStarted:/);
   assert.doesNotMatch(source, /"-bios", "default"/);
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
   assert.match(source, /const \{ createAgentConfigApi \} = require\("\.\/agent\/config-api"\)/);
@@ -144,10 +144,13 @@ childProcess.spawn = (_command, args = []) => {
     return true;
   };
   process.nextTick(() => {
+    child.emit("spawn");
     if (args[0] === "build") child.emit("close", 0);
-    else child.stdout.write(
-      "[OS_DEMO] lab=lab1 step=qemu-started status=running detail=fake\\n"
-    );
+    else {
+      child.stderr.write("OpenSBI v0.9\\r\\n");
+      child.stdout.write("Domain0 Next Mo");
+      process.nextTick(() => child.stdout.write("de : S-mode\\n"));
+    }
   });
   return child;
 };
@@ -207,15 +210,59 @@ require.cache[require.resolve(runStorePath)].exports = {
     socket,
     (message) => message.type === "run-end" && message.timedOut === true
   );
+  const qemuStartedPromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "qemu-started"
+  );
+  const opensbiPromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "opensbi-started"
+  );
+  const sModePromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "s-mode-handoff-observed"
+  );
+  const qemuTimeoutPromise = waitForMessage(
+    socket,
+    (message) => message.type === "telemetry" && message.step === "qemu-timeout"
+  );
   const first = await fetch(`${url}/api/run`, {
     method: "POST",
     headers: { origin: url }
   });
   assert.equal(first.status, 202);
-  const runEnd = await runEndPromise;
+  const [runEnd, qemuStarted, opensbi, sMode, qemuTimeout] = await Promise.all([
+    runEndPromise,
+    qemuStartedPromise,
+    opensbiPromise,
+    sModePromise,
+    qemuTimeoutPromise
+  ]);
   assert.equal(runEnd.finalResult, "timeout");
   assert.equal(runEnd.runResult, "timeout");
-  assert.equal(runEnd.eventCount, 1);
+  assert.equal(runEnd.eventCount, 4);
+  assert.equal(qemuStarted.source, "lifecycle");
+  assert.equal(opensbi.source, "console");
+  assert.equal(opensbi.raw, "OpenSBI v0.9");
+  assert.equal(sMode.source, "console");
+  assert.match(sMode.detail, /不证明内核入口或 kernel_main 已经执行/);
+  assert.equal(qemuTimeout.source, "lifecycle");
+  assert.equal(qemuTimeout.status, "fail");
+
+  const completedSocket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  t.after(() => completedSocket.close());
+  const completedHistory = await waitForMessage(
+    completedSocket,
+    (message) => message.type === "history"
+  );
+  assert.deepEqual(completedHistory.events.map((event) => event.step), [
+    "qemu-started",
+    "opensbi-started",
+    "s-mode-handoff-observed",
+    "qemu-timeout"
+  ]);
+  assert.equal(completedHistory.events.some((event) => event.step === "panic"), false);
+  assert.equal(completedHistory.events.some((event) => /exception/.test(event.step)), false);
 
   const health = await fetch(`${url}/health`);
   assert.equal(health.status, 200);

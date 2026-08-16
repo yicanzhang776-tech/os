@@ -12,9 +12,10 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const {
   EVENT_PROTOCOL,
+  createLineBuffer,
   normalizeTeachingEvent,
   parseBranchContext,
-  parseKernelLine
+  parseSerialLine
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
 const { createAgentConfigApi } = require("./agent/config-api");
@@ -320,20 +321,16 @@ function inspectKernelLine(line, channel = "serial") {
   const clean = String(line || "").replace(/\r/g, "").trim();
   if (!clean) return;
   publishConsole(clean, channel);
-  const parsed = parseKernelLine(clean);
+  const activeRun = runStore.getActiveRun();
+  const parsed = parseSerialLine(clean, { lab: activeRun?.lab || currentContext.lab });
   if (parsed) publishTelemetry(parsed, clean);
 }
 
 function bridgeTextStream(stream) {
-  let remainder = "";
+  const lineBuffer = createLineBuffer((line) => inspectKernelLine(line, "stdin"));
   stream.setEncoding("utf8");
-  stream.on("data", (chunk) => {
-    remainder += chunk;
-    const lines = remainder.split("\n");
-    remainder = lines.pop();
-    lines.forEach((line) => inspectKernelLine(line, "stdin"));
-  });
-  stream.on("end", () => inspectKernelLine(remainder, "stdin"));
+  stream.on("data", (chunk) => lineBuffer.push("stdin", chunk));
+  stream.on("end", () => lineBuffer.flush("stdin"));
 }
 
 function processStartError(label, error) {
@@ -347,7 +344,10 @@ function streamProcess(command, args, label, options = {}) {
   let settled = false;
   let resolvePromise;
   let rejectPromise;
-  const remainder = { stdout: "", stderr: "" };
+  const lineBuffer = createLineBuffer((line, source) => {
+    if (options.parseKernel) inspectKernelLine(line, source);
+    else publishConsole(line, options.channel || label.toLowerCase());
+  });
   const promise = new Promise((resolve, reject) => {
     resolvePromise = resolve;
     rejectPromise = reject;
@@ -355,6 +355,7 @@ function streamProcess(command, args, label, options = {}) {
 
   const finish = (error, code = null) => {
     if (settled) return;
+    lineBuffer.flushAll();
     settled = true;
     if (currentChild === child) currentChild = null;
     if (error) rejectPromise(error);
@@ -364,13 +365,7 @@ function streamProcess(command, args, label, options = {}) {
     if (settled) return;
     const text = chunk.toString();
     process[source].write(text);
-    remainder[source] += text;
-    const lines = remainder[source].split("\n");
-    remainder[source] = lines.pop();
-    for (const line of lines) {
-      if (options.parseKernel) inspectKernelLine(line, source);
-      else publishConsole(line, options.channel || label.toLowerCase());
-    }
+    lineBuffer.push(source, text);
   };
 
   try {
@@ -380,16 +375,21 @@ function streamProcess(command, args, label, options = {}) {
       windowsHide: true
     });
     currentChild = child;
+    child.stdout?.setEncoding?.("utf8");
+    child.stderr?.setEncoding?.("utf8");
     child.stdout?.on("data", (chunk) => consume("stdout", chunk));
     child.stderr?.on("data", (chunk) => consume("stderr", chunk));
+    child.once("spawn", () => {
+      if (settled || typeof options.onStarted !== "function") return;
+      try {
+        options.onStarted();
+      } catch (_) {
+        // A lifecycle notification cannot change process execution.
+      }
+    });
     child.once("error", (error) => finish(processStartError(label, error)));
     child.once("close", (code) => {
       if (settled) return;
-      for (const source of ["stdout", "stderr"]) {
-        if (!remainder[source]) continue;
-        if (options.parseKernel) inspectKernelLine(remainder[source], source);
-        else publishConsole(remainder[source], options.channel || label.toLowerCase());
-      }
       finish(null, code);
     });
   } catch (error) {
@@ -454,6 +454,15 @@ function handleRunUpdated(run, transition) {
       runResult: "running"
     });
     console.log("[demo] Starting QEMU; serial output is now forwarded to the browser.");
+  }
+  if (transition === "timeout" && run.qemu.status === "timeout") {
+    publishTelemetry(normalizeTeachingEvent({
+      lab: run.lab,
+      step: "qemu-timeout",
+      status: "fail",
+      detail: "QEMU 运行阶段未在时限内结束；是否执行到固件或内核需结合串口事件判断",
+      source: "lifecycle"
+    }), "[demo] qemu timeout ended the run.");
   }
 }
 
@@ -574,7 +583,18 @@ function startKernelRun(options = {}) {
       qemuCommand,
       createQemuArguments({ firmware: openSbiFirmware, kernel }),
       "QEMU",
-      { parseKernel: true, channel: "serial", killProcessGroup: false }
+      {
+        parseKernel: true,
+        channel: "serial",
+        killProcessGroup: false,
+        onStarted: () => publishTelemetry(normalizeTeachingEvent({
+          lab: runStore.getActiveRun()?.lab,
+          step: "qemu-started",
+          status: "running",
+          detail: "QEMU 子进程已成功创建并进入运行阶段",
+          source: "lifecycle"
+        }), "[demo] Starting QEMU; serial output is now forwarded to the browser.")
+      }
     )
   });
   if (!started.started) {

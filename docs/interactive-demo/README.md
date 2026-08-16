@@ -213,6 +213,8 @@ node scripts/feedback-admin-server.js --port 8891 --data ./feedback-data
 
 为兼容已有内核，旧格式 `[OS_DEMO] lab=lab4 step=satp-activated` 仍按 v1 处理。未知协议版本、未知 Lab、非法状态和非法步骤会被忽略。`main` 中已有的结构化标记能提供最细粒度的动态步骤。15 个教学分支没有一致、可达的 `[OS_DEMO]` 埋点，因此桥接器还会识别各分支原有且稳定的实验输出，例如 `[Lab5] scheduler initialized`、`[Lab6] syscall write`、任务级 `TODO/PASS` 和最终 `PASS/FAIL`。这样无需改写学生实验逻辑，也能在 starter/solution 间实时展示可信进度。
 
+桥接器对 QEMU stdout 与 stderr 分别进行 UTF-8 行缓冲，在 chunk 跨界或 timeout 收尾时仍按完整行解析。固件侧只额外识别严格的 `OpenSBI v...` 版本行和 `Domain0 Next Mode : S-mode`，分别形成 `opensbi-started` 与 `s-mode-handoff-observed`；后者只说明观察到 OpenSBI 配置的下一模式，不能证明内核入口或 `kernel_main` 已执行。QEMU 子进程成功创建和真实 timeout 使用同一 `os-demo.event/v1` 的 `lifecycle` 来源。普通平台信息、无关串口文本以及没有真实 marker 的 panic/exception 不会生成事件，原始串口展示与少量结构化事件仍保持分离。
+
 归一化事件至少包含 `protocol`、`lab`、`step`、`status`、`source`。本地桥接器再补充 `runId`、`branch`、`commit`、`sequence` 和 `timestamp`，从而使保存、比较和回放不依赖页面动画的当前状态。
 
 事件只在对应动作已经输出证据后更新。例如 `stvec` 安装、breakpoint 处理、页帧分配、`satp` 激活、任务切换、用户态 `ecall` 和文件读写。未完成的 TODO、构建失败和运行失败均不会被当作通过。

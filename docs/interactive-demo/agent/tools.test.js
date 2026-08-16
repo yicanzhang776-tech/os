@@ -23,6 +23,7 @@ const {
 const { TOOL_CONTRACT_VERSION } = require("./policy");
 const { RunStore } = require("./run-store");
 const { TEST_REGISTRY } = require("./test-registry");
+const { normalizeTeachingEvent, parseSerialLine } = require("../protocol");
 
 const NOW = Date.parse("2026-08-11T10:20:30.000Z");
 
@@ -1000,6 +1001,67 @@ test("get_qemu_events falls back to the last completed run", () => {
   assert.equal(result.data.source, "lastCompletedRun");
   assert.equal(result.data.active, false);
   assert.deepEqual(result.data.events.map((event) => event.sequence), [3]);
+});
+
+test("realistic firmware and timeout evidence survives finalization for get_qemu_events", () => {
+  const store = new RunStore({ now: () => NOW });
+  const runId = "lab1-realistic-timeout";
+  store.startRun(qemuRunInput(runId, {
+    branch: "lab1-starter",
+    lab: "lab1"
+  }));
+  const evidence = [
+    [parseSerialLine("OpenSBI v0.9", { lab: "lab1" }), "OpenSBI v0.9"],
+    [
+      parseSerialLine("Domain0 Next Mode : S-mode", { lab: "lab1" }),
+      "Domain0 Next Mode : S-mode"
+    ],
+    [normalizeTeachingEvent({
+      lab: "lab1",
+      step: "qemu-timeout",
+      status: "fail",
+      detail: "QEMU 运行阶段未在时限内结束；是否执行到固件或内核需结合串口事件判断",
+      source: "lifecycle"
+    }), "[demo] qemu timeout ended the run."]
+  ];
+  evidence.forEach(([event, raw], index) => {
+    assert.equal(store.recordEvent(runId, {
+      ...event,
+      raw,
+      sequence: index + 1,
+      timestamp: NOW + index
+    }), true);
+  });
+  store.updateBuild(runId, "success", 0);
+  store.updateQemu(runId, "timeout");
+  store.completeRun(runId, {
+    finalResult: "timeout",
+    timedOut: true,
+    error: { code: "qemu_timeout", message: "qemu timeout ended the run.", stage: "qemu" }
+  });
+
+  const result = qemuEventsToolFor(store, { branch: "lab1-starter" }).tool({ runId });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.source, "lastCompletedRun");
+  assert.equal(result.data.active, false);
+  assert.equal(result.data.returnedCount, 3);
+  assert.equal(result.data.totalMatched, 3);
+  assert.deepEqual(result.data.events.map((event) => event.step), [
+    "opensbi-started", "s-mode-handoff-observed", "qemu-timeout"
+  ]);
+  assert.equal(result.data.events.some((event) => event.step === "panic"), false);
+  assert.equal(result.data.events.some((event) => /exception/.test(event.step)), false);
+});
+
+test("get_qemu_events keeps a valid empty result when no serial evidence matches", () => {
+  const store = new RunStore();
+  store.startRun(qemuRunInput("empty-completed-run"));
+  store.completeRun("empty-completed-run", { finalResult: "finished" });
+  const result = qemuEventsToolFor(store).tool({ runId: "empty-completed-run" });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.returnedCount, 0);
+  assert.equal(result.data.totalMatched, 0);
+  assert.deepEqual(result.data.events, []);
 });
 
 test("get_qemu_events selects either retained run by exact runId", () => {
