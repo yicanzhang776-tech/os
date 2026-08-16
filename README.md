@@ -4,6 +4,8 @@
 
 项目目标是使用 Rust 设计一个运行于 RISC-V 64 和 QEMU/OpenSBI 环境中的操作系统内核教学实验平台。最终成果面向本科生学习、教师教学和比赛验收。
 
+> **重要材料快速入口**：先打开 [提交材料导航](00-提交材料导航.md)。赛题 30% 的五个基础实验可直接查看根目录中的 [PDF 总结报告](00-tg-rCore-五个基础实验总结报告.pdf)，完整可追溯材料仍保存在 [`docs/reference-labs/`](docs/reference-labs/)。
+
 ## 最新集成能力与数据边界
 
 当前集成基线将七个实验、结构化遥测可视化、自愿远程反馈、教师本地评分和 AI 教学助教组成一条可验证的教学闭环。教学助教通过本地 `POST /api/agent` 调用火山方舟 Agent Plan，默认模型为 `ark-code-latest`；服务端只开放六个受限工具，学生首次发送前必须阅读数据告知并在当前浏览器会话中明确同意。
@@ -12,6 +14,8 @@
 
 ## 提交文档入口
 
+- 一页式提交材料导航：[00-提交材料导航.md](00-提交材料导航.md)
+- 赛题 30% 五个基础实验 PDF：[00-tg-rCore-五个基础实验总结报告.pdf](00-tg-rCore-五个基础实验总结报告.pdf)
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
 - Ubuntu/Linux 本地复现与测试：[docs/testing.md](docs/testing.md)
 - 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)

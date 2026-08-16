@@ -2,6 +2,7 @@
 .gitattributes text eol=lf
 *.sh text eol=lf
 *.ps1 text eol=crlf
+*.pdf binary
 docs/interactive-demo/*.md text eol=lf
 docs/interactive-demo/*.html text eol=lf
 docs/interactive-demo/*.css text eol=lf
