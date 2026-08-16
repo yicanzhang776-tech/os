@@ -3,9 +3,9 @@
 const { TOOL_SCHEMAS, TOOL_SCHEMA_NAMES } = require("./tool-schemas");
 
 const TOOL_CONTRACT_VERSION = "os-tutor.tool/v1";
-const MAX_MODEL_TURNS = 8;
+const MAX_MODEL_TURNS = 9;
 const MAX_TOOL_CALLS = 8;
-const MAX_AGENT_DURATION_MS = 180_000;
+const MAX_AGENT_DURATION_MS = 120_000;
 const MAX_TOTAL_TOOL_OUTPUT_BYTES = 512 * 1024;
 const MAX_AGENT_ANSWER_LENGTH = 12_000;
 const MAX_CALL_ID_LENGTH = 128;
@@ -15,12 +15,12 @@ const SAFE_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/;
 const DANGEROUS_JSON_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 const TOOL_REPEAT_LIMITS = Object.freeze({
-  get_context: 2,
+  get_context: 1,
   read_code: 4,
-  get_qemu_events: 3,
-  get_run_result: 3,
-  get_code_diff: 2,
-  run_test: 1
+  get_code_diff: 1,
+  run_test: 1,
+  get_run_result: 1,
+  get_qemu_events: 1
 });
 
 const TOOL_OUTPUT_BUDGET_BYTES = Object.freeze({

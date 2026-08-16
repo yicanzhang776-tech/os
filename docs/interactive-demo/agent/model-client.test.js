@@ -153,6 +153,8 @@ test("server instructions define natural-language routing, stopping, and evidenc
   }
   assert.match(SERVER_INSTRUCTIONS, /never need to know the internal function names/);
   assert.match(SERVER_INSTRUCTIONS, /never ask the student to name a tool/);
+  assert.match(SERVER_INSTRUCTIONS, /MAX_TOOL_CALLS = 8 is a safety ceiling, not a target/);
+  assert.match(SERVER_INSTRUCTIONS, /minimum necessary evidence is sufficient/);
   assert.match(SERVER_INSTRUCTIONS, /Do not mention internal function names in the final/);
   assert.match(SERVER_INSTRUCTIONS, /Explicit developer requests naming one provided tool remain valid/);
   assert.match(SERVER_INSTRUCTIONS, /After a successful ToolResult provides enough evidence, stop/);

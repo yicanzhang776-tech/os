@@ -42,7 +42,7 @@ sequenceDiagram
 - `POST /api/agent/config` 只接受本地同源页面提交的 `{ "apiKey": string }`，`DELETE /api/agent/config` 只清除页面设置的进程内 Key；两者拒绝浏览器自带的 `Authorization` 和非本地 Origin。
 - 默认提供方为火山方舟 Agent Plan，模型为 `ark-code-latest`。
 - 首轮发送服务端教学引导和六个工具定义；续轮使用 `previous_response_id` 与匹配的 `function_call_output`，并按方舟协议重新发送不会由上一响应继承的服务端教学引导。
-- 循环最多 8 个模型轮次、8 次工具调用，总时限 180 秒；模型单次请求时限 45 秒。每种工具仍有独立重复上限，`run_test` 每次 Agent 请求严格最多一次。
+- 循环最多 9 个模型轮次、8 次工具调用，总时限 120 秒；8 次是安全上限而非目标，模型在证据足够时应提前回答。模型单次请求时限仍为 45 秒。每种工具仍有独立重复上限，`run_test` 每次 Agent 请求严格最多一次。
 
 ## Lab1 本地课程知识
 

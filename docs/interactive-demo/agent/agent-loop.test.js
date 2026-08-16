@@ -132,17 +132,17 @@ async function rejectsCode(promise, code) {
 }
 
 test("exports the fixed bounded orchestration limits", () => {
-  assert.equal(MAX_MODEL_TURNS, 8);
+  assert.equal(MAX_MODEL_TURNS, 9);
   assert.equal(MAX_TOOL_CALLS, 8);
-  assert.equal(MAX_AGENT_DURATION_MS, 180_000);
+  assert.equal(MAX_AGENT_DURATION_MS, 120_000);
   assert.equal(MAX_TOTAL_TOOL_OUTPUT_BYTES, 512 * 1024);
   assert.deepEqual(TOOL_REPEAT_LIMITS, {
-    get_context: 2,
+    get_context: 1,
     read_code: 4,
-    get_qemu_events: 3,
-    get_run_result: 3,
-    get_code_diff: 2,
-    run_test: 1
+    get_code_diff: 1,
+    run_test: 1,
+    get_run_result: 1,
+    get_qemu_events: 1
   });
 });
 
@@ -201,7 +201,7 @@ test("accepts a provider-owned continuation marker on a final result without exp
   assert.deepEqual(await run(h), { answer: "Safe final." });
 });
 
-test("runs get_context then returns the final answer", async () => {
+test("a current-Lab question uses get_context once and then returns the final answer", async () => {
   const state = Object.freeze({ opaque: "fake-state" });
   const h = harness([
     call("call-1", "get_context", {}, state),
@@ -215,13 +215,27 @@ test("runs get_context then returns the final answer", async () => {
       return final();
     }
   ]);
-  assert.deepEqual(await run(h), { answer: "Final teaching answer." });
+  assert.deepEqual(await run(h, "Which Lab am I in?"), { answer: "Final teaching answer." });
   assert.equal(h.tools.calls.length, 1);
   assert.deepEqual(h.tools.calls[0].invocationContext, {
     requestId: INITIAL_CONTEXT.requestId,
     expectedBranch: INITIAL_CONTEXT.branch,
     expectedCommit: INITIAL_CONTEXT.commit
   });
+});
+
+test("allows a normal fourth tool call before the final answer", async () => {
+  const h = harness([
+    call("call-1", "get_context"),
+    call("call-2", "get_code_diff", { lab: "lab4" }),
+    call("call-3", "get_run_result", { runId: "run-1" }),
+    call("call-4", "read_code", { path: "kernel/src/main.rs" }),
+    final("The fourth observation completed the evidence chain.")
+  ]);
+  assert.match((await run(h)).answer, /fourth observation/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "get_context", "get_code_diff", "get_run_result", "read_code"
+  ]);
 });
 
 test("keeps every read-only tool compatible as a single-call batch", async (t) => {
@@ -379,17 +393,23 @@ test("rejects a mixed read_code and run_test action batch before dispatch", asyn
   assert.equal(h.tools.calls.length, 0);
 });
 
-test("supports get_context to get_code_diff to read_code to final", async () => {
+test("supports a complex teaching diagnosis across six distinct evidence calls", async () => {
   const h = harness([
     call("call-1", "get_context"),
     call("call-2", "get_code_diff", { lab: "lab4" }),
-    call("call-3", "read_code", { path: "kernel/src/lib.rs", startLine: 1 }),
-    final("Use the observed function as your next investigation point.")
+    call("call-3", "get_run_result", { runId: "run-1" }),
+    call("call-4", "get_qemu_events", { runId: "run-1", limit: 20 }),
+    call("call-5", "read_code", { path: "kernel/src/main.rs", startLine: 1 }),
+    call("call-6", "read_code", { path: "kernel/src/boot.rs", startLine: 1 }),
+    final("Use the observed boot path as your next investigation point.")
   ]);
   const result = await run(h);
-  assert.match(result.answer, /observed function/);
+  assert.match(result.answer, /observed boot path/);
   assert.deepEqual(h.tools.calls.map((entry) => entry.name),
-    ["get_context", "get_code_diff", "read_code"]);
+    [
+      "get_context", "get_code_diff", "get_run_result", "get_qemu_events",
+      "read_code", "read_code"
+    ]);
 });
 
 test("feeds a safe ToolResult failure to the model", async () => {
@@ -485,6 +505,39 @@ test("rejects canonically identical tool arguments", async () => {
   assert.equal(h.tools.calls.length, 1);
 });
 
+test("get_context remains limited to one call", async () => {
+  const h = harness([
+    call("context-1", "get_context"),
+    call("context-2", "get_context")
+  ]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_context"]);
+});
+
+test("get_run_result remains limited to one call without polling", async () => {
+  const h = harness([
+    call("result-1", "get_run_result", { runId: "run-1" }),
+    call("result-2", "get_run_result", { runId: "run-2" })
+  ]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_run_result"]);
+});
+
+test("get_qemu_events remains limited to one non-empty query", async () => {
+  const h = harness([
+    call("events-1", "get_qemu_events", { runId: "run-1", limit: 1 }),
+    call("events-2", "get_qemu_events", { runId: "run-1", limit: 2 })
+  ], {
+    overrides: {
+      get_qemu_events: toolResult("get_qemu_events", {
+        data: { events: [{ kind: "stage" }], returnedCount: 1, totalMatched: 1 }
+      })
+    }
+  });
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_qemu_events"]);
+});
+
 test("enforces per-tool repeat limits", async () => {
   const h = harness([
     call("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
@@ -497,20 +550,39 @@ test("enforces per-tool repeat limits", async () => {
   assert.equal(h.tools.calls.length, TOOL_REPEAT_LIMITS.read_code);
 });
 
-test("enforces maximum tool calls and bounded model turns", async () => {
+test("allows eight legal read-only calls and a ninth-turn final answer", async () => {
   const h = harness([
-    batch([
-      toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
-      toolCall("call-2", "get_qemu_events", { limit: 1 })
-    ]),
-    call("call-3", "read_code", { path: "kernel/src/file-2.rs" }),
-    call("call-4", "read_code", { path: "kernel/src/file-3.rs" }),
-    call("call-5", "read_code", { path: "kernel/src/file-4.rs" }),
-    call("call-6", "get_qemu_events", { limit: 2 }),
-    call("call-7", "get_qemu_events", { limit: 3 }),
-    call("call-8", "get_code_diff", { lab: "lab4" }),
-    call("call-9", "get_run_result", { runId: "run-1" })
+    call("call-1", "get_context"),
+    call("call-2", "get_code_diff", { lab: "lab4" }),
+    call("call-3", "get_run_result", { runId: "run-1" }),
+    call("call-4", "get_qemu_events", { runId: "run-1", limit: 20 }),
+    call("call-5", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-6", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("call-7", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("call-8", "read_code", { path: "kernel/src/file-4.rs" }),
+    final("Eight bounded observations were sufficient.")
   ]);
+  assert.match((await run(h)).answer, /Eight bounded observations/);
+  assert.equal(h.tools.calls.length, MAX_TOOL_CALLS);
+  assert.equal(h.model.calls.length, MAX_MODEL_TURNS);
+});
+
+test("rejects a ninth tool call after eight legal calls", async () => {
+  const h = harness([
+    call("call-1", "get_context"),
+    call("call-2", "get_code_diff", { lab: "lab4" }),
+    call("call-3", "get_run_result", { runId: "run-1" }),
+    call("call-4", "get_qemu_events", { runId: "run-1", limit: 20 }),
+    call("call-5", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-6", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("call-7", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("call-8", "run_test", { testId: "lab4-starter-qemu", lab: "lab4" }),
+    call("call-9", "read_code", { path: "kernel/src/file-4.rs" })
+  ], {
+    overrides: {
+      run_test: toolResult("run_test", { ok: false, code: "run_busy" })
+    }
+  });
   await rejectsCode(run(h), "agent_loop_limit");
   assert.equal(h.model.calls.length, MAX_MODEL_TURNS);
   assert.equal(h.tools.calls.length, MAX_TOOL_CALLS);
@@ -591,15 +663,16 @@ test("rejects per-tool oversized output without truncation or continuation", asy
 });
 
 test("rejects total oversized output while each result remains within its budget", async () => {
-  const qemuData = (marker) => ({ marker, text: "q".repeat(250 * 1024) });
   const h = harness([
     call("call-1", "get_qemu_events", { limit: 1 }),
-    call("call-2", "get_qemu_events", { limit: 2 }),
-    call("call-3", "read_code", { path: "kernel/src/lib.rs" })
+    call("call-2", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-3", "read_code", { path: "kernel/src/file-2.rs" })
   ], {
     overrides: {
-      get_qemu_events: (args) => toolResult("get_qemu_events", { data: qemuData(args.limit) }),
-      read_code: toolResult("read_code", { data: { text: "r".repeat(90 * 1024) } })
+      get_qemu_events: toolResult("get_qemu_events", {
+        data: { marker: 1, text: "q".repeat(250 * 1024) }
+      }),
+      read_code: toolResult("read_code", { data: { text: "r".repeat(140 * 1024) } })
     }
   });
   await rejectsCode(run(h), "agent_tool_output_too_large");
