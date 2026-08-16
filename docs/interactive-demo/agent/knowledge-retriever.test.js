@@ -1,6 +1,9 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 const {
   DEFAULT_KNOWLEDGE_LIMIT,
@@ -16,6 +19,28 @@ function lookup(query, overrides = {}) {
 
 function combinedText(results) {
   return results.map((item) => `${item.title}\n${item.content}`).join("\n");
+}
+
+function isolatedKnowledgeFixture(t) {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "os-tutor-knowledge-"));
+  const agentDir = path.join(fixtureRoot, "docs", "interactive-demo", "agent");
+  const knowledgeDir = path.join(fixtureRoot, "docs", "knowledge", "labs", "lab1");
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.mkdirSync(knowledgeDir, { recursive: true });
+  fs.copyFileSync(
+    path.join(__dirname, "knowledge-retriever.js"),
+    path.join(agentDir, "knowledge-retriever.js")
+  );
+  const knowledgePath = path.join(knowledgeDir, "knowledge.json");
+  fs.copyFileSync(
+    path.join(__dirname, "..", "..", "knowledge", "labs", "lab1", "knowledge.json"),
+    knowledgePath
+  );
+  t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
+  return Object.freeze({
+    knowledgePath,
+    module: require(path.join(agentDir, "knowledge-retriever.js"))
+  });
 }
 
 test("loads the bounded structured Lab1 knowledge base", () => {
@@ -122,4 +147,18 @@ test("runtime-only questions skip knowledge retrieval and default hints stay at 
   assert.deepEqual(lookup("我现在在哪个Lab？"), []);
   assert.deepEqual(lookup("main.rs现在是什么内容？"), []);
   assert.ok(lookup("只看到OpenSBI怎么办？").every((item) => item.hintLevel <= 3));
+});
+
+test("an initialized immutable knowledge store does not reread a disappeared workspace file", (t) => {
+  const fixture = isolatedKnowledgeFixture(t);
+  const store = fixture.module.createKnowledgeRetriever();
+  assert.ok(Object.isFrozen(store));
+
+  fs.rmSync(fixture.knowledgePath);
+  const results = store.retrieveKnowledge({ query: "OpenSBI是什么？", lab: "lab1" });
+  assert.equal(results[0].id, "lab1-concept-opensbi");
+  assert.throws(
+    () => fixture.module.createKnowledgeRetriever(),
+    /knowledge base could not be loaded/
+  );
 });
