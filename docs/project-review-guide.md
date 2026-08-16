@@ -64,8 +64,8 @@ AI 教学助教通过本地 `/api/agent` 调用火山方舟 Agent Plan，六个�
 - solution 使用 `-Stage 1/2/3`，starter 起点使用 `-ExpectIncomplete`。
 - 8 月 8 日可靠性同步曾覆盖 Stage 参数；本轮以回归测试恢复，并保留显式目标、旧产物清理、退出码和超时处理。
 - 看到 PASS 不足以证明理解或排除硬编码，教师必须检查禁止修改范围和真实控制流。
-- 本轮合并前 `origin/main` Node 基线 176/176 通过；合并后基线 577 项中 571 通过、6 跳过、0 失败；新增学生端与上下文定向测试 80/80 通过；集成完成后的最终全量回归为 585 项中 579 通过、6 跳过、0 失败。
-- 本轮已完成 Rust 格式、RISC-V 构建、Clippy、46 项主机库测试、main 与 solution 的 42 组 Stage、starter 三类语义、P0 QEMU、18 个分支零断链及 24 页 PPT 视觉验收；通用 workspace test 的裸机目标限制保留为真实失败。18 个既有目标分支已推送成功；在线 Agent Plan 未运行，远程 CI 结果尚未核实。
+- 2026-08-13 集成前 `origin/main` Node 基线 176/176 通过；当时最终全量回归为 585 项中 579 通过、6 跳过、0 失败。2026-08-16 在当前 `main @ b4b5675` 重新执行 31 个 Node 测试文件，结果为 586 项中 580 通过、6 跳过、0 失败。
+- 2026-08-16 复核确认 Rust 格式、RISC-V workspace 构建、Clippy、`os-demo-event` 9/9、内核主机测试 46/46、main QEMU，以及 7 个 starter incomplete 和 7 个 solution Stage 3 共 14/14 分支验收通过。21 个既有交付分支的提交材料导航已原子同步并逐分支核对；在线 Agent Plan 未运行，远程 CI 结果尚未核实。
 
 ## 当前审计提醒
 

@@ -12,6 +12,9 @@
 
 ## 提交文档入口
 
+- 一页式提交材料导航：[00-提交材料导航.md](00-提交材料导航.md)
+- 赛题 30% 五个基础实验 PDF：[tg-rCore 五个基础实验练习总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/00-tg-rCore-%E4%BA%94%E4%B8%AA%E5%9F%BA%E7%A1%80%E5%AE%9E%E9%AA%8C%E6%80%BB%E7%BB%93%E6%8A%A5%E5%91%8A.pdf)
+- 赛题 30% Markdown 与证据包：[总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/docs/reference-labs/tg-rcore-five-basic-experiments.md) / [截图、日志、补丁与 manifest](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/tree/tg-rcore-five-lab-report/docs/reference-labs)
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
 - Ubuntu/Linux 本地复现与测试：[docs/testing.md](docs/testing.md)
 - 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
@@ -34,6 +37,8 @@
 | `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+
+截至 2026-08-16，正式交付范围包含 21 个既有远端分支。`main`、`interactive-demo-learning-map`、P0 和 14 个 Lab starter/solution 组成 17 个教学上下文；`agent-mvp`、`lab-atlas-ai-tutor`、`teacher-grading-tools`、`tg-rcore-five-lab-report` 是 4 个辅助功能与报告分支。合并前的临时文档发布分支不计入这套产品分支统计。
 
 `main` 是评委和教师的完整成果入口：汇总 P0-Lab7 的教学说明、参考实现说明、教师指南与评分工具。学生应切换到对应 `labN-starter` 分支完成练习；需要按分支历史查看某个实验的完整参考代码时，可切换到对应 `labN-solution` 分支。包含可视化遥测和最新展示材料的集成版本同样位于 `main`。
 
