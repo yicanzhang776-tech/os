@@ -479,8 +479,9 @@ function terminateChildProcess(child, options = {}) {
   const platform = options.platform || process.platform;
   const runSync = options.spawnSync || spawnSync;
   const killProcess = options.killProcess || process.kill;
+  const killProcessGroup = options.killProcessGroup !== false;
 
-  if (platform === "win32") {
+  if (platform === "win32" && killProcessGroup) {
     let treeStopped = false;
     if (Number.isInteger(child.pid) && child.pid > 0) {
       const result = runSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
@@ -494,7 +495,7 @@ function terminateChildProcess(child, options = {}) {
     return true;
   }
 
-  if (Number.isInteger(child.pid) && child.pid > 0) {
+  if (killProcessGroup && Number.isInteger(child.pid) && child.pid > 0) {
     try {
       killProcess(-child.pid, "SIGKILL");
       return true;

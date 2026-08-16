@@ -3,6 +3,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  createGetQemuEventsTool,
+  createGetRunResultTool
+} = require("./tools");
+const {
   RunLifecycleManager,
   RunStore,
   SharedTaskLock,
@@ -232,6 +236,57 @@ test("QEMU timeout terminates QEMU and records timeout", async () => {
   assert.equal(completed.build.status, "success");
   assert.equal(completed.qemu.status, "timeout");
   assert.equal(completed.error.code, "qemu_timeout");
+});
+
+test("an agent QEMU timeout preserves events and permits result queries and a second run", async () => {
+  const fixture = lifecycleFixture();
+  const qemu = deferredOperation();
+  const first = fixture.manager.start(runInput("agent-timeout", {
+    taskKind: "agent-test"
+  }), {
+    build: () => resolvedOperation(0),
+    qemu: () => qemu.operation
+  });
+  await flushMicrotasks();
+  fixture.store.recordEvent("agent-timeout", {
+    protocol: "os-demo.event/v1",
+    lab: "lab4",
+    sequence: 1,
+    step: "qemu-started",
+    status: "running",
+    detail: "fake QEMU event",
+    source: "console"
+  });
+  fixture.clock.advance(20);
+  await first.promise;
+
+  const readContext = () => ({ branch: "lab4-starter", commit: "abc1234" });
+  const getRunResult = createGetRunResultTool({
+    runStore: fixture.store,
+    readWorkspaceContext: readContext
+  });
+  const getQemuEvents = createGetQemuEventsTool({
+    runStore: fixture.store,
+    readWorkspaceContext: readContext
+  });
+  const result = getRunResult({ includeDiagnostics: false });
+  const events = getQemuEvents({});
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.runId, "agent-timeout");
+  assert.equal(result.data.qemu.status, "timeout");
+  assert.equal(events.ok, true);
+  assert.equal(events.data.runId, "agent-timeout");
+  assert.deepEqual(events.data.events.map((event) => event.sequence), [1]);
+
+  const second = fixture.manager.start(runInput("agent-second", {
+    taskKind: "agent-test"
+  }), {
+    build: () => resolvedOperation(0),
+    qemu: () => resolvedOperation(0)
+  });
+  assert.equal(second.started, true);
+  assert.equal((await second.promise).runId, "agent-second");
 });
 
 test("overall timeout is an independent final safety net", async () => {
@@ -520,6 +575,25 @@ test("POSIX termination targets the detached child process group", () => {
     }
   });
   assert.deepEqual(calls, [[-321, "SIGKILL"]]);
+});
+
+test("direct-child termination never signals the surrounding process group", () => {
+  const calls = [];
+  const child = {
+    pid: 321,
+    killed: false,
+    kill(signal) {
+      calls.push(["direct", signal]);
+    }
+  };
+  terminateChildProcess(child, {
+    platform: "linux",
+    killProcessGroup: false,
+    killProcess(pid, signal) {
+      calls.push([pid, signal]);
+    }
+  });
+  assert.deepEqual(calls, [["direct", "SIGKILL"]]);
 });
 
 test("Windows termination uses taskkill for the complete process tree", () => {

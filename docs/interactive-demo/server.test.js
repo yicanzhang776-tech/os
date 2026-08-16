@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const net = require("node:net");
 const path = require("node:path");
 const test = require("node:test");
@@ -59,6 +60,7 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   assert.match(source, /const \{[\s\S]*?createQemuArguments,[\s\S]*?resolveOpenSbiFirmware[\s\S]*?\} = require\("\.\/qemu-firmware"\)/);
   assert.match(source, /const openSbiFirmware = resolveOpenSbiFirmware\(\)/);
   assert.match(source, /qemu: \(\) => streamProcess\([\s\S]*?qemuCommand,[\s\S]*?createQemuArguments\(\{ firmware: openSbiFirmware, kernel \}\)/);
+  assert.match(source, /\{ parseKernel: true, channel: "serial", killProcessGroup: false \}/);
   assert.doesNotMatch(source, /"-bios", "default"/);
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
   assert.match(source, /const \{ createAgentConfigApi \} = require\("\.\/agent\/config-api"\)/);
@@ -97,6 +99,135 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   assert.doesNotMatch(agentRunner, /\bspawn(?:Sync)?\s*\(/);
   assert.doesNotMatch(agentRunner, /\.acquire\s*\(/);
   assert.doesNotMatch(agentRunner, /terminateChildProcess/);
+});
+
+test("QEMU timeout finalizes the run without stopping the HTTP server", {
+  timeout: 10000
+}, async (t) => {
+  const port = await reservePort();
+  const url = `http://127.0.0.1:${port}`;
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "os-demo-timeout-"));
+  const preloadPath = path.join(temporaryDirectory, "fake-processes.cjs");
+  const runStorePath = path.join(__dirname, "agent", "run-store.js");
+  fs.writeFileSync(preloadPath, `
+"use strict";
+const { EventEmitter } = require("node:events");
+const { PassThrough } = require("node:stream");
+const childProcess = require("node:child_process");
+const originalKill = process.kill.bind(process);
+let nextPid = 50000;
+
+childProcess.spawnSync = (command, args = []) => {
+  if (command === "git") {
+    return {
+      status: 0,
+      stdout: args.includes("--short") ? "abc1234\\n" : "lab1-starter\\n",
+      stderr: ""
+    };
+  }
+  if (command === "taskkill") {
+    process.nextTick(() => originalKill(process.pid, "SIGTERM"));
+    return { status: 0, stdout: "", stderr: "" };
+  }
+  return { status: 0, stdout: "fake tool 1.0\\n", stderr: "" };
+};
+
+childProcess.spawn = (_command, args = []) => {
+  const child = new EventEmitter();
+  child.pid = nextPid++;
+  child.killed = false;
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = (signal) => {
+    child.killed = true;
+    process.nextTick(() => child.emit("close", null, signal));
+    return true;
+  };
+  process.nextTick(() => {
+    if (args[0] === "build") child.emit("close", 0);
+    else child.stdout.write(
+      "[OS_DEMO] lab=lab1 step=qemu-started status=running detail=fake\\n"
+    );
+  });
+  return child;
+};
+
+process.kill = (pid, signal) => {
+  if (pid < 0) {
+    process.nextTick(() => originalKill(process.pid, "SIGTERM"));
+    return true;
+  }
+  return originalKill(pid, signal);
+};
+
+const runStorePath = ${JSON.stringify(runStorePath)};
+const runStore = require(runStorePath);
+require.cache[require.resolve(runStorePath)].exports = {
+  ...runStore,
+  DEFAULT_RUN_TIMEOUTS: Object.freeze({
+    buildTimeoutMs: 1000,
+    qemuTimeoutMs: 80,
+    totalTimeoutMs: 2000
+  })
+};
+`);
+
+  const childEnv = {
+    ...process.env,
+    OS_DEMO_BRANCH: "lab1-starter",
+    CARGO: "fake-cargo",
+    RUSTC: "fake-rustc",
+    QEMU: "fake-qemu"
+  };
+  for (const field of [
+    "ARK_API_KEY", "ARK_BASE_URL", "ARK_MODEL", "ARK_LIVE_TEST", "OPENSBI_FIRMWARE"
+  ]) delete childEnv[field];
+  const child = spawn(process.execPath, [
+    "--require", preloadPath, serverPath, "--port", String(port)
+  ], {
+    cwd: repoDir,
+    env: childEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+  let childStderr = "";
+  child.stderr.on("data", (chunk) => {
+    childStderr += chunk;
+  });
+  t.after(() => {
+    if (!child.killed) child.kill();
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  });
+
+  await waitForHealth(url, () => childStderr);
+  const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  t.after(() => socket.close());
+  await waitForMessage(socket, (message) => message.type === "history");
+  const runEndPromise = waitForMessage(
+    socket,
+    (message) => message.type === "run-end" && message.timedOut === true
+  );
+  const first = await fetch(`${url}/api/run`, {
+    method: "POST",
+    headers: { origin: url }
+  });
+  assert.equal(first.status, 202);
+  const runEnd = await runEndPromise;
+  assert.equal(runEnd.finalResult, "timeout");
+  assert.equal(runEnd.runResult, "timeout");
+  assert.equal(runEnd.eventCount, 1);
+
+  const health = await fetch(`${url}/health`);
+  assert.equal(health.status, 200);
+  assert.equal((await health.json()).runState.running, false);
+  const agentRoute = await fetch(`${url}/api/agent`);
+  assert.equal(agentRoute.status, 405);
+
+  const second = await fetch(`${url}/api/run`, {
+    method: "POST",
+    headers: { origin: url }
+  });
+  assert.equal(second.status, 202);
 });
 
 test("bridge serves the learning map and turns serial evidence into WebSocket events", {

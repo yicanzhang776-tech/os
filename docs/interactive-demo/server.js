@@ -400,7 +400,9 @@ function streamProcess(command, args, label, options = {}) {
     promise,
     terminate(reason) {
       if (settled) return false;
-      terminateChildProcess(child);
+      terminateChildProcess(child, {
+        killProcessGroup: options.killProcessGroup !== false
+      });
       const error = new Error(`The ${label} process was terminated (${reason}).`);
       error.code = "process_terminated";
       finish(error);
@@ -572,7 +574,7 @@ function startKernelRun(options = {}) {
       qemuCommand,
       createQemuArguments({ firmware: openSbiFirmware, kernel }),
       "QEMU",
-      { parseKernel: true, channel: "serial" }
+      { parseKernel: true, channel: "serial", killProcessGroup: false }
     )
   });
   if (!started.started) {
