@@ -30,6 +30,19 @@ const TOOLS = Object.freeze([Object.freeze({
     additionalProperties: false
   })
 })]);
+const CHAIN_TOOLS = Object.freeze([...TOOLS, Object.freeze({
+  type: "function",
+  name: "read_code",
+  description: "Read an allowed teaching source file.",
+  parameters: Object.freeze({
+    type: "object",
+    properties: Object.freeze({
+      path: Object.freeze({ type: "string" })
+    }),
+    required: Object.freeze(["path"]),
+    additionalProperties: false
+  })
+})]);
 
 function jsonResponse(value, options = {}) {
   const body = options.raw === true ? value : JSON.stringify(value);
@@ -52,6 +65,7 @@ function modelOutput(...parts) {
 function stepInput(overrides = {}) {
   return {
     requestId: REQUEST.requestId,
+    modelTurn: 1,
     message: REQUEST.message,
     tools: TOOLS,
     continuationState: null,
@@ -82,7 +96,8 @@ function clientWith(fetchImpl, options = {}) {
     ...(Object.hasOwn(options, "model") ? { model: options.model } : {}),
     ...(Object.hasOwn(options, "timeoutMs") ? { timeoutMs: options.timeoutMs } : {}),
     ...(options.setTimer ? { setTimer: options.setTimer } : {}),
-    ...(options.clearTimer ? { clearTimer: options.clearTimer } : {})
+    ...(options.clearTimer ? { clearTimer: options.clearTimer } : {}),
+    ...(options.diagnosticSink ? { diagnosticSink: options.diagnosticSink } : {})
   });
 }
 
@@ -223,6 +238,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
     meta: {}
   });
   const second = await client.step(stepInput({
+    modelTurn: 2,
     message: null,
     continuationState: first.continuationState,
     toolOutput: { callId: first.callId, toolName: first.toolName, output }
@@ -247,6 +263,226 @@ test("step uses previous_response_id and one matching function_call_output", asy
   assert.equal(Object.hasOwn(bodies[1], "tool_choice"), false);
 });
 
+test("step advances response and call ids across two tool continuations", async () => {
+  const bodies = [];
+  const diagnostics = [];
+  const responses = [
+    {
+      id: "resp-chain-1",
+      status: "completed",
+      output: [{
+        type: "function_call",
+        name: "get_context",
+        call_id: "call-chain-1",
+        arguments: "{}"
+      }]
+    },
+    {
+      id: "resp-chain-2",
+      status: "completed",
+      output: [
+        ...modelOutput("I will inspect the requested file.").output,
+        {
+          type: "function_call",
+          name: "read_code",
+          call_id: "call-chain-2",
+          arguments: "{\"path\":\"kernel/src/main.rs\"}"
+        }
+      ]
+    },
+    {
+      id: "resp-chain-3",
+      status: "completed",
+      output: modelOutput("The entry point initializes the teaching kernel.").output
+    }
+  ];
+  const client = clientWith(async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return jsonResponse(responses.shift());
+  }, { diagnosticSink: (event) => diagnostics.push(event) });
+
+  const first = await client.step(stepInput({ tools: CHAIN_TOOLS }));
+  const second = await client.step(stepInput({
+    modelTurn: 2,
+    tools: CHAIN_TOOLS,
+    message: null,
+    continuationState: first.continuationState,
+    toolOutput: {
+      callId: first.callId,
+      toolName: first.toolName,
+      output: JSON.stringify({ tool: "get_context", ok: true })
+    }
+  }));
+  const third = await client.step(stepInput({
+    modelTurn: 3,
+    tools: CHAIN_TOOLS,
+    message: null,
+    continuationState: second.continuationState,
+    toolOutput: {
+      callId: second.callId,
+      toolName: second.toolName,
+      output: JSON.stringify({ tool: "read_code", ok: true })
+    }
+  }));
+
+  assert.equal(second.kind, "tool_call");
+  assert.equal(second.toolName, "read_code");
+  assert.equal(second.callId, "call-chain-2");
+  assert.equal(third.kind, "final");
+  assert.equal(third.answer, "The entry point initializes the teaching kernel.");
+  assert.equal(Object.hasOwn(bodies[0], "previous_response_id"), false);
+  assert.equal(bodies[1].previous_response_id, "resp-chain-1");
+  assert.equal(bodies[1].input[0].call_id, "call-chain-1");
+  assert.equal(bodies[2].previous_response_id, "resp-chain-2");
+  assert.equal(bodies[2].input[0].call_id, "call-chain-2");
+  assert.deepEqual(diagnostics.map((entry) => entry.modelTurn), [2, 3]);
+  assert.equal(diagnostics[0].httpStatus, 200);
+  assert.equal(diagnostics[0].responseIdPresent, true);
+  assert.equal(diagnostics[0].responseStatus, "completed");
+  assert.equal(diagnostics[0].outputLength, 2);
+  assert.deepEqual(diagnostics[0].outputItems.map((item) => item.type),
+    ["message", "function_call"]);
+  assert.equal(diagnostics[0].messageItemPresent, true);
+  assert.equal(diagnostics[0].outputTextPresent, true);
+  assert.equal(diagnostics[0].parserResult, "tool_call");
+  assert.equal(diagnostics[0].parserFailure, null);
+  assert.equal(diagnostics[1].parserResult, "final");
+});
+
+test("second-turn diagnostics safely identify unsupported auxiliary output", async () => {
+  const diagnostics = [];
+  const secret = "SECRET_TOOL_DATA_SHOULD_NOT_APPEAR";
+  const responses = [
+    functionCallResponse(),
+    {
+      id: "resp-auxiliary-2",
+      status: "completed",
+      output: [
+        ...modelOutput(`Model text ${secret}`).output,
+        { type: "agent_trace", payload: secret },
+        {
+          type: "function_call",
+          name: "read_code",
+          call_id: "call-auxiliary-2",
+          arguments: JSON.stringify({ path: `kernel/src/main.rs?${secret}` })
+        }
+      ]
+    }
+  ];
+  const client = clientWith(async () => jsonResponse(responses.shift()), {
+    diagnosticSink: (event) => diagnostics.push(event)
+  });
+  const first = await client.step(stepInput({ tools: CHAIN_TOOLS }));
+
+  await expectModelError(client.step(stepInput({
+    modelTurn: 2,
+    tools: CHAIN_TOOLS,
+    message: null,
+    continuationState: first.continuationState,
+    toolOutput: {
+      callId: first.callId,
+      toolName: first.toolName,
+      output: JSON.stringify({ observed: secret })
+    }
+  })), "model_invalid_response");
+
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].parserFailure, "response_output_type_unsupported");
+  assert.equal(diagnostics[0].trustedInternalErrorCode, "model_invalid_response");
+  assert.deepEqual(diagnostics[0].outputItems.map((item) => item.type),
+    ["message", "agent_trace", "function_call"]);
+  assert.equal(diagnostics[0].outputItems[2].functionCall.name, "read_code");
+  assert.equal(diagnostics[0].outputItems[2].functionCall.callIdPresent, true);
+  assert.equal(diagnostics[0].outputItems[2].functionCall.argumentsType, "string");
+  assert.equal(typeof diagnostics[0].outputItems[2].functionCall.argumentsLength, "number");
+  assert.doesNotMatch(JSON.stringify(diagnostics),
+    /SECRET_TOOL_DATA_SHOULD_NOT_APPEAR|fake-test-key|page fault/);
+});
+
+test("second-turn parser failures distinguish multiple calls and malformed arguments", async (t) => {
+  const cases = [
+    ["multiple calls", [
+      {
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-second-1",
+        arguments: "{\"path\":\"kernel/src/main.rs\"}"
+      },
+      {
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-second-2",
+        arguments: "{\"path\":\"kernel/src/lib.rs\"}"
+      }
+    ], "multiple_function_calls_unsupported"],
+    ["arguments are not a string", [{
+      type: "function_call",
+      name: "read_code",
+      call_id: "call-second-1",
+      arguments: { path: "kernel/src/main.rs" }
+    }], "function_call_arguments_not_string"],
+    ["arguments are invalid JSON", [{
+      type: "function_call",
+      name: "read_code",
+      call_id: "call-second-1",
+      arguments: "{"
+    }], "function_call_arguments_json_invalid"],
+    ["call id is missing", [{
+      type: "function_call",
+      name: "read_code",
+      arguments: "{\"path\":\"kernel/src/main.rs\"}"
+    }], "function_call_id_invalid"],
+    ["function name is invalid", [{
+      type: "function_call",
+      name: "read-code",
+      call_id: "call-second-1",
+      arguments: "{\"path\":\"kernel/src/main.rs\"}"
+    }], "function_call_name_invalid"],
+    ["message content type is unsupported", [
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "refusal", refusal: "not copied" }]
+      },
+      {
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-second-1",
+        arguments: "{\"path\":\"kernel/src/main.rs\"}"
+      }
+    ], "message_content_type_unsupported"]
+  ];
+
+  for (const [name, output, expectedFailure] of cases) {
+    await t.test(name, async () => {
+      const diagnostics = [];
+      const responses = [functionCallResponse(), {
+        id: "resp-parser-failure-2",
+        status: "completed",
+        output
+      }];
+      const client = clientWith(async () => jsonResponse(responses.shift()), {
+        diagnosticSink: (event) => diagnostics.push(event)
+      });
+      const first = await client.step(stepInput({ tools: CHAIN_TOOLS }));
+      await expectModelError(client.step(stepInput({
+        modelTurn: 2,
+        tools: CHAIN_TOOLS,
+        message: null,
+        continuationState: first.continuationState,
+        toolOutput: {
+          callId: first.callId,
+          toolName: first.toolName,
+          output: "{\"ok\":true}"
+        }
+      })), "model_invalid_response");
+      assert.equal(diagnostics.length, 1);
+      assert.equal(diagnostics[0].parserFailure, expectedFailure);
+      assert.equal(diagnostics[0].trustedInternalErrorCode, "model_invalid_response");
+    });
+  }
+});
+
 test("step rejects wrong call_id and untrusted continuation state before fetch", async () => {
   let fetchCalls = 0;
   const responses = [functionCallResponse()];
@@ -257,11 +493,13 @@ test("step rejects wrong call_id and untrusted continuation state before fetch",
   const first = await client.step(stepInput());
   const safeOutput = JSON.stringify({ ok: true });
   await expectModelError(client.step(stepInput({
+    modelTurn: 2,
     message: null,
     continuationState: first.continuationState,
     toolOutput: { callId: "wrong", toolName: first.toolName, output: safeOutput }
   })), "model_invalid_response");
   await expectModelError(client.step(stepInput({
+    modelTurn: 2,
     message: null,
     continuationState: {
       previousResponseId: "resp-test-1",

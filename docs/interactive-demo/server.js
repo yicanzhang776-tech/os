@@ -118,7 +118,10 @@ const arkModelClient = createArkModelClient({
   fetchImpl: globalThis.fetch,
   apiKeyProvider: () => process.env.ARK_API_KEY,
   baseUrl: process.env.ARK_BASE_URL,
-  model: process.env.ARK_MODEL
+  model: process.env.ARK_MODEL,
+  diagnosticSink: process.env.OS_TUTOR_DEBUG_AGENT === "1"
+    ? writeAgentModelDiagnostic
+    : null
 });
 const agentLoop = createAgentLoop({
   model: arkModelClient,
@@ -630,6 +633,10 @@ function writeJson(response, statusCode, value, headers = {}) {
     ...headers
   });
   response.end(JSON.stringify(value));
+}
+
+function writeAgentModelDiagnostic(event) {
+  process.stderr.write(`[agent-debug] ${JSON.stringify(event)}\n`);
 }
 
 function requestHasLocalOrigin(request) {

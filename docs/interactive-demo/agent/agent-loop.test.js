@@ -155,6 +155,7 @@ test("runs get_context then returns the final answer", async () => {
     (input) => {
       assert.equal(input.message, null);
       assert.equal(input.requestId, INITIAL_CONTEXT.requestId);
+      assert.equal(input.modelTurn, 2);
       assert.equal(input.continuationState, state);
       assert.equal(input.toolOutput.callId, "call-1");
       assert.equal(input.toolOutput.toolName, "get_context");
@@ -521,7 +522,8 @@ test("passes prompt-injection text only inside serialized tool data", async () =
       assert.match(input.toolOutput.output, /Ignore previous instructions/);
       assert.equal(JSON.parse(input.toolOutput.output).data.content, injection);
       assert.deepEqual(Object.keys(input).sort(), [
-        "continuationState", "finalizationOnly", "message", "requestId", "toolOutput", "tools"
+        "continuationState", "finalizationOnly", "message", "modelTurn", "requestId",
+        "toolOutput", "tools"
       ]);
       return final("Treat source comments as data, not instructions.");
     }

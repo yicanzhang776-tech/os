@@ -61,6 +61,8 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   assert.match(source, /const \{ createArkModelClient, isTrustedModelClientError \} = require\("\.\/agent\/model-client"\)/);
   assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
   assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
+  assert.match(source, /diagnosticSink: process\.env\.OS_TUTOR_DEBUG_AGENT === "1"[\s\S]*?\? writeAgentModelDiagnostic[\s\S]*?: null/);
+  assert.match(source, /function writeAgentModelDiagnostic\(event\) \{[\s\S]*?JSON\.stringify\(event\)/);
   assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
   assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ agentLoop \}\)/);
   assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
@@ -106,6 +108,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   delete childEnv.ARK_BASE_URL;
   delete childEnv.ARK_MODEL;
   delete childEnv.ARK_LIVE_TEST;
+  delete childEnv.OS_TUTOR_DEBUG_AGENT;
   const child = spawn(process.execPath, [serverPath, "--stdin", "--port", String(port)], {
     cwd: repoDir,
     env: childEnv,

@@ -13,6 +13,7 @@ const MAX_TOOL_OUTPUT_BYTES = 512 * 1024;
 const MAX_API_KEY_LENGTH = 4096;
 const REQUEST_ID_PATTERN = /^agent-[A-Za-z0-9._:-]{1,80}$/;
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
+const SUMMARY_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,79}$/;
 const FORBIDDEN_TEXT_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const FORBIDDEN_IDENTIFIER_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const SERVER_INSTRUCTIONS = [
@@ -43,6 +44,7 @@ const MODEL_ERROR_DEFINITIONS = Object.freeze({
 
 const trustedModelClientErrors = new WeakSet();
 const trustedContinuationStates = new WeakSet();
+const modelErrorDiagnosticCodes = new WeakMap();
 
 class ModelClientError extends Error {
   constructor(code) {
@@ -62,8 +64,22 @@ function isTrustedModelClientError(error) {
   return Boolean(error && trustedModelClientErrors.has(error));
 }
 
-function modelError(code) {
-  return new ModelClientError(code);
+function modelError(code, diagnosticCode = null) {
+  const error = new ModelClientError(code);
+  if (typeof diagnosticCode === "string" && SUMMARY_IDENTIFIER_PATTERN.test(diagnosticCode)) {
+    modelErrorDiagnosticCodes.set(error, diagnosticCode);
+  }
+  return error;
+}
+
+function invalidResponse(diagnosticCode) {
+  return modelError("model_invalid_response", diagnosticCode);
+}
+
+function diagnosticCodeFor(error) {
+  return isTrustedModelClientError(error)
+    ? modelErrorDiagnosticCodes.get(error) || null
+    : null;
 }
 
 function resolveExactSetting(value, expected) {
@@ -91,6 +107,74 @@ function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function valueKind(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function summaryIdentifier(value) {
+  return typeof value === "string" && SUMMARY_IDENTIFIER_PATTERN.test(value)
+    ? value
+    : null;
+}
+
+function responseStructureSummary(value) {
+  const root = isPlainObject(value) ? value : null;
+  const output = root && Array.isArray(root.output) ? root.output : null;
+  const outputItems = [];
+  let messageItemPresent = false;
+  let outputTextPresent = false;
+
+  if (output) {
+    for (let index = 0; index < output.length; index += 1) {
+      const item = output[index];
+      const plainItem = isPlainObject(item) ? item : null;
+      const rawType = plainItem ? item.type : null;
+      const itemSummary = {
+        index,
+        type: summaryIdentifier(rawType),
+        valueType: valueKind(item)
+      };
+      if (rawType === "function_call") {
+        itemSummary.functionCall = {
+          name: summaryIdentifier(item.name),
+          callIdPresent: typeof item.call_id === "string" && item.call_id.length > 0,
+          argumentsType: valueKind(item.arguments),
+          argumentsLength: typeof item.arguments === "string" ? item.arguments.length : null
+        };
+      }
+      if (rawType === "message") {
+        messageItemPresent = true;
+        const content = Array.isArray(item.content) ? item.content : null;
+        const contentTypes = content
+          ? content.map((entry) => summaryIdentifier(isPlainObject(entry) ? entry.type : null))
+          : [];
+        const hasOutputText = content
+          ? content.some((entry) => isPlainObject(entry) && entry.type === "output_text")
+          : false;
+        outputTextPresent ||= hasOutputText;
+        itemSummary.message = {
+          contentIsArray: Boolean(content),
+          contentTypes,
+          outputTextPresent: hasOutputText
+        };
+      }
+      outputItems.push(itemSummary);
+    }
+  }
+
+  return {
+    responseIdPresent: Boolean(root && typeof root.id === "string" && root.id.length > 0),
+    responseStatus: root ? summaryIdentifier(root.status) : null,
+    outputIsArray: Boolean(output),
+    outputLength: output ? output.length : null,
+    outputItems,
+    messageItemPresent,
+    outputTextPresent
+  };
 }
 
 function safeIdentifier(value, maximum) {
@@ -166,55 +250,69 @@ function createContinuationState(previousResponseId, expectedCallId, expectedToo
 
 function validateContinuationState(value) {
   if (!value || !trustedContinuationStates.has(value)) {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("continuation_state_untrusted");
   }
   return value;
 }
 
 function validateToolOutput(value, continuationState, apiKey) {
-  if (!isPlainObject(value)
-    || Object.keys(value).some((field) => !["callId", "toolName", "output"].includes(field))
-    || !safeIdentifier(value.callId, 128)
-    || !TOOL_NAME_PATTERN.test(value.toolName || "")
-    || typeof value.output !== "string"
-    || Buffer.byteLength(value.output, "utf8") > MAX_TOOL_OUTPUT_BYTES
-    || value.output.includes(apiKey)
-    || value.callId !== continuationState.expectedCallId
-    || value.toolName !== continuationState.expectedToolName) {
-    throw modelError("model_invalid_response");
+  if (!isPlainObject(value)) throw invalidResponse("tool_output_not_object");
+  if (Object.keys(value).some((field) => !["callId", "toolName", "output"].includes(field))) {
+    throw invalidResponse("tool_output_fields_invalid");
+  }
+  if (!safeIdentifier(value.callId, 128)) throw invalidResponse("tool_output_call_id_invalid");
+  if (!TOOL_NAME_PATTERN.test(value.toolName || "")) {
+    throw invalidResponse("tool_output_name_invalid");
+  }
+  if (typeof value.output !== "string") throw invalidResponse("tool_output_type_invalid");
+  if (Buffer.byteLength(value.output, "utf8") > MAX_TOOL_OUTPUT_BYTES) {
+    throw invalidResponse("tool_output_too_large");
+  }
+  if (value.output.includes(apiKey)) throw invalidResponse("tool_output_contains_secret");
+  if (value.callId !== continuationState.expectedCallId) {
+    throw invalidResponse("tool_output_call_id_mismatch");
+  }
+  if (value.toolName !== continuationState.expectedToolName) {
+    throw invalidResponse("tool_output_name_mismatch");
   }
   try {
     if (!isPlainObject(JSON.parse(value.output))) throw new Error("not an object");
   } catch (_) {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("tool_output_json_invalid");
   }
   return value;
 }
 
 function validateStepInput(value, apiKey) {
   const fields = [
-    "requestId", "message", "tools", "continuationState", "toolOutput", "finalizationOnly"
+    "requestId", "modelTurn", "message", "tools", "continuationState", "toolOutput",
+    "finalizationOnly"
   ];
   if (!isPlainObject(value) || Object.keys(value).some((field) => !fields.includes(field))) {
     throw modelError("model_internal_error");
   }
   const requestId = validateRequestId(value.requestId);
+  if (!Number.isInteger(value.modelTurn) || value.modelTurn < 1 || value.modelTurn > 100) {
+    throw modelError("model_internal_error");
+  }
   const tools = cloneToolSchemas(value.tools);
   if (typeof value.finalizationOnly !== "boolean") throw modelError("model_internal_error");
 
   if (value.continuationState === null && value.toolOutput === null) {
     return {
       requestId,
+      modelTurn: value.modelTurn,
       tools,
       message: validateMessage(value.message),
       continuationState: null,
       toolOutput: null
     };
   }
-  if (value.message !== null) throw modelError("model_invalid_response");
+  if (value.message !== null) throw invalidResponse("continuation_message_not_null");
   const continuationState = validateContinuationState(value.continuationState);
   return {
     requestId,
+    modelTurn: value.modelTurn,
     tools,
     message: null,
     continuationState,
@@ -235,7 +333,7 @@ function hasJsonContentType(response) {
 
 async function readBoundedJson(response) {
   if (!response?.body || typeof response.body.getReader !== "function") {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("response_body_unreadable");
   }
   const reader = response.body.getReader();
   const chunks = [];
@@ -244,7 +342,7 @@ async function readBoundedJson(response) {
     for (;;) {
       const item = await reader.read();
       if (!item || item.done) break;
-      if (!(item.value instanceof Uint8Array)) throw modelError("model_invalid_response");
+      if (!(item.value instanceof Uint8Array)) throw invalidResponse("response_chunk_invalid");
       totalBytes += item.value.byteLength;
       if (totalBytes > MAX_MODEL_RESPONSE_BYTES) {
         try {
@@ -252,7 +350,7 @@ async function readBoundedJson(response) {
         } catch (_) {
           // Cancellation is best-effort after the bounded response has already failed.
         }
-        throw modelError("model_invalid_response");
+        throw invalidResponse("response_body_too_large");
       }
       chunks.push(Buffer.from(item.value));
     }
@@ -265,27 +363,28 @@ async function readBoundedJson(response) {
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, totalBytes));
   } catch (_) {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("response_utf8_invalid");
   }
   try {
     return JSON.parse(text);
   } catch (_) {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("response_json_invalid");
   }
 }
 
 function parseMessageItem(item, parts) {
-  if (!isPlainObject(item)
-    || item.type !== "message"
-    || item.role !== "assistant"
-    || !Array.isArray(item.content)) {
-    throw modelError("model_invalid_response");
+  if (!isPlainObject(item) || item.type !== "message") {
+    throw invalidResponse("message_item_shape_invalid");
   }
+  if (item.role !== "assistant") throw invalidResponse("message_role_invalid");
+  if (!Array.isArray(item.content)) throw invalidResponse("message_content_not_array");
   for (const content of item.content) {
-    if (!isPlainObject(content)
-      || content.type !== "output_text"
-      || typeof content.text !== "string") {
-      throw modelError("model_invalid_response");
+    if (!isPlainObject(content)) throw invalidResponse("message_content_item_invalid");
+    if (content.type !== "output_text") {
+      throw invalidResponse("message_content_type_unsupported");
+    }
+    if (typeof content.text !== "string") {
+      throw invalidResponse("message_output_text_invalid");
     }
     parts.push(content.text);
   }
@@ -293,31 +392,39 @@ function parseMessageItem(item, parts) {
 
 function validateAnswer(parts, apiKey) {
   const answer = parts.join("").trim();
-  if (answer.length === 0
-    || answer.length > MAX_MODEL_ANSWER_LENGTH
-    || answer.includes(apiKey)
-    || FORBIDDEN_TEXT_CHARACTERS.test(answer)) {
-    throw modelError("model_invalid_response");
+  if (answer.length === 0) throw invalidResponse("final_answer_empty");
+  if (answer.length > MAX_MODEL_ANSWER_LENGTH) {
+    throw invalidResponse("final_answer_too_long");
+  }
+  if (answer.includes(apiKey)) throw invalidResponse("final_answer_contains_secret");
+  if (FORBIDDEN_TEXT_CHARACTERS.test(answer)) {
+    throw invalidResponse("final_answer_control_character");
   }
   return answer;
 }
 
 function parseFunctionCall(item, responseId) {
-  if (!safeIdentifier(responseId, 200)
-    || !isPlainObject(item)
-    || !TOOL_NAME_PATTERN.test(item.name || "")
-    || !safeIdentifier(item.call_id, 128)
-    || typeof item.arguments !== "string"
-    || Buffer.byteLength(item.arguments, "utf8") > MAX_TOOL_ARGUMENT_BYTES) {
-    throw modelError("model_invalid_response");
+  if (!safeIdentifier(responseId, 200)) throw invalidResponse("response_id_invalid");
+  if (!isPlainObject(item)) throw invalidResponse("function_call_item_invalid");
+  if (!TOOL_NAME_PATTERN.test(item.name || "")) {
+    throw invalidResponse("function_call_name_invalid");
+  }
+  if (!safeIdentifier(item.call_id, 128)) {
+    throw invalidResponse("function_call_id_invalid");
+  }
+  if (typeof item.arguments !== "string") {
+    throw invalidResponse("function_call_arguments_not_string");
+  }
+  if (Buffer.byteLength(item.arguments, "utf8") > MAX_TOOL_ARGUMENT_BYTES) {
+    throw invalidResponse("function_call_arguments_too_large");
   }
   let args;
   try {
     args = JSON.parse(item.arguments);
   } catch (_) {
-    throw modelError("model_invalid_response");
+    throw invalidResponse("function_call_arguments_json_invalid");
   }
-  if (!isPlainObject(args)) throw modelError("model_invalid_response");
+  if (!isPlainObject(args)) throw invalidResponse("function_call_arguments_not_object");
   return Object.freeze({
     kind: "tool_call",
     callId: item.call_id,
@@ -328,14 +435,13 @@ function parseFunctionCall(item, responseId) {
 }
 
 function parseStepResponse(value, apiKey) {
-  if (!isPlainObject(value) || !Array.isArray(value.output)) {
-    throw modelError("model_invalid_response");
-  }
+  if (!isPlainObject(value)) throw invalidResponse("response_root_not_object");
+  if (!Array.isArray(value.output)) throw invalidResponse("response_output_not_array");
   const parts = [];
   const calls = [];
   for (const item of value.output) {
     if (!isPlainObject(item) || typeof item.type !== "string") {
-      throw modelError("model_invalid_response");
+      throw invalidResponse("response_output_item_invalid");
     }
     if (item.type === "reasoning") continue;
     if (item.type === "message") {
@@ -346,9 +452,9 @@ function parseStepResponse(value, apiKey) {
       calls.push(item);
       continue;
     }
-    throw modelError("model_invalid_response");
+    throw invalidResponse("response_output_type_unsupported");
   }
-  if (calls.length > 1) throw modelError("model_invalid_response");
+  if (calls.length > 1) throw invalidResponse("multiple_function_calls_unsupported");
   if (calls.length === 1) return parseFunctionCall(calls[0], value.id);
   return Object.freeze({
     kind: "final",
@@ -359,7 +465,7 @@ function parseStepResponse(value, apiKey) {
 
 function parseAssistantAnswer(value, apiKey) {
   const step = parseStepResponse(value, apiKey);
-  if (step.kind !== "final") throw modelError("model_invalid_response");
+  if (step.kind !== "final") throw invalidResponse("unexpected_function_call_for_respond");
   return step.answer;
 }
 
@@ -379,6 +485,10 @@ function createArkModelClient(options = {}) {
   if (typeof setTimer !== "function" || typeof clearTimer !== "function") {
     throw new TypeError("Timer functions are required.");
   }
+  const diagnosticSink = options.diagnosticSink ?? null;
+  if (diagnosticSink !== null && typeof diagnosticSink !== "function") {
+    throw new TypeError("diagnosticSink must be a function.");
+  }
 
   const apiKey = readApiKeyOnce(options.apiKeyProvider);
   const baseUrl = resolveExactSetting(options.baseUrl, DEFAULT_ARK_BASE_URL);
@@ -386,10 +496,41 @@ function createArkModelClient(options = {}) {
   const configured = Boolean(apiKey && baseUrl && model && options.timeoutMs !== null
     && (options.timeoutMs === undefined || options.timeoutMs === MODEL_TIMEOUT_MS));
 
-  async function request(body) {
+  function debugContext(input) {
+    if (!diagnosticSink
+      || !isPlainObject(input)
+      || !REQUEST_ID_PATTERN.test(input.requestId || "")
+      || !Number.isInteger(input.modelTurn)
+      || input.modelTurn < 2) {
+      return null;
+    }
+    return Object.freeze({ requestId: input.requestId, modelTurn: input.modelTurn });
+  }
+
+  function emitDiagnostic(context, httpStatus, responseValue, outcome = {}) {
+    if (!context) return;
+    const event = Object.freeze({
+      event: "ark_model_response_structure",
+      requestId: context.requestId,
+      modelTurn: context.modelTurn,
+      httpStatus: Number.isInteger(httpStatus) ? httpStatus : null,
+      ...responseStructureSummary(responseValue),
+      parserResult: outcome.parserResult || null,
+      parserFailure: outcome.parserFailure || null,
+      trustedInternalErrorCode: outcome.trustedInternalErrorCode || null
+    });
+    try {
+      diagnosticSink(event);
+    } catch (_) {
+      // Debug diagnostics are best-effort and must never affect the Agent request.
+    }
+  }
+
+  async function request(body, context = null) {
     if (!configured) throw modelError("model_not_configured");
     const controller = new AbortController();
     let timedOut = false;
+    let httpStatus = null;
     let rejectTimeout;
     const timeoutPromise = new Promise((_, reject) => { rejectTimeout = reject; });
     let timer;
@@ -421,19 +562,25 @@ function createArkModelClient(options = {}) {
       }
       if (timedOut) throw modelError("model_timeout");
       if (!response || !Number.isInteger(response.status)) {
-        throw modelError("model_invalid_response");
+        throw invalidResponse("http_response_status_invalid");
       }
+      httpStatus = response.status;
       if (response.status < 200 || response.status >= 300) {
-        throw modelError(classifyStatus(response.status));
+        throw modelError(classifyStatus(response.status), "http_status_rejected");
       }
-      if (!hasJsonContentType(response)) throw modelError("model_invalid_response");
+      if (!hasJsonContentType(response)) throw invalidResponse("response_content_type_invalid");
       const parsed = await Promise.race([readBoundedJson(response), timeoutPromise]);
       if (timedOut) throw modelError("model_timeout");
-      return parsed;
+      return { value: parsed, httpStatus };
     } catch (error) {
-      if (timedOut) throw modelError("model_timeout");
-      if (isTrustedModelClientError(error)) throw error;
-      throw modelError("model_internal_error");
+      const safeError = timedOut
+        ? modelError("model_timeout")
+        : isTrustedModelClientError(error) ? error : modelError("model_internal_error");
+      emitDiagnostic(context, httpStatus, null, {
+        parserFailure: diagnosticCodeFor(safeError),
+        trustedInternalErrorCode: safeError.code
+      });
+      throw safeError;
     } finally {
       try {
         clearTimer(timer);
@@ -446,18 +593,31 @@ function createArkModelClient(options = {}) {
   return Object.freeze({
     async respond(input = {}) {
       const validated = validateRespondInput(input);
-      const body = await request({
+      const response = await request({
         model: DEFAULT_ARK_MODEL,
         instructions: SERVER_INSTRUCTIONS,
         input: validated.message,
         stream: false
       });
-      return parseAssistantAnswer(body, apiKey);
+      return parseAssistantAnswer(response.value, apiKey);
     },
 
     async step(input = {}) {
       if (!configured) throw modelError("model_not_configured");
-      const validated = validateStepInput(input, apiKey);
+      const context = debugContext(input);
+      let validated;
+      try {
+        validated = validateStepInput(input, apiKey);
+      } catch (error) {
+        const safeError = isTrustedModelClientError(error)
+          ? error
+          : modelError("model_internal_error");
+        emitDiagnostic(context, null, null, {
+          parserFailure: diagnosticCodeFor(safeError),
+          trustedInternalErrorCode: safeError.code
+        });
+        throw safeError;
+      }
       const body = {
         model: DEFAULT_ARK_MODEL,
         input: validated.message === null
@@ -476,7 +636,23 @@ function createArkModelClient(options = {}) {
       } else {
         body.tools = validated.tools;
       }
-      return parseStepResponse(await request(body), apiKey);
+      const response = await request(body, context);
+      try {
+        const result = parseStepResponse(response.value, apiKey);
+        emitDiagnostic(context, response.httpStatus, response.value, {
+          parserResult: result.kind
+        });
+        return result;
+      } catch (error) {
+        const safeError = isTrustedModelClientError(error)
+          ? error
+          : modelError("model_internal_error");
+        emitDiagnostic(context, response.httpStatus, response.value, {
+          parserFailure: diagnosticCodeFor(safeError),
+          trustedInternalErrorCode: safeError.code
+        });
+        throw safeError;
+      }
     }
   });
 }
