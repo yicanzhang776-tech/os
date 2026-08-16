@@ -15,7 +15,19 @@ test("standalone tutor page exposes the Focus Console contract", () => {
   assert.match(html, /id="agent-page-submit"/);
   assert.match(html, /id="agent-page-clear"/);
   assert.match(html, /单次独立回答/);
+  assert.match(html, /id="agent-config-form"/);
+  assert.match(html, /id="agent-api-key"[^>]+type="password"[^>]+autocomplete="off"/);
+  assert.match(html, /仅保存在当前 Node 服务进程内/);
   assert.ok(html.indexOf("agent-entry-state.js") < html.indexOf("agent-page.js"));
+});
+
+test("the page activates and clears only process-memory credentials", () => {
+  assert.match(source, /getAgentConfig\(\)/);
+  assert.match(source, /configureAgentKey\(apiKey\.value\)/);
+  assert.match(source, /clearAgentKey\(\)/);
+  assert.match(source, /apiKey\.value\s*=\s*""/);
+  assert.doesNotMatch(source, /(?:localStorage|sessionStorage)\.(?:setItem|getItem)\([^)]*(?:apiKey|api-key|ARK)/i);
+  assert.doesNotMatch(html, /value="ark-/i);
 });
 
 test("the standalone page sends only one current message", () => {

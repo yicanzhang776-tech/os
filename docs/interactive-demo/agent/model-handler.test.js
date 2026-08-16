@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { AgentApiError } = require("./api");
-const { createAgentLoop } = require("./agent-loop");
+const { AgentLoopError, createAgentLoop } = require("./agent-loop");
 const { ModelClientError, isTrustedModelClientError } = require("./model-client");
 const { createProductionAgentHandler } = require("./model-handler");
 const { TOOL_SCHEMA_NAMES } = require("./tool-schemas");
@@ -158,7 +158,7 @@ test("every trusted model error maps to the same fixed Agent API code", async (t
   }
 });
 
-test("unknown tools and model protocol failures map to a safe Agent error", async () => {
+test("unknown tools and model protocol failures keep a safe diagnostic code", async () => {
   const h = createHarness([{
     kind: "tool_call",
     callId: "call-1",
@@ -167,11 +167,24 @@ test("unknown tools and model protocol failures map to a safe Agent error", asyn
     continuationState: null
   }]);
   await assert.rejects(invoke(h.handler), (error) => {
-    assert.equal(error.code, "agent_internal_error");
+    assert.equal(error.code, "agent_protocol_error");
     assert.deepEqual(error.details, {});
     return true;
   });
   assert.equal(h.toolCalls.length, 0);
+});
+
+test("trusted orchestration limits keep their fixed public codes", async () => {
+  for (const code of [
+    "agent_deadline_exceeded",
+    "agent_loop_limit",
+    "agent_protocol_error",
+    "agent_tool_output_too_large"
+  ]) {
+    const branded = new AgentLoopError(code);
+    const handler = createProductionAgentHandler({ agentLoop: { run: async () => { throw branded; } } });
+    await assert.rejects(invoke(handler), (error) => error.code === code);
+  }
 });
 
 test("lookalike, prototype-spoofed, and unknown errors become fixed internal errors", async (t) => {

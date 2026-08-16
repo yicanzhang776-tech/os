@@ -34,6 +34,29 @@
         <span>单次独立回答</span>
       </header>
 
+      <section class="agent-page-service" aria-labelledby="agent-service-heading">
+        <div class="agent-page-service-summary">
+          <span class="agent-page-service-indicator" aria-hidden="true"></span>
+          <div>
+            <h2 id="agent-service-heading">模型服务</h2>
+            <p id="agent-service-status" aria-live="polite">正在检查本地配置…</p>
+          </div>
+        </div>
+        <form id="agent-config-form" class="agent-page-key-form" hidden>
+          <label for="agent-api-key">方舟 API Key</label>
+          <div class="agent-page-key-field">
+            <input id="agent-api-key" name="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入测试 Key">
+            <button id="agent-key-visibility" type="button" aria-label="显示 Key">显示</button>
+          </div>
+          <button id="agent-config-submit" type="submit">激活本地模型</button>
+        </form>
+        <div class="agent-page-service-actions">
+          <button id="agent-config-change" type="button" hidden>更换 Key</button>
+          <button id="agent-config-clear" type="button" hidden>清除本次 Key</button>
+        </div>
+        <p class="agent-page-service-note">Key 仅保存在当前 Node 服务进程内，不写入浏览器存储、文件或 Git；服务停止后自动消失。</p>
+      </section>
+
       <section class="agent-page-conversation" aria-labelledby="agent-page-heading">
         <h1 id="agent-page-heading">向小内核提问</h1>
         <ol id="agent-page-thread" role="log" aria-live="polite" aria-relevant="additions">
