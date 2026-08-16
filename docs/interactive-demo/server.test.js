@@ -128,6 +128,32 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(health.protocol, "os-demo.event/v1");
   assert.equal(health.target, "riscv64gc-unknown-none-elf");
 
+  for (const asset of [
+    "workspace.css",
+    "theme-atlas.css",
+    "ui-shell-state.js",
+    "ui-shell.js",
+    "agent-chat-state.js",
+    "agent.html",
+    "agent-page.css",
+    "agent-page.js",
+    "agent-entry-state.js",
+    "agent-pet.js",
+    "assets/kernel-buddy.png"
+  ]) {
+    const assetResponse = await fetch(`${url}/${asset}`);
+    assert.equal(assetResponse.status, 200, `${asset} should be served by the local bridge`);
+    assert.ok((await assetResponse.arrayBuffer()).byteLength > 20, `${asset} should not be empty`);
+  }
+
+  const retiredSignalTheme = await fetch(`${url}/theme-signal.css`);
+  assert.equal(retiredSignalTheme.status, 404);
+
+  const mascotAsset = await fetch(`${url}/assets/kernel-buddy.png`);
+  assert.equal(mascotAsset.headers.get("content-type"), "image/png");
+  const unlistedMascot = await fetch(`${url}/assets/kernel-buddy-preview.png`);
+  assert.equal(unlistedMascot.status, 404);
+
   const getAgent = await fetch(`${url}/api/agent`);
   assert.equal(getAgent.status, 405);
   assert.equal(getAgent.headers.get("allow"), "POST");

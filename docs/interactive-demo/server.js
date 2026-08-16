@@ -56,6 +56,8 @@ const staticAssets = new Map();
 const staticAssetNames = [
   "index.html",
   "styles.css",
+  "workspace.css",
+  "theme-atlas.css",
   "feedback-questions.js",
   "feedback.js",
   "event-catalog.js",
@@ -65,12 +67,21 @@ const staticAssetNames = [
   "run-history.js",
   "run-transfer.js",
   "run-submission.js",
+  "ui-shell-state.js",
+  "ui-shell.js",
   "agent-client.js",
+  "agent-chat-state.js",
+  "agent-entry-state.js",
+  "agent-pet.js",
+  "agent.html",
+  "agent-page.css",
+  "agent-page.js",
   "agent-panel.js",
   "timeline-controller.js",
   "diagnostics.js",
   "presentation-mode.js",
-  "app.js"
+  "app.js",
+  "assets/kernel-buddy.png"
 ];
 let sequence = 0;
 let currentChild = null;
@@ -148,7 +159,8 @@ const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8"
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png"
 };
 
 function gitValue(args, fallback) {
