@@ -30,12 +30,12 @@ function functionSchema(name, description, properties, required = []) {
 const TOOL_SCHEMAS = deepFreeze([
   functionSchema(
     "get_context",
-    "Read the current trusted teaching workspace context.",
+    "Use for a student's current Lab, progress, branch, workspace, or Git-change status. Read the trusted teaching context once; this is usually sufficient for a context-only question.",
     {}
   ),
   functionSchema(
     "read_code",
-    "Read a bounded range from an allowed teaching source file.",
+    "Use when a student asks what a named file, function, or current implementation does. Read only the necessary bounded range from an allowed teaching source file; avoid unrelated context, diff, run, or event tools when this source is sufficient.",
     {
       path: { type: "string", minLength: 1, maxLength: 1000 },
       startLine: { type: "integer", minimum: 1 },
@@ -46,7 +46,7 @@ const TOOL_SCHEMAS = deepFreeze([
   ),
   functionSchema(
     "get_qemu_events",
-    "Read bounded teaching events from an existing run.",
+    "Use for where execution stopped, the last observed stage, or real panic, trap, and QEMU event evidence. Read bounded events from an existing run. An empty successful event list is a valid result: do not repeat the call just because no events matched.",
     {
       runId: {
         type: "string",
@@ -64,7 +64,7 @@ const TOOL_SCHEMAS = deepFreeze([
   ),
   functionSchema(
     "get_run_result",
-    "Read the bounded result summary for an existing run.",
+    "Use first when a student asks how the latest or specified run finished or why it failed. Read one bounded run summary, including build and QEMU status; do not reread it without a concrete reason.",
     {
       runId: {
         type: "string",
@@ -78,7 +78,7 @@ const TOOL_SCHEMAS = deepFreeze([
   ),
   functionSchema(
     "get_code_diff",
-    "Inspect a bounded teaching-code difference from the approved baseline.",
+    "Use when a student asks about recent changes or why changed code no longer works. Inspect only the necessary bounded teaching-code difference from the approved starter baseline.",
     {
       lab: { type: "string", enum: LABS },
       paths: {
@@ -93,7 +93,7 @@ const TOOL_SCHEMAS = deepFreeze([
   ),
   functionSchema(
     "run_test",
-    "Start one approved teaching test for the current trusted Lab context.",
+    "Use exactly once only when a student asks to run or verify the current experiment. Establish the trusted Lab and variant with get_context first when they are not already returned evidence, then start one approved teaching test in a later turn. Never batch this action with read tools; after it starts report status and runId without polling in the same request.",
     {
       testId: { type: "string", enum: [...APPROVED_TEST_IDS] },
       lab: { type: "string", enum: LABS }

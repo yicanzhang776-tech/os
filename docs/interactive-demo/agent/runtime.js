@@ -3,6 +3,7 @@
 const { createAgentLoop } = require("./agent-loop");
 const { createArkModelClient, isTrustedModelClientError } = require("./model-client");
 const { createProductionAgentHandler } = require("./model-handler");
+const { retrieveKnowledge } = require("./knowledge-retriever");
 
 const MAX_API_KEY_LENGTH = 4096;
 const FORBIDDEN_API_KEY_CHARACTERS = /\s|[\u0000-\u001f\u007f]/;
@@ -27,6 +28,10 @@ function createAgentRuntime(options = {}) {
   }
   const fetchImpl = options.fetchImpl === undefined ? globalThis.fetch : options.fetchImpl;
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl is required.");
+  const knowledgeRetriever = options.knowledgeRetriever || retrieveKnowledge;
+  if (typeof knowledgeRetriever !== "function") {
+    throw new TypeError("knowledgeRetriever must be a function.");
+  }
 
   const environmentApiKey = normalizeApiKey(options.environmentApiKey);
   let sessionApiKey = null;
@@ -79,6 +84,7 @@ function createAgentRuntime(options = {}) {
         model,
         toolDispatch: options.toolDispatch,
         readContext: options.readContext,
+        retrieveKnowledge: knowledgeRetriever,
         isTrustedModelError: isTrustedModelClientError
       });
       return createProductionAgentHandler({ agentLoop })(input);

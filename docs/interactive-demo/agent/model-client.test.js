@@ -21,6 +21,21 @@ const {
 
 const FAKE_KEY = "fake-test-key-123";
 const REQUEST = Object.freeze({ message: "Why did the page fault repeat?", requestId: "agent-test-1" });
+const COURSE_KNOWLEDGE = Object.freeze([Object.freeze({
+  id: "lab1-concept-opensbi",
+  lab: "lab1",
+  stage: 1,
+  type: "concept",
+  topic: "firmware",
+  concepts: Object.freeze(["OpenSBI", "SBI"]),
+  files: Object.freeze(["kernel/src/sbi.rs"]),
+  symptoms: Object.freeze(["opensbi-only"]),
+  hintLevel: 1,
+  source: "docs/labs/lab1.md",
+  title: "OpenSBI in Lab1",
+  content: "OpenSBI runs before the S-mode kernel; its banner does not prove kernel_main ran.",
+  score: 300
+})]);
 const TOOLS = Object.freeze([Object.freeze({
   type: "function",
   name: "get_context",
@@ -59,8 +74,13 @@ function stepInput(overrides = {}) {
     continuationState: null,
     toolOutputs: null,
     finalizationOnly: false,
+    courseKnowledge: [],
     ...overrides
   };
+}
+
+function runtimeEvidence(output) {
+  return `[RUNTIME EVIDENCE]\n${output}`;
 }
 
 function functionCallResponse(overrides = {}) {
@@ -121,7 +141,35 @@ test("the fixed request uses Agent Plan Responses with server-owned text-only in
   assert.equal(JSON.stringify(body).includes(FAKE_KEY), false);
   assert.equal(Object.hasOwn(body, "tools"), false);
   assert.equal(Object.hasOwn(body, "tool_choice"), false);
-  assert.doesNotMatch(JSON.stringify(body), /run_test|read_code|get_context|get_code_diff|get_qemu_events|get_run_result/);
+  assert.match(body.instructions, /Students use natural language/);
+  assert.match(body.instructions, /fewest necessary provided tools/);
+});
+
+test("server instructions define natural-language routing, stopping, and evidence rules", () => {
+  for (const toolName of [
+    "get_context", "read_code", "get_code_diff", "run_test", "get_run_result", "get_qemu_events"
+  ]) {
+    assert.match(SERVER_INSTRUCTIONS, new RegExp(`Use ${toolName}`));
+  }
+  assert.match(SERVER_INSTRUCTIONS, /never need to know the internal function names/);
+  assert.match(SERVER_INSTRUCTIONS, /never ask the student to name a tool/);
+  assert.match(SERVER_INSTRUCTIONS, /Do not mention internal function names in the final/);
+  assert.match(SERVER_INSTRUCTIONS, /Explicit developer requests naming one provided tool remain valid/);
+  assert.match(SERVER_INSTRUCTIONS, /After a successful ToolResult provides enough evidence, stop/);
+  assert.match(SERVER_INSTRUCTIONS, /Do not repeat a successful tool call/);
+  assert.match(SERVER_INSTRUCTIONS, /use get_context once first instead of guessing/);
+  assert.match(SERVER_INSTRUCTIONS, /Call run_test alone in a later turn/);
+  assert.match(SERVER_INSTRUCTIONS, /events empty and returnedCount and totalMatched equal to zero is valid evidence/);
+  assert.match(SERVER_INSTRUCTIONS, /do not call it again/);
+  assert.match(SERVER_INSTRUCTIONS, /do not invent a testId, panic, exception, address, function, or execution stage/);
+  assert.match(SERVER_INSTRUCTIONS, /A QEMU timeout means execution ultimately timed out/);
+  assert.match(SERVER_INSTRUCTIONS, /it does not by itself mean QEMU never started/);
+  assert.match(SERVER_INSTRUCTIONS, /\[RUNTIME EVIDENCE\].*validated current-student evidence/);
+  assert.match(SERVER_INSTRUCTIONS, /\[COURSE KNOWLEDGE\].*stable teaching material/);
+  assert.match(SERVER_INSTRUCTIONS, /course knowledge and runtime evidence differ.*preserve the runtime facts/);
+  assert.match(SERVER_INSTRUCTIONS, /Never expose the internal context labels/);
+  assert.match(FINALIZATION_INSTRUCTIONS, /Tool calling must stop for this request/);
+  assert.match(FINALIZATION_INSTRUCTIONS, /Do not request another tool/);
 });
 
 test("the API key provider is read exactly once during client initialization", async () => {
@@ -164,6 +212,53 @@ test("step returns a final answer while keeping reasoning hidden", async () => {
     answer: "step answer",
     continuationState: null
   });
+});
+
+test("step sends only retrieved course knowledge under an explicit non-runtime label", async () => {
+  let captured;
+  const client = clientWith(async (_url, options) => {
+    captured = JSON.parse(options.body);
+    return jsonResponse(modelOutput("OpenSBI 是进入学生内核前的固件。"));
+  });
+  await client.step(stepInput({
+    message: "OpenSBI是什么？",
+    courseKnowledge: COURSE_KNOWLEDGE
+  }));
+  assert.match(captured.input, /^\[STUDENT QUESTION\]\n/);
+  assert.match(captured.input, /\n\n\[COURSE KNOWLEDGE\]\n/);
+  assert.match(captured.input, /lab1-concept-opensbi/);
+  assert.match(captured.input, /does not prove kernel_main ran/);
+  assert.doesNotMatch(captured.input, /\[RUNTIME EVIDENCE\]/);
+  assert.equal(captured.input.includes(JSON.stringify("OpenSBI是什么？")), true);
+});
+
+test("step rejects unsafe or oversized course knowledge before provider fetch", async (t) => {
+  const base = COURSE_KNOWLEDGE[0];
+  const cases = [
+    ["solution source", [{ ...base, source: "origin/lab1-solution:kernel/src/main.rs" }]],
+    ["answer-level hint", [{ ...base, hintLevel: 5 }]],
+    ["complete code", [{ ...base, content: "```rust\nfn answer() {}\n```" }]],
+    ["wrong Lab", [{ ...base, lab: "lab4" }]],
+    ["too many chunks", Array.from({ length: 6 }, (_, index) => ({
+      ...base,
+      id: `lab1-copy-${index}`
+    }))],
+    ["secret value", [{ ...base, content: `unsafe ${FAKE_KEY}` }]]
+  ];
+  for (const [name, courseKnowledge] of cases) {
+    await t.test(name, async () => {
+      let fetchCalls = 0;
+      const client = clientWith(async () => {
+        fetchCalls += 1;
+        return jsonResponse(modelOutput("unexpected"));
+      });
+      await expectModelError(
+        client.step(stepInput({ courseKnowledge })),
+        "model_internal_error"
+      );
+      assert.equal(fetchCalls, 0);
+    });
+  }
 });
 
 test("step parses one function call and ignores intermediate assistant text", async () => {
@@ -252,7 +347,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
   assert.deepEqual(bodies[1].input, [{
     type: "function_call_output",
     call_id: "call-test-1",
-    output
+    output: runtimeEvidence(output)
   }]);
   assert.equal(bodies[1].instructions, SERVER_INSTRUCTIONS);
   assert.equal(Object.hasOwn(bodies[1], "tools"), false);
@@ -281,7 +376,11 @@ test("step supports read_code as the only tool before a final answer", async () 
     {
       id: "resp-read-2",
       output: [
-        { type: "function_call_output", call_id: "call-read-1", output: codeOutput },
+        {
+          type: "function_call_output",
+          call_id: "call-read-1",
+          output: runtimeEvidence(codeOutput)
+        },
         ...modelOutput("The requested code was observed.").output
       ]
     }
@@ -374,12 +473,12 @@ test("step parses the real Ark get_context and read_code batch into one continua
     {
       type: "function_call_output",
       call_id: "call-1",
-      output: contextOutput
+      output: runtimeEvidence(contextOutput)
     },
     {
       type: "function_call_output",
       call_id: "call-2",
-      output: codeOutput
+      output: runtimeEvidence(codeOutput)
     }
   ]);
 });
@@ -448,11 +547,17 @@ test("step rejects missing, reordered, or mismatched batch outputs before contin
 test("step rejects mismatched or duplicate function_call_output echoes", async (t) => {
   const output = JSON.stringify({ ok: true });
   const cases = [
-    ["wrong call id", [{ type: "function_call_output", call_id: "wrong", output }]],
-    ["changed output", [{ type: "function_call_output", call_id: "call-test-1", output: "{\"ok\":false}" }]],
+    ["wrong call id", [{
+      type: "function_call_output", call_id: "wrong", output: runtimeEvidence(output)
+    }]],
+    ["changed output", [{
+      type: "function_call_output",
+      call_id: "call-test-1",
+      output: runtimeEvidence("{\"ok\":false}")
+    }]],
     ["duplicate echo", [
-      { type: "function_call_output", call_id: "call-test-1", output },
-      { type: "function_call_output", call_id: "call-test-1", output }
+      { type: "function_call_output", call_id: "call-test-1", output: runtimeEvidence(output) },
+      { type: "function_call_output", call_id: "call-test-1", output: runtimeEvidence(output) }
     ]]
   ];
 

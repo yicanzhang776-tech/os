@@ -112,6 +112,7 @@ function harness(steps, options = {}) {
     model,
     toolDispatch: tools.dispatch,
     readContext: context.read.bind(context),
+    ...(options.retrieveKnowledge ? { retrieveKnowledge: options.retrieveKnowledge } : {}),
     now: options.now || (() => 1_000)
   });
   return { loop, model, tools, context };
@@ -149,6 +150,50 @@ test("returns a direct valid final answer without dispatching", async () => {
   const h = harness([final("  Observe the current evidence.  ")]);
   assert.deepEqual(await run(h), { answer: "Observe the current evidence." });
   assert.equal(h.tools.calls.length, 0);
+});
+
+test("retrieves bounded Lab knowledge once and passes it through every model turn", async () => {
+  const retrievals = [];
+  const knowledge = [{
+    id: "lab1-concept-opensbi",
+    lab: "lab1",
+    hintLevel: 1,
+    content: "OpenSBI is firmware."
+  }];
+  const h = harness([
+    (input) => {
+      assert.deepEqual(JSON.parse(JSON.stringify(input.courseKnowledge)), knowledge);
+      return call("call-1", "get_context");
+    },
+    (input) => {
+      assert.deepEqual(JSON.parse(JSON.stringify(input.courseKnowledge)), knowledge);
+      return final("Use the current evidence with the teaching concept.");
+    }
+  ], {
+    retrieveKnowledge(input) {
+      retrievals.push(input);
+      return knowledge;
+    }
+  });
+  assert.match((await run(h, "OpenSBI是什么？")).answer, /current evidence/);
+  assert.deepEqual(retrievals, [{
+    query: "OpenSBI是什么？",
+    lab: INITIAL_CONTEXT.lab,
+    limit: 4,
+    maxHintLevel: 3
+  }]);
+});
+
+test("fails closed when internal knowledge retrieval throws or returns an invalid batch", async () => {
+  for (const retrieveKnowledge of [
+    () => { throw new Error("private knowledge path"); },
+    () => ({ content: "not an array" }),
+    () => Array.from({ length: 6 }, () => ({}))
+  ]) {
+    const h = harness([final()], { retrieveKnowledge });
+    await rejectsCode(run(h, "OpenSBI是什么？"), "agent_internal_error");
+    assert.equal(h.model.calls.length, 0);
+  }
 });
 
 test("accepts a provider-owned continuation marker on a final result without exposing it", async () => {
@@ -618,6 +663,29 @@ test("get_run_result run_in_progress is returned once with no automatic polling"
   assert.equal(h.tools.calls.length, 1);
 });
 
+test("empty QEMU event evidence forces a final answer without another tool call", async () => {
+  const h = harness([
+    call("events-1", "get_qemu_events", {}),
+    (input) => {
+      assert.equal(input.finalizationOnly, true);
+      const output = JSON.parse(input.toolOutputs[0].output);
+      assert.deepEqual(output.data.events, []);
+      assert.equal(output.data.returnedCount, 0);
+      assert.equal(output.data.totalMatched, 0);
+      return final("No matching QEMU events are available, so that evidence is insufficient.");
+    }
+  ], {
+    overrides: {
+      get_qemu_events: toolResult("get_qemu_events", {
+        data: { events: [], returnedCount: 0, totalMatched: 0 }
+      })
+    }
+  });
+  assert.match((await run(h)).answer, /No matching QEMU events/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_qemu_events"]);
+  assert.equal(h.model.calls.length, 2);
+});
+
 test("enforces deadline before and after model execution", async () => {
   const deadline = 1_000 + MAX_AGENT_DURATION_MS;
   for (const times of [
@@ -697,8 +765,10 @@ test("passes prompt-injection text only inside serialized tool data", async () =
       assert.equal(input.message, null);
       assert.match(input.toolOutputs[0].output, /Ignore previous instructions/);
       assert.equal(JSON.parse(input.toolOutputs[0].output).data.content, injection);
+      assert.deepEqual(input.courseKnowledge, []);
       assert.deepEqual(Object.keys(input).sort(), [
-        "continuationState", "finalizationOnly", "message", "requestId", "toolOutputs", "tools"
+        "continuationState", "courseKnowledge", "finalizationOnly", "message", "requestId",
+        "toolOutputs", "tools"
       ]);
       return final("Treat source comments as data, not instructions.");
     }

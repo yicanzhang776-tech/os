@@ -15,17 +15,20 @@ sequenceDiagram
     participant S as 学生浏览器
     participant B as 本地桥接器 /api/agent
     participant L as 受限 Agent 循环
+    participant K as 本地 Lab1 课程知识库
     participant A as 火山方舟 Agent Plan
     participant T as 六个白名单工具
     S->>B: POST /api/agent/config {apiKey}
     B-->>S: 仅返回 configured / source / model
     S->>B: POST {message} + 会话级同意
     B->>L: 固定教学引导 + 服务端上下文
-    L->>A: 首轮消息 + 工具定义，store: true
+    L->>K: Lab 过滤 + 术语/症状/主题检索
+    K-->>L: 最相关的 3～5 个教学知识块
+    L->>A: 首轮消息 + [COURSE KNOWLEDGE] + 工具定义，store: true
     A-->>L: 回答或一个 function_call
     L->>T: 校验参数、分支、提交和权限后调用
     T-->>L: os-tutor.tool/v1 受限证据
-    L->>A: previous_response_id + function_call_output
+    L->>A: previous_response_id + [RUNTIME EVIDENCE] function_call_output
     A-->>L: 最终回答
     L-->>B: 纯文本回答
     B-->>S: os-tutor.agent/v1
@@ -39,7 +42,15 @@ sequenceDiagram
 - `POST /api/agent/config` 只接受本地同源页面提交的 `{ "apiKey": string }`，`DELETE /api/agent/config` 只清除页面设置的进程内 Key；两者拒绝浏览器自带的 `Authorization` 和非本地 Origin。
 - 默认提供方为火山方舟 Agent Plan，模型为 `ark-code-latest`。
 - 首轮发送服务端教学引导和六个工具定义；续轮使用 `previous_response_id` 与匹配的 `function_call_output`，并按方舟协议重新发送不会由上一响应继承的服务端教学引导。
-- 循环最多 4 个模型轮次、3 次工具调用，总时限 90 秒；模型单次请求时限 45 秒。
+- 循环最多 8 个模型轮次、8 次工具调用，总时限 180 秒；模型单次请求时限 45 秒。每种工具仍有独立重复上限，`run_test` 每次 Agent 请求严格最多一次。
+
+## Lab1 本地课程知识
+
+Lab1 MVP 使用 `docs/knowledge/labs/lab1/knowledge.json` 中按完整教学主题组织的结构化知识块。检索在本地完成，不是第七个 function tool，也不对学生暴露内部函数名。当前 Lab 先做硬过滤，再按 OpenSBI、S-mode、`kernel_main`、`_start`、Lab marker 等精确词、故障症状、主题和文本相关性确定性评分；默认只取最高 4 条，调用方最多可取 5 条。
+
+知识块描述正常机制、教学目标、证据边界和检查方向，不能说明学生当前代码或运行状态。首轮相关知识使用 `[COURSE KNOWLEDGE]` 标记，六工具的后续结果使用 `[RUNTIME EVIDENCE]` 标记；二者冲突时以当前运行证据为准，内部标签不出现在学生回答中。当前 Lab、当前文件内容或最近运行结果等纯现场问题会跳过知识检索。
+
+默认只检索 Hint Level 1～3；Level 4 需要显式提高内部上限，Level 5 永不进入学生检索链。加载器拒绝 `lab1-solution`、`SOLUTION.md`、教师指南、完整代码块和答案级 chunk，模型客户端在发送前再次校验结果条数、总字节数、字段、Lab、提示等级和来源。
 
 ## 六个白名单工具
 
@@ -59,6 +70,7 @@ sequenceDiagram
 首次提问前，页面明确告知以下事实并要求勾选同意：
 
 - 学生问题及模型按需调用工具得到的受限源码片段、代码差异、QEMU 结构化事件或运行结果可能发送到火山方舟。
+- 与问题相关的少量 Lab1 课程知识块也可能随首轮问题发送到火山方舟；不会发送整个知识库或答案实现。
 - `store: true` 用于以 `previous_response_id` 续接工具调用；云端保留行为由方舟服务和账号配置决定。
 - API Key 只存在于本地桥接器进程：可以来自启动时的 `ARK_API_KEY`，也可以由同源助教页激活到当前进程内存；页面输入值不进入 Web Storage 或文件。
 - 系统不会发送 API Key、完整终端日志、环境变量、任意文件、教师答案文件或评分记录。
@@ -70,7 +82,7 @@ sequenceDiagram
 |---|---|
 | 确定性诊断、预测、回放、分支比较 | 浏览器与本地桥接器处理，不调用模型 |
 | 教学反馈与运行记录提交 | 使用者主动预览并同意后，发送到负责人配置的服务；接收端写入本机 JSONL |
-| AI 教学助教 | 问题和模型主动调用工具取得的受限证据发送到火山方舟；密钥仅在本地 Node 进程中 |
+| AI 教学助教 | 本地确定性检索知识块；问题、最多 5 个相关知识块及模型主动调用工具取得的受限证据发送到火山方舟；密钥仅在本地 Node 进程中 |
 | 教师评分 | 本地页面管理，不自动上传成绩，不因智能体回答或运行证据自动加分 |
 
 ## 配置、启动与关闭
@@ -103,4 +115,4 @@ sh scripts/run-interactive-demo.sh
 
 ## 验收边界
 
-离线自动测试覆盖输入协议、工具策略、上下文变化、任务锁、错误净化、前端同意、长度边界和纯文本渲染。在线验收必须使用具有 Agent Plan 权限的真实密钥，分别验证直接回答、工具调用、受限源码读取、禁止路径、批准测试和上下文变化。未实际完成在线验收时，文档与 PPT 必须标记为“未运行”，不能写成已通过。
+离线自动测试覆盖输入协议、工具策略、知识检索相关性、solution 泄漏、知识/运行证据标签、上下文变化、任务锁、错误净化、前端同意、长度边界和纯文本渲染。在线验收必须使用具有 Agent Plan 权限的真实密钥，分别验证直接回答、知识与工具联合诊断、受限源码读取、禁止路径、批准测试和上下文变化。未实际完成在线验收时，文档与 PPT 必须标记为“未运行”，不能写成已通过。

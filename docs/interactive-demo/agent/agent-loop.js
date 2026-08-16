@@ -323,6 +323,18 @@ function validateToolResult(value, expectedTool) {
   return result;
 }
 
+function requiresFinalAnswerAfterTool(toolName, toolResult) {
+  if (toolName === "run_test") {
+    return toolResult.ok && toolResult.data.status === "started";
+  }
+  return toolName === "get_qemu_events"
+    && toolResult.ok
+    && Array.isArray(toolResult.data.events)
+    && toolResult.data.events.length === 0
+    && toolResult.data.returnedCount === 0
+    && toolResult.data.totalMatched === 0;
+}
+
 function buildDispatch(toolDispatch) {
   if (!isPlainObject(toolDispatch)) {
     throw new TypeError("toolDispatch must be a plain object.");
@@ -359,6 +371,10 @@ function createAgentLoop(options = {}) {
   if (typeof isTrustedModelError !== "function") {
     throw new TypeError("isTrustedModelError must be a function.");
   }
+  const retrieveKnowledge = options.retrieveKnowledge || (() => Object.freeze([]));
+  if (typeof retrieveKnowledge !== "function") {
+    throw new TypeError("retrieveKnowledge must be a function.");
+  }
 
   return Object.freeze({
     async run(input) {
@@ -367,6 +383,20 @@ function createAgentLoop(options = {}) {
         const startedAt = now();
         if (!Number.isFinite(startedAt)) throw loopError("agent_internal_error");
         const deadline = startedAt + MAX_AGENT_DURATION_MS;
+        let courseKnowledge;
+        try {
+          courseKnowledge = safeJsonCopy(await retrieveKnowledge(Object.freeze({
+            query: initial.message,
+            lab: initial.context.lab,
+            limit: 4,
+            maxHintLevel: 3
+          })));
+        } catch (_) {
+          throw loopError("agent_internal_error");
+        }
+        if (!Array.isArray(courseKnowledge) || courseKnowledge.length > 5) {
+          throw loopError("agent_internal_error");
+        }
         const toolInvocationContext = Object.freeze({
           requestId: initial.context.requestId,
           expectedBranch: initial.context.branch,
@@ -419,7 +449,8 @@ function createAgentLoop(options = {}) {
             tools: TOOL_SCHEMAS,
             continuationState,
             toolOutputs,
-            finalizationOnly
+            finalizationOnly,
+            courseKnowledge
           }));
           checkDeadline();
           await checkContext();
@@ -495,9 +526,9 @@ function createAgentLoop(options = {}) {
               toolName: call.toolName,
               output: serialized
             }));
-            finalizationOnly = call.toolName === "run_test"
-              && toolResult.ok
-              && toolResult.data.status === "started";
+            if (requiresFinalAnswerAfterTool(call.toolName, toolResult)) {
+              finalizationOnly = true;
+            }
           }
           continuationState = step.continuationState;
           toolOutputs = Object.freeze(batchOutputs);

@@ -41,6 +41,11 @@ function toolResult(tool, options = {}) {
   };
 }
 
+function parseRuntimeEvidence(output) {
+  assert.match(output, /^\[RUNTIME EVIDENCE\]\n/);
+  return JSON.parse(output.slice("[RUNTIME EVIDENCE]\n".length));
+}
+
 function createHarness(steps, overrides = {}) {
   const modelCalls = [];
   const toolCalls = [];
@@ -79,8 +84,8 @@ function createHarness(steps, overrides = {}) {
   };
 }
 
-function invoke(handler) {
-  return handler({ message: "hello", invocationContext: INVOCATION_CONTEXT });
+function invoke(handler, message = "hello") {
+  return handler({ message, invocationContext: INVOCATION_CONTEXT });
 }
 
 function jsonResponse(value) {
@@ -195,9 +200,9 @@ test("real Ark batch fixture completes get_context and read_code through the han
   assert.equal(Object.hasOwn(requestBodies[0], "previous_response_id"), false);
   assert.equal(requestBodies[1].previous_response_id, "resp-1");
   assert.equal(requestBodies[1].input[0].call_id, "call-1");
-  assert.equal(JSON.parse(requestBodies[1].input[0].output).tool, "get_context");
+  assert.equal(parseRuntimeEvidence(requestBodies[1].input[0].output).tool, "get_context");
   assert.equal(requestBodies[1].input[1].call_id, "call-2");
-  assert.equal(JSON.parse(requestBodies[1].input[1].output).tool, "read_code");
+  assert.equal(parseRuntimeEvidence(requestBodies[1].input[1].output).tool, "read_code");
 });
 
 test("a safe tool failure reaches the model and can produce a final answer", async () => {
@@ -215,6 +220,139 @@ test("a safe tool failure reaches the model and can produce a final answer", asy
     read_code: toolResult("read_code", { ok: false })
   });
   assert.match((await invoke(h.handler)).answer, /unavailable/);
+});
+
+test("natural-language student requests dispatch only the necessary model-selected tools", async (t) => {
+  const routes = [
+    {
+      name: "CASE 1 current experiment",
+      message: "我现在做到哪个实验了？",
+      calls: [{ toolName: "get_context", arguments: {} }]
+    },
+    {
+      name: "CASE 2 explain named source",
+      message: "帮我看看 kernel/src/main.rs 是干什么的。",
+      calls: [{ toolName: "read_code", arguments: { path: "kernel/src/main.rs" } }]
+    },
+    {
+      name: "CASE 3 diagnose recent changes",
+      message: "我刚改了代码，现在为什么跑不起来？",
+      calls: [{ toolName: "get_code_diff", arguments: { lab: "lab4" } }]
+    },
+    {
+      name: "CASE 4 run current experiment",
+      message: "我改好了，帮我运行一下。",
+      calls: [
+        { toolName: "get_context", arguments: {} },
+        {
+          toolName: "run_test",
+          arguments: { testId: "lab4-starter-qemu", lab: "lab4" }
+        }
+      ],
+      overrides: {
+        run_test: toolResult("run_test", { data: { status: "started", runId: "run-1" } })
+      },
+      finalizationOnly: true
+    },
+    {
+      name: "CASE 5 explain latest failure",
+      message: "刚才实验为什么失败？",
+      calls: [{ toolName: "get_run_result", arguments: {} }]
+    },
+    {
+      name: "CASE 6 locate last execution and panic",
+      message: "程序最后运行到哪里了？有没有 panic？",
+      calls: [{ toolName: "get_qemu_events", arguments: {} }]
+    },
+    {
+      name: "CASE 8 teaching diagnosis",
+      message: "我的 Lab1 为什么过不了？不要直接给我答案。",
+      calls: [
+        { toolName: "get_context", arguments: {} },
+        { toolName: "get_code_diff", arguments: { lab: "lab1" } },
+        { toolName: "get_run_result", arguments: { lab: "lab1" } }
+      ]
+    },
+    {
+      name: "CASE 9 explicit tool compatibility",
+      message: "请只调用 get_context 检查当前实验环境。",
+      calls: [{ toolName: "get_context", arguments: {} }],
+      explicit: true
+    }
+  ];
+
+  for (const route of routes) {
+    await t.test(route.name, async () => {
+      const steps = route.calls.map((call, index) => (input) => {
+        assert.equal(input.message, index === 0 ? route.message : null);
+        return {
+          kind: "tool_calls",
+          calls: [{
+            callId: `route-${index + 1}`,
+            toolName: call.toolName,
+            arguments: call.arguments
+          }],
+          continuationState: Object.freeze({ route: route.name, index })
+        };
+      });
+      steps.push((input) => {
+        assert.equal(input.message, null);
+        assert.equal(input.finalizationOnly, route.finalizationOnly === true);
+        return {
+          kind: "final",
+          answer: "已根据最少必要的真实证据给出教学提示。",
+          continuationState: null
+        };
+      });
+      const h = createHarness(steps, route.overrides || {});
+      const result = await invoke(h.handler, route.message);
+
+      assert.deepEqual(h.toolCalls.map((call) => call.name),
+        route.calls.map((call) => call.toolName));
+      assert.equal(h.modelCalls.length, route.calls.length + 1);
+      assert.equal(h.modelCalls[0].message, route.message);
+      assert.equal(h.modelCalls[0].tools.length, 6);
+      if (!route.explicit) {
+        assert.equal(TOOL_SCHEMA_NAMES.some((name) => route.message.includes(name)), false);
+      }
+      assert.equal(TOOL_SCHEMA_NAMES.some((name) => result.answer.includes(name)), false);
+    });
+  }
+});
+
+test("CASE 7 accepts empty QEMU events and finalizes without retrying", async () => {
+  const message = "程序最后运行到哪里了？有没有 panic？";
+  const h = createHarness([
+    (input) => {
+      assert.equal(input.message, message);
+      return {
+        kind: "tool_calls",
+        calls: [{ callId: "events-1", toolName: "get_qemu_events", arguments: {} }],
+        continuationState: Object.freeze({ route: "empty-events" })
+      };
+    },
+    (input) => {
+      assert.equal(input.finalizationOnly, true);
+      const output = JSON.parse(input.toolOutputs[0].output);
+      assert.deepEqual(output.data.events, []);
+      assert.equal(output.data.returnedCount, 0);
+      assert.equal(output.data.totalMatched, 0);
+      return {
+        kind: "final",
+        answer: "当前没有匹配到可用 QEMU 事件，因此这一部分证据不足。",
+        continuationState: null
+      };
+    }
+  ], {
+    get_qemu_events: toolResult("get_qemu_events", {
+      data: { events: [], returnedCount: 0, totalMatched: 0 }
+    })
+  });
+
+  const result = await invoke(h.handler, message);
+  assert.match(result.answer, /没有匹配到可用 QEMU 事件/);
+  assert.deepEqual(h.toolCalls.map((call) => call.name), ["get_qemu_events"]);
+  assert.equal(h.modelCalls.length, 2);
 });
 
 test("every trusted model error maps to the same fixed Agent API code", async (t) => {

@@ -42,6 +42,22 @@ test("uses strict object parameter schemas without provider strict mode", () => 
   }
 });
 
+test("descriptions guide minimal natural-language tool selection", () => {
+  assert.match(schema("get_context").description, /current Lab, progress, branch, workspace/);
+  assert.match(schema("get_context").description, /usually sufficient/);
+  assert.match(schema("read_code").description, /named file, function, or current implementation/);
+  assert.match(schema("read_code").description, /avoid unrelated context, diff, run, or event tools/);
+  assert.match(schema("get_code_diff").description, /recent changes/);
+  assert.match(schema("get_run_result").description, /latest or specified run/);
+  assert.match(schema("get_run_result").description, /do not reread it/);
+  assert.match(schema("get_qemu_events").description, /where execution stopped/);
+  assert.match(schema("get_qemu_events").description, /empty successful event list is a valid result/);
+  assert.match(schema("run_test").description, /exactly once/);
+  assert.match(schema("run_test").description, /trusted Lab and variant with get_context first/);
+  assert.match(schema("run_test").description, /Never batch this action with read tools/);
+  assert.match(schema("run_test").description, /report status and runId without polling/);
+});
+
 test("matches the existing get_context and read_code input contracts", () => {
   assert.deepEqual(schema("get_context").parameters.properties, {});
   assert.deepEqual(schema("get_context").parameters.required, []);
