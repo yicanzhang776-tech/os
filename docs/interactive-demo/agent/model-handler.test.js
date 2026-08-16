@@ -4,7 +4,11 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { AgentApiError } = require("./api");
 const { AgentLoopError, createAgentLoop } = require("./agent-loop");
-const { ModelClientError, isTrustedModelClientError } = require("./model-client");
+const {
+  ModelClientError,
+  createArkModelClient,
+  isTrustedModelClientError
+} = require("./model-client");
 const { createProductionAgentHandler } = require("./model-handler");
 const { TOOL_SCHEMA_NAMES } = require("./tool-schemas");
 
@@ -79,6 +83,13 @@ function invoke(handler) {
   return handler({ message: "hello", invocationContext: INVOCATION_CONTEXT });
 }
 
+function jsonResponse(value) {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
 test("the production handler returns a final answer through the Agent Loop", async () => {
   const h = createHarness([{ kind: "final", answer: "safe answer", continuationState: null }]);
   assert.deepEqual(await invoke(h.handler), { answer: "safe answer" });
@@ -112,6 +123,93 @@ test("one fake tool call is dispatched and followed by a final answer", async ()
     expectedBranch: INVOCATION_CONTEXT.branch,
     expectedCommit: INVOCATION_CONTEXT.commit
   });
+});
+
+test("fake Ark responses complete get_context to read_code to final through the handler", async () => {
+  const requestBodies = [];
+  const fetchImpl = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    requestBodies.push(body);
+    if (requestBodies.length === 1) {
+      return jsonResponse({
+        id: "resp-1",
+        output: [{
+          type: "function_call",
+          name: "get_context",
+          call_id: "call-1",
+          arguments: "{}"
+        }]
+      });
+    }
+    if (requestBodies.length === 2) {
+      return jsonResponse({
+        id: "resp-2",
+        output: [
+          { ...body.input[0] },
+          {
+            type: "function_call",
+            name: "read_code",
+            call_id: "call-2",
+            arguments: "{\"path\":\"kernel/src/lib.rs\"}"
+          }
+        ]
+      });
+    }
+    return jsonResponse({
+      id: "resp-3",
+      output: [
+        { ...body.input[0] },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{
+            type: "output_text",
+            text: "Use the observed function as the next investigation point."
+          }]
+        }
+      ]
+    });
+  };
+  const model = createArkModelClient({
+    fetchImpl,
+    apiKeyProvider: () => "fake-handler-key-123"
+  });
+  const toolCalls = [];
+  const toolDispatch = {};
+  for (const name of TOOL_SCHEMA_NAMES) {
+    toolDispatch[name] = async (args, context) => {
+      toolCalls.push({ name, args, context });
+      return toolResult(name, {
+        data: name === "read_code"
+          ? { path: args.path, content: "pub fn demo() {}" }
+          : { branch: INVOCATION_CONTEXT.branch, commit: INVOCATION_CONTEXT.commit }
+      });
+    };
+  }
+  const agentLoop = createAgentLoop({
+    model,
+    toolDispatch,
+    readContext: async () => ({
+      branch: INVOCATION_CONTEXT.branch,
+      commit: INVOCATION_CONTEXT.commit
+    }),
+    now: () => 1_000,
+    isTrustedModelError: isTrustedModelClientError
+  });
+  const handler = createProductionAgentHandler({ agentLoop });
+
+  assert.deepEqual(await invoke(handler), {
+    answer: "Use the observed function as the next investigation point."
+  });
+  assert.deepEqual(toolCalls.map((entry) => entry.name), ["get_context", "read_code"]);
+  assert.equal(requestBodies.length, 3);
+  assert.equal(Object.hasOwn(requestBodies[0], "previous_response_id"), false);
+  assert.equal(requestBodies[1].previous_response_id, "resp-1");
+  assert.equal(requestBodies[1].input[0].call_id, "call-1");
+  assert.equal(JSON.parse(requestBodies[1].input[0].output).tool, "get_context");
+  assert.equal(requestBodies[2].previous_response_id, "resp-2");
+  assert.equal(requestBodies[2].input[0].call_id, "call-2");
+  assert.equal(JSON.parse(requestBodies[2].input[0].output).tool, "read_code");
 });
 
 test("a safe tool failure reaches the model and can produce a final answer", async () => {

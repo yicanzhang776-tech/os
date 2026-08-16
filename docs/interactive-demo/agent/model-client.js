@@ -337,12 +337,13 @@ function parseFunctionCall(item, responseId) {
   });
 }
 
-function parseStepResponse(value, apiKey) {
+function parseStepResponse(value, apiKey, expectedToolOutput = null) {
   if (!isPlainObject(value) || !Array.isArray(value.output)) {
     throw modelError("model_invalid_response");
   }
   const parts = [];
   const calls = [];
+  let outputEchoes = 0;
   for (const item of value.output) {
     if (!isPlainObject(item) || typeof item.type !== "string") {
       throw modelError("model_invalid_response");
@@ -354,6 +355,16 @@ function parseStepResponse(value, apiKey) {
     }
     if (item.type === "function_call") {
       calls.push(item);
+      continue;
+    }
+    if (item.type === "function_call_output") {
+      outputEchoes += 1;
+      if (outputEchoes > 1
+        || expectedToolOutput === null
+        || item.call_id !== expectedToolOutput.callId
+        || item.output !== expectedToolOutput.output) {
+        throw modelError("model_invalid_response");
+      }
       continue;
     }
     throw modelError("model_invalid_response");
@@ -506,7 +517,7 @@ function createArkModelClient(options = {}) {
       } else {
         body.tools = validated.tools;
       }
-      return parseStepResponse(await request(body), apiKey);
+      return parseStepResponse(await request(body), apiKey, validated.toolOutput);
     }
   });
 }
