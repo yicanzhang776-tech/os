@@ -56,6 +56,10 @@ function waitForMessage(socket, predicate) {
 
 test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
   const source = fs.readFileSync(serverPath, "utf8");
+  assert.match(source, /const \{[\s\S]*?createQemuArguments,[\s\S]*?resolveOpenSbiFirmware[\s\S]*?\} = require\("\.\/qemu-firmware"\)/);
+  assert.match(source, /const openSbiFirmware = resolveOpenSbiFirmware\(\)/);
+  assert.match(source, /qemu: \(\) => streamProcess\([\s\S]*?qemuCommand,[\s\S]*?createQemuArguments\(\{ firmware: openSbiFirmware, kernel \}\)/);
+  assert.doesNotMatch(source, /"-bios", "default"/);
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
   assert.match(source, /const \{ createAgentConfigApi \} = require\("\.\/agent\/config-api"\)/);
   assert.match(source, /const \{ createAgentRuntime \} = require\("\.\/agent\/runtime"\)/);
@@ -105,6 +109,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   delete childEnv.ARK_BASE_URL;
   delete childEnv.ARK_MODEL;
   delete childEnv.ARK_LIVE_TEST;
+  delete childEnv.OPENSBI_FIRMWARE;
   const child = spawn(process.execPath, [serverPath, "--stdin", "--port", String(port)], {
     cwd: repoDir,
     env: childEnv,

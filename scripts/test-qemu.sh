@@ -6,6 +6,8 @@ target_dir="${CARGO_TARGET_DIR:-$repo/target}"
 kernel="$target_dir/riscv64gc-unknown-none-elf/debug/ai-os-kernel"
 qemu="${QEMU:-qemu-system-riscv64}"
 stdbuf_command="${QEMU_STDBUF_COMMAND:-stdbuf}"
+ubuntu_opensbi_firmware="/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin"
+opensbi_firmware=""
 mode="solution"
 name="qemu"
 marker=""
@@ -91,6 +93,18 @@ fi
 if [[ ! "$timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
     echo "QEMU_TIMEOUT_SECONDS must be a positive integer" >&2
     exit 2
+fi
+
+if [[ "${OPENSBI_FIRMWARE+x}" == "x" ]]; then
+    if [[ -z "$OPENSBI_FIRMWARE" || ! -f "$OPENSBI_FIRMWARE" ]]; then
+        echo "OPENSBI_FIRMWARE must reference an existing firmware file." >&2
+        exit 2
+    fi
+    opensbi_firmware="$OPENSBI_FIRMWARE"
+elif [[ -f "$ubuntu_opensbi_firmware" ]]; then
+    opensbi_firmware="$ubuntu_opensbi_firmware"
+else
+    opensbi_firmware="default"
 fi
 
 if [[ "$log" != /* ]]; then
@@ -232,7 +246,7 @@ qemu_command=(
     "$qemu"
     -machine virt
     -nographic
-    -bios default
+    -bios "$opensbi_firmware"
     -kernel "$kernel"
 )
 

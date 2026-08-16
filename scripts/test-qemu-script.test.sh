@@ -7,6 +7,8 @@ tmp="$(mktemp -d)"
 fake_bin="$tmp/bin"
 fake_target="$tmp/target"
 mkdir -p "$fake_bin" "$fake_target"
+fake_firmware="$tmp/custom fw_jump.bin"
+: >"$fake_firmware"
 
 cleanup() {
     rm -rf -- "$tmp"
@@ -31,6 +33,10 @@ EOF
 cat >"$fake_bin/fake-qemu" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [[ -n "${FAKE_QEMU_ARGS_FILE:-}" ]]; then
+    printf '%s\n' "$@" >"$FAKE_QEMU_ARGS_FILE"
+fi
 
 case "$FAKE_QEMU_SCENARIO" in
     marker-running)
@@ -83,10 +89,12 @@ run_case() {
     local marker="$5"
     local required="$6"
     local stdbuf_command="${7:-stdbuf}"
+    local opensbi_setting="${8-__unset__}"
     local log="$tmp/$case_name.log"
     local output="$tmp/$case_name.output"
     local errors="$tmp/$case_name.errors"
     local child_pid_file="$tmp/$case_name.child.pid"
+    local qemu_args_file="$tmp/$case_name.qemu.args"
     local status
     local args=(--name "$case_name" --marker "$marker" --mode "$mode" --log "$log")
 
@@ -95,17 +103,25 @@ run_case() {
     fi
 
     set +e
-    PATH="$fake_bin:$PATH" \
-        CARGO_TARGET_DIR="$fake_target" \
-        FAKE_KERNEL_PATH="$fake_target/riscv64gc-unknown-none-elf/debug/ai-os-kernel" \
-        QEMU="$fake_bin/fake-qemu" \
-        QEMU_STDBUF_COMMAND="$stdbuf_command" \
-        QEMU_TIMEOUT_SECONDS=2 \
-        FAKE_QEMU_SCENARIO="$scenario" \
-        FAKE_MARKER="$marker" \
-        FAKE_REQUIRED_TEXT="$required" \
-        FAKE_CHILD_PID_FILE="$child_pid_file" \
-        bash "$script" "${args[@]}" >"$output" 2>"$errors"
+    (
+        if [[ "$opensbi_setting" == "__unset__" ]]; then
+            unset OPENSBI_FIRMWARE
+        else
+            export OPENSBI_FIRMWARE="$opensbi_setting"
+        fi
+        PATH="$fake_bin:$PATH" \
+            CARGO_TARGET_DIR="$fake_target" \
+            FAKE_KERNEL_PATH="$fake_target/riscv64gc-unknown-none-elf/debug/ai-os-kernel" \
+            QEMU="$fake_bin/fake-qemu" \
+            QEMU_STDBUF_COMMAND="$stdbuf_command" \
+            QEMU_TIMEOUT_SECONDS=2 \
+            FAKE_QEMU_SCENARIO="$scenario" \
+            FAKE_MARKER="$marker" \
+            FAKE_REQUIRED_TEXT="$required" \
+            FAKE_CHILD_PID_FILE="$child_pid_file" \
+            FAKE_QEMU_ARGS_FILE="$qemu_args_file" \
+            bash "$script" "${args[@]}" >"$output" 2>"$errors"
+    )
     status=$?
     set -e
 
@@ -126,9 +142,48 @@ run_case() {
     fi
 }
 
+assert_bios_value() {
+    local case_name="$1"
+    local expected="$2"
+    local args_file="$tmp/$case_name.qemu.args"
+    local qemu_args=()
+    local index
+
+    mapfile -t qemu_args <"$args_file"
+    for ((index = 0; index + 1 < ${#qemu_args[@]}; index += 1)); do
+        if [[ "${qemu_args[$index]}" == "-bios" ]]; then
+            if [[ "${qemu_args[$((index + 1))]}" != "$expected" ]]; then
+                echo "$case_name used -bios ${qemu_args[$((index + 1))]}, expected $expected" >&2
+                exit 1
+            fi
+            return 0
+        fi
+    done
+    echo "$case_name did not pass -bios to QEMU" >&2
+    exit 1
+}
+
 run_case marker-cleanup 0 marker-running solution '[Lab7] PASS' '[OS_DEMO] lab=lab7 step=file-close'
 grep -Fq -- '[Lab7] PASS' "$tmp/marker-cleanup.log"
 grep -Fq -- '[OS_DEMO] lab=lab7 step=file-close' "$tmp/marker-cleanup.log"
+if [[ -f /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin ]]; then
+    assert_bios_value marker-cleanup /usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.bin
+else
+    assert_bios_value marker-cleanup default
+fi
+
+run_case explicit-firmware 0 marker-running solution '[Lab7] PASS' \
+    '[OS_DEMO] lab=lab7 step=file-close' stdbuf "$fake_firmware"
+assert_bios_value explicit-firmware "$fake_firmware"
+
+missing_firmware="$tmp/missing-fw_jump.bin"
+run_case missing-explicit-firmware 2 marker-running solution '[Lab7] PASS' '' stdbuf "$missing_firmware"
+grep -Fq -- 'OPENSBI_FIRMWARE must reference an existing firmware file.' \
+    "$tmp/missing-explicit-firmware.errors"
+if [[ -f "$tmp/missing-explicit-firmware.qemu.args" ]]; then
+    echo "invalid OPENSBI_FIRMWARE unexpectedly started QEMU" >&2
+    exit 1
+fi
 
 run_case timeout-without-marker 1 no-marker solution '[Lab7] PASS' ''
 grep -Fq -- 'timed out' "$tmp/timeout-without-marker.errors"
@@ -141,6 +196,7 @@ PATH="$fake_bin:$PATH" \
     CARGO_TARGET_DIR="$fake_target" \
     FAKE_KERNEL_PATH="$fake_target/riscv64gc-unknown-none-elf/debug/ai-os-kernel" \
     FAKE_CARGO_FAIL=1 \
+    OPENSBI_FIRMWARE="$fake_firmware" \
     QEMU="$fake_bin/fake-qemu" \
     bash "$script" --name build-failure --marker '[Lab7] PASS' --log "$tmp/build failure.log" \
     >"$tmp/build-failure.output" 2>"$tmp/build-failure.errors"

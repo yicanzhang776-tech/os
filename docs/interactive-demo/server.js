@@ -37,6 +37,10 @@ const {
   resolveLegacyPanicEvent,
   terminateChildProcess
 } = require("./agent/run-store");
+const {
+  createQemuArguments,
+  resolveOpenSbiFirmware
+} = require("./qemu-firmware");
 
 const publicDir = __dirname;
 const repoDir = path.resolve(__dirname, "..", "..");
@@ -48,6 +52,7 @@ const host = "127.0.0.1";
 const rustTarget = process.env.OS_DEMO_TARGET || "riscv64gc-unknown-none-elf";
 const cargoCommand = process.env.CARGO || "cargo";
 const qemuCommand = process.env.QEMU || "qemu-system-riscv64";
+const openSbiFirmware = resolveOpenSbiFirmware();
 const clients = new Set();
 const eventHistory = [];
 const consoleHistory = [];
@@ -565,7 +570,7 @@ function startKernelRun(options = {}) {
     ),
     qemu: () => streamProcess(
       qemuCommand,
-      ["-machine", "virt", "-nographic", "-bios", "default", "-kernel", kernel],
+      createQemuArguments({ firmware: openSbiFirmware, kernel }),
       "QEMU",
       { parseKernel: true, channel: "serial" }
     )
