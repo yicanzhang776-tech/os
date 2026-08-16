@@ -32,7 +32,7 @@ as before.
 HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
 cargo test -p os-demo-event --target "$HOST_TARGET"
 cargo doc -p os-demo-event --no-deps
-cargo package -p os-demo-event --allow-dirty
+cargo package -p os-demo-event
 ```
 
 `cargo publish` is intentionally not part of the project workflow.

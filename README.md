@@ -13,6 +13,7 @@
 ## 提交文档入口
 
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
+- Ubuntu/Linux 本地复现与测试：[docs/testing.md](docs/testing.md)
 - 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
@@ -20,6 +21,7 @@
 - AI 协作记录：[docs/ai-collaboration.md](docs/ai-collaboration.md)
 - 完整实验教学资料（评委/教师入口）：[docs/labs/README.md](docs/labs/README.md)
 - 教师验收与评分工具：[docs/teacher-grading/README.md](docs/teacher-grading/README.md)
+- MIT xv6、rCore/LearningOS 与本项目三方比较：[docs/three-way-comparison.md](docs/three-way-comparison.md)
 
 ## 如何阅读当前分支
 
@@ -192,7 +194,7 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
 cargo test -p os-demo-event --target "$HOST_TARGET"
 cargo doc -p os-demo-event --no-deps
-cargo package -p os-demo-event --allow-dirty
+cargo package -p os-demo-event
 ```
 
 `cargo package` 只检查打包条件；本项目不会在验收流程中自动执行 `cargo publish`。
