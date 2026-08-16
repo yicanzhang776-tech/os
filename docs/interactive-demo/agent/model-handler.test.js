@@ -104,15 +104,13 @@ test("one fake tool call is dispatched and followed by a final answer", async ()
   const continuationState = Object.freeze({ opaque: "provider-owned" });
   const h = createHarness([
     {
-      kind: "tool_call",
-      callId: "call-1",
-      toolName: "get_context",
-      arguments: {},
+      kind: "tool_calls",
+      calls: [{ callId: "call-1", toolName: "get_context", arguments: {} }],
       continuationState
     },
     (input) => {
       assert.equal(input.continuationState, continuationState);
-      assert.equal(JSON.parse(input.toolOutput.output).tool, "get_context");
+      assert.equal(JSON.parse(input.toolOutputs[0].output).tool, "get_context");
       return { kind: "final", answer: "Observed answer.", continuationState: null };
     }
   ]);
@@ -125,7 +123,7 @@ test("one fake tool call is dispatched and followed by a final answer", async ()
   });
 });
 
-test("fake Ark responses complete get_context to read_code to final through the handler", async () => {
+test("real Ark batch fixture completes get_context and read_code through the handler", async () => {
   const requestBodies = [];
   const fetchImpl = async (_url, options) => {
     const body = JSON.parse(options.body);
@@ -133,41 +131,32 @@ test("fake Ark responses complete get_context to read_code to final through the 
     if (requestBodies.length === 1) {
       return jsonResponse({
         id: "resp-1",
-        output: [{
-          type: "function_call",
-          name: "get_context",
-          call_id: "call-1",
-          arguments: "{}"
-        }]
-      });
-    }
-    if (requestBodies.length === 2) {
-      return jsonResponse({
-        id: "resp-2",
         output: [
-          { ...body.input[0] },
+          {
+            type: "function_call",
+            name: "get_context",
+            call_id: "call-1",
+            arguments: "{}"
+          },
           {
             type: "function_call",
             name: "read_code",
             call_id: "call-2",
-            arguments: "{\"path\":\"kernel/src/lib.rs\"}"
+            arguments: "{\"path\":\"kernel/src/main.rs\"}"
           }
         ]
       });
     }
     return jsonResponse({
-      id: "resp-3",
-      output: [
-        { ...body.input[0] },
-        {
-          type: "message",
-          role: "assistant",
-          content: [{
-            type: "output_text",
-            text: "Use the observed function as the next investigation point."
-          }]
-        }
-      ]
+      id: "resp-2",
+      output: [{
+        type: "message",
+        role: "assistant",
+        content: [{
+          type: "output_text",
+          text: "Use the observed function as the next investigation point."
+        }]
+      }]
     });
   };
   const model = createArkModelClient({
@@ -202,27 +191,24 @@ test("fake Ark responses complete get_context to read_code to final through the 
     answer: "Use the observed function as the next investigation point."
   });
   assert.deepEqual(toolCalls.map((entry) => entry.name), ["get_context", "read_code"]);
-  assert.equal(requestBodies.length, 3);
+  assert.equal(requestBodies.length, 2);
   assert.equal(Object.hasOwn(requestBodies[0], "previous_response_id"), false);
   assert.equal(requestBodies[1].previous_response_id, "resp-1");
   assert.equal(requestBodies[1].input[0].call_id, "call-1");
   assert.equal(JSON.parse(requestBodies[1].input[0].output).tool, "get_context");
-  assert.equal(requestBodies[2].previous_response_id, "resp-2");
-  assert.equal(requestBodies[2].input[0].call_id, "call-2");
-  assert.equal(JSON.parse(requestBodies[2].input[0].output).tool, "read_code");
+  assert.equal(requestBodies[1].input[1].call_id, "call-2");
+  assert.equal(JSON.parse(requestBodies[1].input[1].output).tool, "read_code");
 });
 
 test("a safe tool failure reaches the model and can produce a final answer", async () => {
   const h = createHarness([
     {
-      kind: "tool_call",
-      callId: "call-1",
-      toolName: "read_code",
-      arguments: { path: "forbidden" },
+      kind: "tool_calls",
+      calls: [{ callId: "call-1", toolName: "read_code", arguments: { path: "forbidden" } }],
       continuationState: Object.freeze({ opaque: true })
     },
     (input) => {
-      assert.equal(JSON.parse(input.toolOutput.output).error.code, "invalid_tool_input");
+      assert.equal(JSON.parse(input.toolOutputs[0].output).error.code, "invalid_tool_input");
       return { kind: "final", answer: "The requested path is unavailable." };
     }
   ], {
@@ -258,10 +244,8 @@ test("every trusted model error maps to the same fixed Agent API code", async (t
 
 test("unknown tools and model protocol failures keep a safe diagnostic code", async () => {
   const h = createHarness([{
-    kind: "tool_call",
-    callId: "call-1",
-    toolName: "shell",
-    arguments: {},
+    kind: "tool_calls",
+    calls: [{ callId: "call-1", toolName: "shell", arguments: {} }],
     continuationState: null
   }]);
   await assert.rejects(invoke(h.handler), (error) => {
@@ -277,7 +261,8 @@ test("trusted orchestration limits keep their fixed public codes", async () => {
     "agent_deadline_exceeded",
     "agent_loop_limit",
     "agent_protocol_error",
-    "agent_tool_output_too_large"
+    "agent_tool_output_too_large",
+    "mixed_action_batch_unsupported"
   ]) {
     const branded = new AgentLoopError(code);
     const handler = createProductionAgentHandler({ agentLoop: { run: async () => { throw branded; } } });

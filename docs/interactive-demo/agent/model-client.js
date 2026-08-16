@@ -166,8 +166,12 @@ function cloneToolSchemas(value) {
   return tools;
 }
 
-function createContinuationState(previousResponseId, expectedCallId, expectedToolName) {
-  const state = Object.freeze({ previousResponseId, expectedCallId, expectedToolName });
+function createContinuationState(previousResponseId, calls) {
+  const expectedCalls = Object.freeze(calls.map((call) => Object.freeze({
+    callId: call.callId,
+    toolName: call.toolName
+  })));
+  const state = Object.freeze({ previousResponseId, expectedCalls });
   trustedContinuationStates.add(state);
   return state;
 }
@@ -179,7 +183,7 @@ function validateContinuationState(value) {
   return value;
 }
 
-function validateToolOutput(value, continuationState, apiKey) {
+function validateToolOutput(value, expectedCall, apiKey) {
   if (!isPlainObject(value)
     || Object.keys(value).some((field) => !["callId", "toolName", "output"].includes(field))
     || !safeIdentifier(value.callId, 128)
@@ -187,8 +191,8 @@ function validateToolOutput(value, continuationState, apiKey) {
     || typeof value.output !== "string"
     || Buffer.byteLength(value.output, "utf8") > MAX_TOOL_OUTPUT_BYTES
     || value.output.includes(apiKey)
-    || value.callId !== continuationState.expectedCallId
-    || value.toolName !== continuationState.expectedToolName) {
+    || value.callId !== expectedCall.callId
+    || value.toolName !== expectedCall.toolName) {
     throw modelError("model_invalid_response");
   }
   try {
@@ -199,9 +203,29 @@ function validateToolOutput(value, continuationState, apiKey) {
   return value;
 }
 
+function validateToolOutputs(value, continuationState, apiKey) {
+  const keys = Array.isArray(value) ? Object.keys(value) : [];
+  if (!Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Array.prototype
+    || value.length !== continuationState.expectedCalls.length
+    || value.length < 1
+    || keys.length !== value.length
+    || keys.some((key, index) => key !== String(index))) {
+    throw modelError("model_invalid_response");
+  }
+  return Object.freeze(value.map((output, index) => {
+    const validated = validateToolOutput(output, continuationState.expectedCalls[index], apiKey);
+    return Object.freeze({
+      callId: validated.callId,
+      toolName: validated.toolName,
+      output: validated.output
+    });
+  }));
+}
+
 function validateStepInput(value, apiKey) {
   const fields = [
-    "requestId", "message", "tools", "continuationState", "toolOutput", "finalizationOnly"
+    "requestId", "message", "tools", "continuationState", "toolOutputs", "finalizationOnly"
   ];
   if (!isPlainObject(value) || Object.keys(value).some((field) => !fields.includes(field))) {
     throw modelError("model_internal_error");
@@ -210,13 +234,13 @@ function validateStepInput(value, apiKey) {
   const tools = cloneToolSchemas(value.tools);
   if (typeof value.finalizationOnly !== "boolean") throw modelError("model_internal_error");
 
-  if (value.continuationState === null && value.toolOutput === null) {
+  if (value.continuationState === null && value.toolOutputs === null) {
     return {
       requestId,
       tools,
       message: validateMessage(value.message),
       continuationState: null,
-      toolOutput: null,
+      toolOutputs: null,
       finalizationOnly: value.finalizationOnly
     };
   }
@@ -227,7 +251,7 @@ function validateStepInput(value, apiKey) {
     tools,
     message: null,
     continuationState,
-    toolOutput: validateToolOutput(value.toolOutput, continuationState, apiKey),
+    toolOutputs: validateToolOutputs(value.toolOutputs, continuationState, apiKey),
     finalizationOnly: value.finalizationOnly
   };
 }
@@ -312,9 +336,8 @@ function validateAnswer(parts, apiKey) {
   return answer;
 }
 
-function parseFunctionCall(item, responseId) {
-  if (!safeIdentifier(responseId, 200)
-    || !isPlainObject(item)
+function parseFunctionCall(item) {
+  if (!isPlainObject(item)
     || !TOOL_NAME_PATTERN.test(item.name || "")
     || !safeIdentifier(item.call_id, 128)
     || typeof item.arguments !== "string"
@@ -329,21 +352,19 @@ function parseFunctionCall(item, responseId) {
   }
   if (!isPlainObject(args)) throw modelError("model_invalid_response");
   return Object.freeze({
-    kind: "tool_call",
     callId: item.call_id,
     toolName: item.name,
-    arguments: args,
-    continuationState: createContinuationState(responseId, item.call_id, item.name)
+    arguments: args
   });
 }
 
-function parseStepResponse(value, apiKey, expectedToolOutput = null) {
+function parseStepResponse(value, apiKey, expectedToolOutputs = null) {
   if (!isPlainObject(value) || !Array.isArray(value.output)) {
     throw modelError("model_invalid_response");
   }
   const parts = [];
   const calls = [];
-  let outputEchoes = 0;
+  const outputEchoes = new Set();
   for (const item of value.output) {
     if (!isPlainObject(item) || typeof item.type !== "string") {
       throw modelError("model_invalid_response");
@@ -358,19 +379,26 @@ function parseStepResponse(value, apiKey, expectedToolOutput = null) {
       continue;
     }
     if (item.type === "function_call_output") {
-      outputEchoes += 1;
-      if (outputEchoes > 1
-        || expectedToolOutput === null
-        || item.call_id !== expectedToolOutput.callId
-        || item.output !== expectedToolOutput.output) {
+      const expected = expectedToolOutputs?.find((output) => output.callId === item.call_id);
+      if (!expected
+        || outputEchoes.has(item.call_id)
+        || item.output !== expected.output) {
         throw modelError("model_invalid_response");
       }
+      outputEchoes.add(item.call_id);
       continue;
     }
     throw modelError("model_invalid_response");
   }
-  if (calls.length > 1) throw modelError("model_invalid_response");
-  if (calls.length === 1) return parseFunctionCall(calls[0], value.id);
+  if (calls.length > 0) {
+    if (!safeIdentifier(value.id, 200)) throw modelError("model_invalid_response");
+    const parsedCalls = Object.freeze(calls.map(parseFunctionCall));
+    return Object.freeze({
+      kind: "tool_calls",
+      calls: parsedCalls,
+      continuationState: createContinuationState(value.id, parsedCalls)
+    });
+  }
   return Object.freeze({
     kind: "final",
     answer: validateAnswer(parts, apiKey),
@@ -502,11 +530,11 @@ function createArkModelClient(options = {}) {
           ? FINALIZATION_INSTRUCTIONS
           : SERVER_INSTRUCTIONS,
         input: validated.message === null
-          ? [{
+          ? validated.toolOutputs.map((output) => ({
             type: "function_call_output",
-            call_id: validated.toolOutput.callId,
-            output: validated.toolOutput.output
-          }]
+            call_id: output.callId,
+            output: output.output
+          }))
           : validated.message,
         stream: false,
         store: true,
@@ -517,7 +545,7 @@ function createArkModelClient(options = {}) {
       } else {
         body.tools = validated.tools;
       }
-      return parseStepResponse(await request(body), apiKey, validated.toolOutput);
+      return parseStepResponse(await request(body), apiKey, validated.toolOutputs);
     }
   });
 }

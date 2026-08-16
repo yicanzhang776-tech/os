@@ -57,7 +57,7 @@ function stepInput(overrides = {}) {
     message: REQUEST.message,
     tools: TOOLS,
     continuationState: null,
-    toolOutput: null,
+    toolOutputs: null,
     finalizationOnly: false,
     ...overrides
   };
@@ -185,10 +185,11 @@ test("step parses one function call and ignores intermediate assistant text", as
     });
   });
   const result = await client.step(stepInput());
-  assert.equal(result.kind, "tool_call");
-  assert.equal(result.callId, "call-1");
-  assert.equal(result.toolName, "get_context");
-  assert.deepEqual(result.arguments, { observe: true });
+  assert.equal(result.kind, "tool_calls");
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0].callId, "call-1");
+  assert.equal(result.calls[0].toolName, "get_context");
+  assert.deepEqual(result.calls[0].arguments, { observe: true });
   assert.equal(Object.isFrozen(result.continuationState), true);
   assert.deepEqual(Object.keys(captured).sort(), [
     "input", "instructions", "model", "parallel_tool_calls", "store", "stream", "tools"
@@ -224,6 +225,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
     return jsonResponse(responses.shift());
   });
   const first = await client.step(stepInput());
+  const firstCall = first.calls[0];
   const output = JSON.stringify({
     contractVersion: "os-tutor.tool/v1",
     tool: "get_context",
@@ -235,7 +237,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
   const second = await client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutput: { callId: first.callId, toolName: first.toolName, output }
+    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output }]
   }));
   assert.equal(second.kind, "final");
   assert.equal(second.answer, "Context received.");
@@ -287,11 +289,12 @@ test("step supports read_code as the only tool before a final answer", async () 
   const client = clientWith(async () => jsonResponse(responses.shift()));
 
   const first = await client.step(stepInput());
-  assert.equal(first.toolName, "read_code");
+  const firstCall = first.calls[0];
+  assert.equal(firstCall.toolName, "read_code");
   const second = await client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutput: { callId: first.callId, toolName: first.toolName, output: codeOutput }
+    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output: codeOutput }]
   }));
   assert.deepEqual(second, {
     kind: "final",
@@ -300,7 +303,7 @@ test("step supports read_code as the only tool before a final answer", async () 
   });
 });
 
-test("step preserves response and call ids across get_context to read_code to final", async () => {
+test("step parses the real Ark get_context and read_code batch into one continuation", async () => {
   const bodies = [];
   const contextOutput = JSON.stringify({
     contractVersion: "os-tutor.tool/v1",
@@ -314,39 +317,29 @@ test("step preserves response and call ids across get_context to read_code to fi
     contractVersion: "os-tutor.tool/v1",
     tool: "read_code",
     ok: true,
-    data: { path: "kernel/src/lib.rs", content: "pub fn demo() {}" },
+    data: { path: "kernel/src/main.rs", content: "pub fn demo() {}" },
     error: null,
     meta: {}
   });
   const responses = [
     {
       id: "resp-1",
-      output: [{
-        type: "function_call",
-        name: "get_context",
-        call_id: "call-1",
-        arguments: "{}"
-      }]
-    },
-    {
-      id: "resp-2",
       output: [
-        { type: "function_call_output", call_id: "call-1", output: contextOutput },
+        {
+          type: "function_call",
+          name: "get_context",
+          call_id: "call-1",
+          arguments: "{}"
+        },
         {
           type: "function_call",
           name: "read_code",
           call_id: "call-2",
-          arguments: "{\"path\":\"kernel/src/lib.rs\"}"
+          arguments: "{\"path\":\"kernel/src/main.rs\"}"
         }
       ]
     },
-    {
-      id: "resp-3",
-      output: [
-        { type: "function_call_output", call_id: "call-2", output: codeOutput },
-        ...modelOutput("Use the observed function as the next investigation point.").output
-      ]
-    }
+    { id: "resp-2", output: modelOutput("Use both observations as evidence.").output }
   ];
   const client = clientWith(async (_url, options) => {
     bodies.push(JSON.parse(options.body));
@@ -354,38 +347,102 @@ test("step preserves response and call ids across get_context to read_code to fi
   });
 
   const first = await client.step(stepInput());
-  assert.equal(first.callId, "call-1");
-  assert.equal(first.toolName, "get_context");
+  assert.equal(first.kind, "tool_calls");
+  assert.deepEqual(first.calls, [
+    { callId: "call-1", toolName: "get_context", arguments: {} },
+    {
+      callId: "call-2",
+      toolName: "read_code",
+      arguments: { path: "kernel/src/main.rs" }
+    }
+  ]);
 
   const second = await client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutput: { callId: first.callId, toolName: first.toolName, output: contextOutput }
+    toolOutputs: [
+      { callId: "call-1", toolName: "get_context", output: contextOutput },
+      { callId: "call-2", toolName: "read_code", output: codeOutput }
+    ]
   }));
-  assert.equal(second.callId, "call-2");
-  assert.equal(second.toolName, "read_code");
-
-  const third = await client.step(stepInput({
-    message: null,
-    continuationState: second.continuationState,
-    toolOutput: { callId: second.callId, toolName: second.toolName, output: codeOutput }
-  }));
-  assert.equal(third.kind, "final");
-  assert.equal(third.answer, "Use the observed function as the next investigation point.");
+  assert.equal(second.kind, "final");
+  assert.equal(second.answer, "Use both observations as evidence.");
 
   assert.equal(Object.hasOwn(bodies[0], "previous_response_id"), false);
   assert.equal(bodies[1].previous_response_id, "resp-1");
-  assert.deepEqual(bodies[1].input, [{
-    type: "function_call_output",
-    call_id: "call-1",
-    output: contextOutput
-  }]);
-  assert.equal(bodies[2].previous_response_id, "resp-2");
-  assert.deepEqual(bodies[2].input, [{
-    type: "function_call_output",
-    call_id: "call-2",
-    output: codeOutput
-  }]);
+  assert.deepEqual(bodies[1].input, [
+    {
+      type: "function_call_output",
+      call_id: "call-1",
+      output: contextOutput
+    },
+    {
+      type: "function_call_output",
+      call_id: "call-2",
+      output: codeOutput
+    }
+  ]);
+});
+
+test("step rejects an entire function-call batch when any call is malformed", async (t) => {
+  const validCall = functionCallResponse().output[0];
+  const cases = [
+    ["invalid tool name", { ...validCall, name: "read-code", call_id: "call-2" }],
+    ["missing call id", { ...validCall, name: "read_code", call_id: "" }],
+    ["invalid arguments", { ...validCall, name: "read_code", call_id: "call-2", arguments: "{" }]
+  ];
+  for (const [name, invalidCall] of cases) {
+    await t.test(name, () => expectModelError(
+      clientWith(async () => jsonResponse({
+        id: "resp-invalid-batch",
+        output: [validCall, invalidCall]
+      })).step(stepInput()),
+      "model_invalid_response"
+    ));
+  }
+});
+
+test("step rejects missing, reordered, or mismatched batch outputs before continuation fetch", async (t) => {
+  const firstResponse = {
+    id: "resp-batch-output",
+    output: [
+      functionCallResponse().output[0],
+      {
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-2",
+        arguments: "{\"path\":\"kernel/src/main.rs\"}"
+      }
+    ]
+  };
+  const contextOutput = JSON.stringify({ tool: "get_context" });
+  const codeOutput = JSON.stringify({ tool: "read_code" });
+  const valid = [
+    { callId: "call-test-1", toolName: "get_context", output: contextOutput },
+    { callId: "call-2", toolName: "read_code", output: codeOutput }
+  ];
+  const cases = [
+    ["missing", valid.slice(0, 1)],
+    ["reordered", [valid[1], valid[0]]],
+    ["mismatched tool", [valid[0], { ...valid[1], toolName: "get_context" }]]
+  ];
+
+  for (const [name, toolOutputs] of cases) {
+    await t.test(name, async () => {
+      let fetchCalls = 0;
+      const client = clientWith(async () => {
+        fetchCalls += 1;
+        return jsonResponse(firstResponse);
+      });
+      const first = await client.step(stepInput());
+      await expectModelError(client.step(stepInput({
+        message: null,
+        continuationState: first.continuationState,
+        toolOutputs
+      })), "model_invalid_response");
+      assert.equal(fetchCalls, 1);
+    });
+  }
 });
 
 test("step rejects mismatched or duplicate function_call_output echoes", async (t) => {
@@ -407,10 +464,11 @@ test("step rejects mismatched or duplicate function_call_output echoes", async (
       ];
       const client = clientWith(async () => jsonResponse(responses.shift()));
       const first = await client.step(stepInput());
+      const firstCall = first.calls[0];
       await expectModelError(client.step(stepInput({
         message: null,
         continuationState: first.continuationState,
-        toolOutput: { callId: first.callId, toolName: first.toolName, output }
+        toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output }]
       })), "model_invalid_response");
     });
   }
@@ -437,39 +495,32 @@ test("step rejects wrong call_id and untrusted continuation state before fetch",
     return jsonResponse(responses.shift());
   });
   const first = await client.step(stepInput());
+  const firstCall = first.calls[0];
   const safeOutput = JSON.stringify({ ok: true });
   await expectModelError(client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutput: { callId: "wrong", toolName: first.toolName, output: safeOutput }
+    toolOutputs: [{ callId: "wrong", toolName: firstCall.toolName, output: safeOutput }]
   })), "model_invalid_response");
   await expectModelError(client.step(stepInput({
     message: null,
     continuationState: {
       previousResponseId: "resp-test-1",
-      expectedCallId: first.callId,
-      expectedToolName: first.toolName
+      expectedCalls: [{ callId: firstCall.callId, toolName: firstCall.toolName }]
     },
-    toolOutput: { callId: first.callId, toolName: first.toolName, output: safeOutput }
+    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output: safeOutput }]
   })), "model_invalid_response");
   assert.equal(fetchCalls, 1);
 });
 
-test("step rejects malformed arguments, missing response id, and multiple calls", async (t) => {
+test("step rejects malformed arguments and missing response ids", async (t) => {
   const cases = [
     ["malformed JSON", functionCallResponse({ arguments: "{" })],
     ["array arguments", functionCallResponse({ arguments: "[]" })],
     ["oversized arguments", functionCallResponse({ arguments: `{"x":"${"x".repeat(17 * 1024)}"}` })],
     ["missing response id", { output: functionCallResponse().output }],
     ["blank response id", { ...functionCallResponse(), id: "   " }],
-    ["blank call id", functionCallResponse({ call_id: "   " })],
-    ["multiple calls", {
-      id: "resp-multiple",
-      output: [
-        functionCallResponse().output[0],
-        { ...functionCallResponse().output[0], call_id: "call-2" }
-      ]
-    }]
+    ["blank call id", functionCallResponse({ call_id: "   " })]
   ];
   for (const [name, body] of cases) {
     await t.test(name, () => expectModelError(

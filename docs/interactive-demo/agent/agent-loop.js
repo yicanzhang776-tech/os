@@ -49,6 +49,10 @@ const ERROR_DEFINITIONS = Object.freeze({
     message: "A tool result exceeded the safe output limit.",
     retryable: false
   }),
+  mixed_action_batch_unsupported: Object.freeze({
+    message: "An action tool cannot be combined with other tools in one model response.",
+    retryable: false
+  }),
   context_changed: Object.freeze({
     message: "The workspace branch or commit changed during the request.",
     retryable: true
@@ -208,6 +212,31 @@ function validateInitialInput(input) {
   });
 }
 
+function readToolCall(value) {
+  if (!isPlainObject(value)) throw loopError("agent_protocol_error");
+  const descriptors = ownDataDescriptors(value);
+  const keys = Object.keys(descriptors).sort();
+  if (keys.length !== 3
+    || keys[0] !== "arguments"
+    || keys[1] !== "callId"
+    || keys[2] !== "toolName") {
+    throw loopError("agent_protocol_error");
+  }
+  const callId = descriptors.callId.value;
+  const toolName = descriptors.toolName.value;
+  if (typeof callId !== "string"
+    || callId.trim().length === 0
+    || callId.length > MAX_CALL_ID_LENGTH
+    || FORBIDDEN_IDENTIFIER_CHARACTERS.test(callId)
+    || typeof toolName !== "string"
+    || !TOOL_SCHEMA_NAMES.includes(toolName)) {
+    throw loopError("agent_protocol_error");
+  }
+  const args = safeJsonCopy(descriptors.arguments.value);
+  if (!isPlainObject(args)) throw loopError("agent_protocol_error");
+  return Object.freeze({ callId, toolName, arguments: args });
+}
+
 function readModelResult(value) {
   if (!isPlainObject(value)) throw loopError("agent_protocol_error");
   const descriptors = ownDataDescriptors(value);
@@ -235,31 +264,29 @@ function readModelResult(value) {
     return Object.freeze({ kind, answer });
   }
 
-  if (kind !== "tool_call") throw loopError("agent_protocol_error");
-  const allowed = new Set(["kind", "callId", "toolName", "arguments", "continuationState"]);
-  if (Object.keys(descriptors).some((key) => !allowed.has(key))
-    || !descriptors.callId
-    || !descriptors.toolName
-    || !descriptors.arguments) {
+  if (kind !== "tool_calls") throw loopError("agent_protocol_error");
+  const keys = Object.keys(descriptors).sort();
+  const validKeys = keys.length === 2 && keys[0] === "calls" && keys[1] === "kind";
+  const validContinuationKeys = keys.length === 3
+    && keys[0] === "calls"
+    && keys[1] === "continuationState"
+    && keys[2] === "kind";
+  if ((!validKeys && !validContinuationKeys)
+    || !Array.isArray(descriptors.calls.value)
+    || Object.getPrototypeOf(descriptors.calls.value) !== Array.prototype
+    || descriptors.calls.value.length < 1) {
     throw loopError("agent_protocol_error");
   }
-  const callId = descriptors.callId.value;
-  const toolName = descriptors.toolName.value;
-  if (typeof callId !== "string"
-    || callId.trim().length === 0
-    || callId.length > MAX_CALL_ID_LENGTH
-    || FORBIDDEN_IDENTIFIER_CHARACTERS.test(callId)
-    || typeof toolName !== "string"
-    || !TOOL_SCHEMA_NAMES.includes(toolName)) {
+  const rawCalls = descriptors.calls.value;
+  const callDescriptors = ownDataDescriptors(rawCalls);
+  const callKeys = Object.keys(callDescriptors).filter((key) => key !== "length");
+  if (callKeys.length !== rawCalls.length
+    || callKeys.some((key, index) => key !== String(index))) {
     throw loopError("agent_protocol_error");
   }
-  const args = safeJsonCopy(descriptors.arguments.value);
-  if (!isPlainObject(args)) throw loopError("agent_protocol_error");
   return Object.freeze({
     kind,
-    callId,
-    toolName,
-    arguments: args,
+    calls: Object.freeze(callKeys.map((key) => readToolCall(callDescriptors[key].value))),
     continuationState: descriptors.continuationState?.value ?? null
   });
 }
@@ -351,7 +378,7 @@ function createAgentLoop(options = {}) {
         let toolCalls = 0;
         let totalOutputBytes = 0;
         let continuationState = null;
-        let toolOutput = null;
+        let toolOutputs = null;
         let finalizationOnly = false;
 
         const checkDeadline = () => {
@@ -391,7 +418,7 @@ function createAgentLoop(options = {}) {
             message: turn === 0 ? initial.message : null,
             tools: TOOL_SCHEMAS,
             continuationState,
-            toolOutput,
+            toolOutputs,
             finalizationOnly
           }));
           checkDeadline();
@@ -404,53 +431,76 @@ function createAgentLoop(options = {}) {
               ? "agent_loop_limit"
               : "agent_protocol_error");
           }
-          if (callIds.has(step.callId)) throw loopError("agent_protocol_error");
-          callIds.add(step.callId);
-          if (toolCalls >= MAX_TOOL_CALLS) throw loopError("agent_loop_limit");
-
-          const signature = `${step.toolName}:${canonicalJson(step.arguments)}`;
-          if (callSignatures.has(signature)) throw loopError("agent_loop_limit");
-          const count = toolCounts[step.toolName] || 0;
-          if (count >= TOOL_REPEAT_LIMITS[step.toolName]) {
+          if (toolCalls + step.calls.length > MAX_TOOL_CALLS) {
             throw loopError("agent_loop_limit");
           }
-
-          checkDeadline();
-          await checkContext();
-          let rawResult;
-          try {
-            rawResult = await dispatch[step.toolName](step.arguments, toolInvocationContext);
-          } catch (_) {
-            throw loopError("agent_internal_error");
-          }
-          checkDeadline();
-          await checkContext();
-
-          const toolResult = validateToolResult(rawResult, step.toolName);
-          if (!toolResult.ok
-            && ["context_changed", "context_unavailable"].includes(toolResult.error.code)) {
-            throw loopError(toolResult.error.code);
-          }
-          const serialized = JSON.stringify(toolResult);
-          const outputBytes = Buffer.byteLength(serialized, "utf8");
-          if (outputBytes > TOOL_OUTPUT_BUDGET_BYTES[step.toolName]
-            || totalOutputBytes + outputBytes > MAX_TOTAL_TOOL_OUTPUT_BYTES) {
-            throw loopError("agent_tool_output_too_large");
+          if (step.calls.length > 1
+            && step.calls.some((call) => call.toolName === "run_test")) {
+            throw loopError("mixed_action_batch_unsupported");
           }
 
-          totalOutputBytes += outputBytes;
-          toolCalls += 1;
-          toolCounts[step.toolName] = count + 1;
-          callSignatures.add(signature);
+          const batchCallIds = new Set();
+          const batchSignatures = new Set();
+          const batchToolCounts = Object.create(null);
+          for (const call of step.calls) {
+            if (callIds.has(call.callId) || batchCallIds.has(call.callId)) {
+              throw loopError("agent_protocol_error");
+            }
+            const signature = `${call.toolName}:${canonicalJson(call.arguments)}`;
+            if (callSignatures.has(signature) || batchSignatures.has(signature)) {
+              throw loopError("agent_loop_limit");
+            }
+            const pendingCount = batchToolCounts[call.toolName] || 0;
+            if ((toolCounts[call.toolName] || 0) + pendingCount
+              >= TOOL_REPEAT_LIMITS[call.toolName]) {
+              throw loopError("agent_loop_limit");
+            }
+            batchCallIds.add(call.callId);
+            batchSignatures.add(signature);
+            batchToolCounts[call.toolName] = pendingCount + 1;
+          }
+
+          const batchOutputs = [];
+          for (const call of step.calls) {
+            checkDeadline();
+            await checkContext();
+            let rawResult;
+            try {
+              rawResult = await dispatch[call.toolName](call.arguments, toolInvocationContext);
+            } catch (_) {
+              throw loopError("agent_internal_error");
+            }
+            checkDeadline();
+            await checkContext();
+
+            const toolResult = validateToolResult(rawResult, call.toolName);
+            if (!toolResult.ok
+              && ["context_changed", "context_unavailable"].includes(toolResult.error.code)) {
+              throw loopError(toolResult.error.code);
+            }
+            const serialized = JSON.stringify(toolResult);
+            const outputBytes = Buffer.byteLength(serialized, "utf8");
+            if (outputBytes > TOOL_OUTPUT_BUDGET_BYTES[call.toolName]
+              || totalOutputBytes + outputBytes > MAX_TOTAL_TOOL_OUTPUT_BYTES) {
+              throw loopError("agent_tool_output_too_large");
+            }
+
+            totalOutputBytes += outputBytes;
+            toolCalls += 1;
+            toolCounts[call.toolName] = (toolCounts[call.toolName] || 0) + 1;
+            callIds.add(call.callId);
+            callSignatures.add(`${call.toolName}:${canonicalJson(call.arguments)}`);
+            batchOutputs.push(Object.freeze({
+              callId: call.callId,
+              toolName: call.toolName,
+              output: serialized
+            }));
+            finalizationOnly = call.toolName === "run_test"
+              && toolResult.ok
+              && toolResult.data.status === "started";
+          }
           continuationState = step.continuationState;
-          toolOutput = Object.freeze({
-            callId: step.callId,
-            toolName: step.toolName,
-            output: serialized
-          });
-          finalizationOnly = step.toolName === "run_test"
-            && toolResult.ok
-            && toolResult.data.status === "started";
+          toolOutputs = Object.freeze(batchOutputs);
           if (toolCalls >= MAX_TOOL_CALLS) finalizationOnly = true;
         }
         throw loopError("agent_loop_limit");

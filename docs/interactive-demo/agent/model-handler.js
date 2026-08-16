@@ -20,6 +20,7 @@ const DIRECT_AGENT_ERROR_CODES = new Set([
   "agent_loop_limit",
   "agent_protocol_error",
   "agent_tool_output_too_large",
+  "mixed_action_batch_unsupported",
   "context_changed",
   "context_unavailable"
 ]);

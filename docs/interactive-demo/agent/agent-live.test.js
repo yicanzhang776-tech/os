@@ -118,7 +118,7 @@ function createLiveDiagnostics(options = {}) {
     parserResult(turn, result) {
       write({
         modelTurn: turn,
-        parserResult: result?.kind === "tool_call" ? "tool_call" : "final",
+        parserResult: result?.kind === "tool_calls" ? "tool_calls" : "final",
         parserFailure: null
       });
     },

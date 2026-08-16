@@ -186,6 +186,11 @@ const ERROR_DEFINITIONS = Object.freeze({
     message: "The teaching evidence exceeded its safe size limit.",
     retryable: false
   }),
+  mixed_action_batch_unsupported: Object.freeze({
+    statusCode: 422,
+    message: "An action tool cannot be combined with other teaching tools.",
+    retryable: false
+  }),
   agent_internal_error: Object.freeze({
     statusCode: 500,
     message: "The agent request could not be completed.",

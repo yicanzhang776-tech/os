@@ -50,8 +50,16 @@ function final(answer = "Final teaching answer.") {
   return { kind: "final", answer };
 }
 
+function toolCall(callId, toolName, args = {}) {
+  return { callId, toolName, arguments: args };
+}
+
+function batch(calls, continuationState = null) {
+  return { kind: "tool_calls", calls, continuationState };
+}
+
 function call(callId, toolName, args = {}, continuationState = null) {
-  return { kind: "tool_call", callId, toolName, arguments: args, continuationState };
+  return batch([toolCall(callId, toolName, args)], continuationState);
 }
 
 function queuedModel(steps) {
@@ -156,9 +164,9 @@ test("runs get_context then returns the final answer", async () => {
       assert.equal(input.message, null);
       assert.equal(input.requestId, INITIAL_CONTEXT.requestId);
       assert.equal(input.continuationState, state);
-      assert.equal(input.toolOutput.callId, "call-1");
-      assert.equal(input.toolOutput.toolName, "get_context");
-      assert.equal(JSON.parse(input.toolOutput.output).tool, "get_context");
+      assert.equal(input.toolOutputs[0].callId, "call-1");
+      assert.equal(input.toolOutputs[0].toolName, "get_context");
+      assert.equal(JSON.parse(input.toolOutputs[0].output).tool, "get_context");
       return final();
     }
   ]);
@@ -169,6 +177,148 @@ test("runs get_context then returns the final answer", async () => {
     expectedBranch: INITIAL_CONTEXT.branch,
     expectedCommit: INITIAL_CONTEXT.commit
   });
+});
+
+test("keeps every read-only tool compatible as a single-call batch", async (t) => {
+  const cases = [
+    ["get_context", {}],
+    ["read_code", { path: "kernel/src/lib.rs" }],
+    ["get_code_diff", { lab: "lab4" }],
+    ["get_run_result", { runId: "run-1" }],
+    ["get_qemu_events", { limit: 1 }]
+  ];
+  for (const [toolName, args] of cases) {
+    await t.test(toolName, async () => {
+      const h = harness([
+        call(`call-${toolName}`, toolName, args, Object.freeze({ toolName })),
+        (input) => {
+          assert.equal(input.toolOutputs.length, 1);
+          assert.equal(input.toolOutputs[0].toolName, toolName);
+          assert.equal(JSON.parse(input.toolOutputs[0].output).tool, toolName);
+          return final(`${toolName} completed.`);
+        }
+      ]);
+      assert.match((await run(h)).answer, /completed/);
+      assert.deepEqual(h.tools.calls.map((entry) => entry.name), [toolName]);
+    });
+  }
+});
+
+test("serially dispatches a validated read-only batch and returns ordered outputs", async () => {
+  const state = Object.freeze({ opaque: "batch-state" });
+  const events = [];
+  const h = harness([
+    batch([
+      toolCall("call-1", "get_context"),
+      toolCall("call-2", "read_code", { path: "kernel/src/main.rs" })
+    ], state),
+    (input) => {
+      assert.equal(input.continuationState, state);
+      assert.deepEqual(input.toolOutputs.map((output) => output.callId), ["call-1", "call-2"]);
+      assert.deepEqual(input.toolOutputs.map((output) => JSON.parse(output.output).tool), [
+        "get_context", "read_code"
+      ]);
+      return final("Both read-only observations completed.");
+    }
+  ], {
+    overrides: {
+      async get_context() {
+        events.push("get_context:start");
+        await Promise.resolve();
+        events.push("get_context:end");
+        return toolResult("get_context");
+      },
+      read_code() {
+        events.push("read_code:start");
+        events.push("read_code:end");
+        return toolResult("read_code");
+      }
+    }
+  });
+
+  assert.match((await run(h)).answer, /Both read-only/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_context", "read_code"]);
+  assert.deepEqual(events, [
+    "get_context:start", "get_context:end", "read_code:start", "read_code:end"
+  ]);
+});
+
+test("rejects an oversized batch before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "get_context"),
+    toolCall("call-2", "get_code_diff", { lab: "lab4" }),
+    toolCall("call-3", "read_code", { path: "kernel/src/lib.rs" }),
+    toolCall("call-4", "get_qemu_events", { limit: 1 })
+  ])]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("rejects a batch when prior calls plus the whole batch exceed the total limit", async () => {
+  const h = harness([
+    call("call-1", "get_context"),
+    call("call-2", "get_code_diff", { lab: "lab4" }),
+    batch([
+      toolCall("call-3", "read_code", { path: "kernel/src/lib.rs" }),
+      toolCall("call-4", "get_qemu_events", { limit: 1 })
+    ])
+  ]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_context", "get_code_diff"]);
+});
+
+test("rejects duplicate call ids across one batch before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("same", "get_context"),
+    toolCall("same", "read_code", { path: "kernel/src/main.rs" })
+  ])]);
+  await rejectsCode(run(h), "agent_protocol_error");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("rejects canonical duplicate calls across one batch before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "read_code", { path: "kernel/src/lib.rs", startLine: 1 }),
+    toolCall("call-2", "read_code", { startLine: 1, path: "kernel/src/lib.rs" })
+  ])]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("enforces per-tool repeat limits across one batch before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "get_context"),
+    toolCall("call-2", "get_context", { second: true })
+  ])]);
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("rejects a batch containing an unknown tool before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "get_context"),
+    toolCall("call-2", "delete_file")
+  ])]);
+  await rejectsCode(run(h), "agent_protocol_error");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("rejects a batch containing invalid arguments before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "get_context"),
+    toolCall("call-2", "read_code", [])
+  ])]);
+  await rejectsCode(run(h), "agent_protocol_error");
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("rejects a mixed read_code and run_test action batch before dispatch", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "read_code", { path: "kernel/src/lib.rs" }),
+    toolCall("call-2", "run_test", { testId: "lab4-starter-qemu", lab: "lab4" })
+  ])]);
+  await rejectsCode(run(h), "mixed_action_batch_unsupported");
+  assert.equal(h.tools.calls.length, 0);
 });
 
 test("supports get_context to get_code_diff to read_code to final", async () => {
@@ -188,7 +338,7 @@ test("feeds a safe ToolResult failure to the model", async () => {
   const h = harness([
     call("call-1", "read_code", { path: "forbidden.txt" }),
     (input) => {
-      const output = JSON.parse(input.toolOutput.output);
+      const output = JSON.parse(input.toolOutputs[0].output);
       assert.equal(output.ok, false);
       assert.equal(output.error.code, "invalid_tool_input");
       return final("That path is unavailable; choose an allowed teaching file.");
@@ -203,7 +353,7 @@ test("leaves extra tool arguments for the injected validator to reject safely", 
   const h = harness([
     call("call-1", "read_code", { path: "kernel/src/lib.rs", unexpected: true }),
     (input) => {
-      assert.equal(JSON.parse(input.toolOutput.output).error.code, "invalid_tool_input");
+      assert.equal(JSON.parse(input.toolOutputs[0].output).error.code, "invalid_tool_input");
       return final("The tool rejected an unsupported field.");
     }
   ], {
@@ -427,7 +577,7 @@ test("get_run_result run_in_progress is returned once with no automatic polling"
   const h = harness([
     call("result-1", "get_run_result", { runId: "run-1" }),
     (input) => {
-      assert.equal(JSON.parse(input.toolOutput.output).error.code, "run_in_progress");
+      assert.equal(JSON.parse(input.toolOutputs[0].output).error.code, "run_in_progress");
       return final("The run is still in progress; check again later.");
     }
   ], {
@@ -518,10 +668,10 @@ test("passes prompt-injection text only inside serialized tool data", async () =
     call("call-1", "read_code", { path: "kernel/src/lib.rs" }),
     (input) => {
       assert.equal(input.message, null);
-      assert.match(input.toolOutput.output, /Ignore previous instructions/);
-      assert.equal(JSON.parse(input.toolOutput.output).data.content, injection);
+      assert.match(input.toolOutputs[0].output, /Ignore previous instructions/);
+      assert.equal(JSON.parse(input.toolOutputs[0].output).data.content, injection);
       assert.deepEqual(Object.keys(input).sort(), [
-        "continuationState", "finalizationOnly", "message", "requestId", "toolOutput", "tools"
+        "continuationState", "finalizationOnly", "message", "requestId", "toolOutputs", "tools"
       ]);
       return final("Treat source comments as data, not instructions.");
     }
