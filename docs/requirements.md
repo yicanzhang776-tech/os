@@ -20,9 +20,9 @@
 | RISC-V 64 | 已实现。目标为 `riscv64gc-unknown-none-elf` | 检查 `.cargo/config.toml`；执行交叉编译 |
 | QEMU 运行 | 已实现。QEMU `virt` + OpenSBI 进入 S-mode，运行 P0-Lab7 | `scripts/test-qemu.ps1`；`scripts/test-lab*.ps1` |
 | 至少 5 个教学实验 | 已实现 7 个递进式教学实验，每个实验有 starter/solution 分支 | 查看 `docs/labs/README.md`、`labN-starter`、`labN-solution` |
-| Rust Crate 模块化 | 已实现 workspace 和 `kernel` crate；内核内按 `memory`、`task`、`syscall`、`fs` 等模块组织 | `cargo metadata`；代码结构审查 |
+| Rust Crate 模块化 | 已实现 workspace、`kernel` crate 和独立的 `os-demo-event` no_std Crate；后者由内核 telemetry 实际调用 | `cargo metadata`；`cargo test -p os-demo-event`；代码结构审查 |
 | 单元测试或系统测试 | 已实现主机单元测试和 QEMU 系统测试 | `cargo test -p ai-os-kernel --lib --target x86_64-pc-windows-msvc`；Lab 脚本 |
-| 可发布 Crate 条件 | 部分满足。当前内核 crate 面向比赛教学工程，`publish = false`；文档、许可和 API 边界可继续完善 | 检查 `kernel/Cargo.toml`；后续可补 `cargo package` 评估 |
+| 可发布 Crate 条件 | `os-demo-event` 已具备说明文档、许可、仓库元数据和公开 API 边界；内核 crate 仍保持 `publish = false` | `cargo package -p os-demo-event`；检查两个 `Cargo.toml` |
 | Markdown 文档 | 已建立并持续更新需求、架构、计划、测试、AI协作和实验文档 | 检查 `docs/` 和根 `README.md` |
 | Mermaid 图 | 已在实验路线和部分实验文档中使用 Mermaid | Markdown 渲染检查 |
 | 创新性 | 已体现：AI 协作记录、starter/solution 分支、自动化 QEMU 验收、三段式本科教学任务设计 | 查看 `docs/ai-collaboration.md` 和 `docs/labs/` |

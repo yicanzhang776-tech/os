@@ -8,3 +8,4 @@ description = "Minimal RISC-V 64 teaching OS kernel baseline for QEMU."
 publish = false
 
 [dependencies]
+os-demo-event = { path = "../crates/os-demo-event", version = "0.1.0" }

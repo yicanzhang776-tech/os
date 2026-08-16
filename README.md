@@ -12,7 +12,11 @@
 
 ## 提交文档入口
 
+- 一页式提交材料导航：[00-提交材料导航.md](00-提交材料导航.md)
+- 赛题 30% 五个基础实验 PDF：[tg-rCore 五个基础实验练习总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/00-tg-rCore-%E4%BA%94%E4%B8%AA%E5%9F%BA%E7%A1%80%E5%AE%9E%E9%AA%8C%E6%80%BB%E7%BB%93%E6%8A%A5%E5%91%8A.pdf)
+- 赛题 30% Markdown 与证据包：[总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/docs/reference-labs/tg-rcore-five-basic-experiments.md) / [截图、日志、补丁与 manifest](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/tree/tg-rcore-five-lab-report/docs/reference-labs)
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
+- Ubuntu/Linux 本地复现与测试：[docs/testing.md](docs/testing.md)
 - 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
@@ -33,6 +37,8 @@
 | `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+
+截至 2026-08-16，正式交付范围包含 21 个既有远端分支。`main`、`interactive-demo-learning-map`、P0 和 14 个 Lab starter/solution 组成 17 个教学上下文；`agent-mvp`、`lab-atlas-ai-tutor`、`teacher-grading-tools`、`tg-rcore-five-lab-report` 是 4 个辅助功能与报告分支。合并前的临时文档发布分支不计入这套产品分支统计。
 
 `main` 是评委和教师的完整成果入口：汇总 P0-Lab7 的教学说明、参考实现说明、教师指南与评分工具。学生应切换到对应 `labN-starter` 分支完成练习；需要按分支历史查看某个实验的完整参考代码时，可切换到对应 `labN-solution` 分支。包含可视化遥测和最新展示材料的集成版本同样位于 `main`。
 
@@ -166,6 +172,8 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ```text
 .
 ├── .cargo/                 # Rust 目标配置
+├── crates/
+│   └── os-demo-event/      # no_std 事件协议校验与编码 Crate
 ├── docs/                   # 需求、架构、测试、AI协作和实验文档
 ├── kernel/                 # RISC-V 教学内核 crate
 │   ├── linker.ld
@@ -184,6 +192,23 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ├── Makefile
 └── README.md
 ```
+
+## 独立事件协议 Crate
+
+`crates/os-demo-event/` 提供小型、独立且可复用的 `os-demo-event` Crate。它集中定义 `os-demo.event/v1` 协议版本、Lab 标识、事件状态，以及 `lab + step` 字段的校验和无堆编码接口。该 Crate 不实现任何 Lab 逻辑，不包含学生答案或教师评分内容。
+
+`kernel/src/telemetry.rs` 已实际依赖这个 Crate，并通过 `core::fmt::Write` 将编码结果直接写入现有控制台。串口格式仍为 `[OS_DEMO] lab=<lab> step=<step>`，因此浏览器端 `protocol.js`、事件目录稳定键和已有 PASS/TODO 判定保持兼容。Crate 使用 `#![no_std]`，不依赖 `alloc`、文件系统、网络、进程或第三方库。
+
+在装有 Rust 工具链的 Ubuntu/Linux 环境中可以独立验证：
+
+```sh
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
+cargo test -p os-demo-event --target "$HOST_TARGET"
+cargo doc -p os-demo-event --no-deps
+cargo package -p os-demo-event
+```
+
+`cargo package` 只检查打包条件；本项目不会在验收流程中自动执行 `cargo publish`。
 
 ## 环境依赖
 
