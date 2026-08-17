@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>小内核助教</title>
+  <link rel="stylesheet" href="agent-page.css">
+</head>
+<body>
+  <div class="agent-page-shell">
+    <aside class="agent-page-sidebar" aria-label="助教导航">
+      <a class="agent-page-brand" href="./" aria-label="返回实验台">
+        <span class="agent-page-mark" aria-hidden="true"><i></i><i></i></span>
+        <span>小内核助教</span>
+      </a>
+      <nav class="agent-page-actions" aria-label="助教操作">
+        <a href="./">返回实验台</a>
+        <button id="agent-page-new" type="button">新问题</button>
+      </nav>
+      <div class="agent-page-history-wrap">
+        <h2>本次会话</h2>
+        <nav id="agent-page-history" aria-label="本次会话记录"></nav>
+      </div>
+      <p class="agent-page-sidebar-note">回答只使用当前问题和受限的实验上下文。</p>
+    </aside>
+
+    <main class="agent-page-main">
+      <header class="agent-page-context">
+        <div>
+          <p>当前实验</p>
+          <strong id="agent-page-lab">等待上下文</strong>
+        </div>
+        <span>单次独立回答</span>
+      </header>
+
+      <section class="agent-page-service" aria-labelledby="agent-service-heading">
+        <div class="agent-page-service-summary">
+          <span class="agent-page-service-indicator" aria-hidden="true"></span>
+          <div>
+            <h2 id="agent-service-heading">模型服务</h2>
+            <p id="agent-service-status" aria-live="polite">正在检查本地配置…</p>
+          </div>
+        </div>
+        <form id="agent-config-form" class="agent-page-key-form" hidden>
+          <label for="agent-api-key">方舟 API Key</label>
+          <div class="agent-page-key-field">
+            <input id="agent-api-key" name="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入测试 Key">
+            <button id="agent-key-visibility" type="button" aria-label="显示 Key">显示</button>
+          </div>
+          <button id="agent-config-submit" type="submit">激活本地模型</button>
+        </form>
+        <div class="agent-page-service-actions">
+          <button id="agent-config-change" type="button" hidden>更换 Key</button>
+          <button id="agent-config-clear" type="button" hidden>清除本次 Key</button>
+        </div>
+        <p class="agent-page-service-note">Key 仅保存在当前 Node 服务进程内，不写入浏览器存储、文件或 Git；服务停止后自动消失。</p>
+      </section>
+
+      <section class="agent-page-conversation" aria-labelledby="agent-page-heading">
+        <h1 id="agent-page-heading">向小内核提问</h1>
+        <ol id="agent-page-thread" role="log" aria-live="polite" aria-relevant="additions">
+          <li class="agent-page-empty">围绕当前 Lab 提出一个具体问题，我会结合可用的实验上下文给出学习提示。</li>
+        </ol>
+      </section>
+
+      <form id="agent-page-form" class="agent-page-composer">
+        <label for="agent-page-message">你的问题</label>
+        <textarea id="agent-page-message" maxlength="4000" rows="5" placeholder="例如：为什么这个 Lab 的控制流会回到调度器？"></textarea>
+        <div class="agent-page-composer-actions">
+          <output id="agent-page-status" aria-live="polite">每次发送只提交当前这一条问题。</output>
+          <div>
+            <button id="agent-page-clear" type="button">清空</button>
+            <button id="agent-page-submit" type="submit" aria-label="发送问题">发送</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="agent-client.js"></script>
+  <script src="agent-chat-state.js"></script>
+  <script src="agent-entry-state.js"></script>
+  <script src="agent-page.js"></script>
+</body>
+</html>
