@@ -15,7 +15,14 @@ const MODEL_ERROR_CODES = new Set([
   "model_invalid_response",
   "model_internal_error"
 ]);
-const DIRECT_AGENT_ERROR_CODES = new Set(["context_changed", "context_unavailable"]);
+const DIRECT_AGENT_ERROR_CODES = new Set([
+  "agent_deadline_exceeded",
+  "agent_loop_limit",
+  "agent_protocol_error",
+  "agent_tool_output_too_large",
+  "context_changed",
+  "context_unavailable"
+]);
 
 function createProductionAgentHandler(options = {}) {
   const agentLoop = options.agentLoop;
