@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
@@ -108,14 +109,17 @@ function harness(steps, options = {}) {
   const model = options.model || queuedModel([...steps]);
   const tools = options.tools || fakeDispatch(options.overrides);
   const context = options.context || contextReader(options.contexts);
-  const loop = createAgentLoop({
+  const limitLogs = [];
+  const loopFactory = options.loopFactory || createAgentLoop;
+  const loop = loopFactory({
     model,
     toolDispatch: tools.dispatch,
     readContext: context.read.bind(context),
     ...(options.retrieveKnowledge ? { retrieveKnowledge: options.retrieveKnowledge } : {}),
+    agentLimitLogger: options.agentLimitLogger || ((line) => limitLogs.push(line)),
     now: options.now || (() => 1_000)
   });
-  return { loop, model, tools, context };
+  return { loop, model, tools, context, limitLogs };
 }
 
 async function run(harnessValue, message = "Help me inspect the Lab.") {
@@ -127,8 +131,27 @@ async function rejectsCode(promise, code) {
     assert.equal(isTrustedAgentLoopError(error), true);
     assert.equal(error.code, code);
     assert.deepEqual(error.details, {});
+    assert.equal(Object.hasOwn(error, "reason"), false);
     return true;
   });
+}
+
+function loopModuleWithModelTurnLimit(modelTurnLimit) {
+  const sourcePath = path.join(__dirname, "agent-loop.js");
+  const source = fs.readFileSync(sourcePath, "utf8");
+  const fixedDeclaration = `const MAX_MODEL_TURNS = ${MAX_MODEL_TURNS};`;
+  assert.equal(source.split(fixedDeclaration).length, 2);
+  const testSource = source.replace(
+    fixedDeclaration,
+    `const MAX_MODEL_TURNS = ${modelTurnLimit};`
+  );
+  const testModule = { exports: {} };
+  const compile = new Function(
+    "exports", "require", "module", "__filename", "__dirname",
+    testSource
+  );
+  compile(testModule.exports, require, testModule, sourcePath, __dirname);
+  return testModule.exports;
 }
 
 test("exports the fixed bounded orchestration limits", () => {
@@ -144,6 +167,106 @@ test("exports the fixed bounded orchestration limits", () => {
     get_run_result: 1,
     get_qemu_events: 1
   });
+});
+
+test("logs max_tool_calls_after_finalization without changing the public error", async () => {
+  const h = harness([
+    call("call-1", "get_context"),
+    call("call-2", "get_code_diff", { lab: "lab4" }),
+    call("call-3", "get_run_result", { runId: "run-1" }),
+    call("call-4", "get_qemu_events", { runId: "run-1", limit: 20 }),
+    call("call-5", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-6", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("call-7", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("call-8", "run_test", { testId: "lab4-starter-qemu", lab: "lab4" }),
+    call("call-9", "read_code", { path: "kernel/src/file-4.rs" })
+  ], {
+    overrides: {
+      run_test: toolResult("run_test", { ok: false, code: "run_busy" })
+    }
+  });
+
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.limitLogs, [
+    `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
+      + "reason=max_tool_calls_after_finalization modelTurn=9 "
+      + "toolCalls=8 maxToolCalls=8"
+  ]);
+});
+
+test("logs batch_would_exceed_max_tool_calls without changing the public error", async () => {
+  const h = harness([batch([
+    toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    toolCall("call-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    toolCall("call-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    toolCall("call-4", "read_code", { path: "kernel/src/file-4.rs" }),
+    toolCall("call-5", "get_context"),
+    toolCall("call-6", "get_code_diff", { lab: "lab4" }),
+    toolCall("call-7", "get_run_result", { runId: "run-1" }),
+    toolCall("call-8", "get_qemu_events", { runId: "run-1", limit: 20 }),
+    toolCall("call-9", "get_qemu_events", { runId: "run-2", limit: 20 })
+  ])]);
+
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.limitLogs, [
+    `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
+      + "reason=batch_would_exceed_max_tool_calls modelTurn=1 "
+      + "toolCalls=0 maxToolCalls=8 batchSize=9 remainingToolBudget=8"
+  ]);
+  assert.equal(h.tools.calls.length, 0);
+});
+
+test("logs duplicate_signature with only the tool name and signature hash", async () => {
+  const privatePath = "kernel/src/PRIVATE_SOURCE_SENTINEL.rs";
+  const h = harness([
+    call("call-1", "read_code", { path: privatePath, startLine: 1 }),
+    call("call-2", "read_code", { startLine: 1, path: privatePath })
+  ]);
+  const signature = `read_code:${JSON.stringify({ path: privatePath, startLine: 1 })}`;
+  const expectedHash = crypto.createHash("sha256").update(signature, "utf8").digest("hex");
+
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.limitLogs, [
+    `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} reason=duplicate_signature `
+      + `modelTurn=2 toolCalls=1 maxToolCalls=8 toolName=read_code signatureHash=${expectedHash}`
+  ]);
+  assert.doesNotMatch(h.limitLogs[0], /PRIVATE_SOURCE_SENTINEL|arguments|\{|\}/);
+});
+
+test("logs tool_repeat_limit with the bounded tool counters", async () => {
+  const h = harness([
+    call("result-1", "get_run_result", { runId: "run-1" }),
+    call("result-2", "get_run_result", { runId: "run-2" })
+  ]);
+
+  await rejectsCode(run(h), "agent_loop_limit");
+  assert.deepEqual(h.limitLogs, [
+    `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} reason=tool_repeat_limit `
+      + "modelTurn=2 toolCalls=1 maxToolCalls=8 toolName=get_run_result "
+      + "toolCount=1 toolLimit=1"
+  ]);
+});
+
+test("logs max_model_turns_exhausted at the terminal loop guard", async () => {
+  // With production's 9-turn/8-tool bounds this guard is defense-in-depth. A lower
+  // test-only turn constant reaches the same terminal branch without changing exports.
+  const limitedModule = loopModuleWithModelTurnLimit(2);
+  const h = harness([
+    call("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("call-2", "read_code", { path: "kernel/src/file-2.rs" })
+  ], { loopFactory: limitedModule.createAgentLoop });
+
+  await assert.rejects(run(h), (error) => {
+    assert.equal(limitedModule.isTrustedAgentLoopError(error), true);
+    assert.equal(error.code, "agent_loop_limit");
+    assert.deepEqual(error.details, {});
+    assert.equal(Object.hasOwn(error, "reason"), false);
+    return true;
+  });
+  assert.deepEqual(h.limitLogs, [
+    `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
+      + "reason=max_model_turns_exhausted modelTurn=2 toolCalls=2 maxToolCalls=8"
+  ]);
 });
 
 test("returns a direct valid final answer without dispatching", async () => {

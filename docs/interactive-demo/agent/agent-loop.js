@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const { TOOL_SCHEMAS, TOOL_SCHEMA_NAMES } = require("./tool-schemas");
 
 const TOOL_CONTRACT_VERSION = "os-tutor.tool/v1";
@@ -157,6 +158,10 @@ function safeJsonCopy(value) {
 
 function canonicalJson(value) {
   return JSON.stringify(value);
+}
+
+function signatureHash(signature) {
+  return crypto.createHash("sha256").update(signature, "utf8").digest("hex");
 }
 
 function validateInitialInput(input) {
@@ -375,6 +380,12 @@ function createAgentLoop(options = {}) {
   if (typeof retrieveKnowledge !== "function") {
     throw new TypeError("retrieveKnowledge must be a function.");
   }
+  const agentLimitLogger = options.agentLimitLogger === undefined
+    ? ((line) => console.error(line))
+    : options.agentLimitLogger;
+  if (typeof agentLimitLogger !== "function") {
+    throw new TypeError("agentLimitLogger must be a function.");
+  }
 
   return Object.freeze({
     async run(input) {
@@ -410,6 +421,34 @@ function createAgentLoop(options = {}) {
         let continuationState = null;
         let toolOutputs = null;
         let finalizationOnly = false;
+
+        const raiseAgentLimit = (metadata) => {
+          const fields = [
+            `requestId=${initial.context.requestId}`,
+            `reason=${metadata.reason}`,
+            `modelTurn=${metadata.modelTurn}`,
+            `toolCalls=${toolCalls}`,
+            `maxToolCalls=${MAX_TOOL_CALLS}`
+          ];
+          if (metadata.toolName) fields.push(`toolName=${metadata.toolName}`);
+          if (metadata.signatureHash) fields.push(`signatureHash=${metadata.signatureHash}`);
+          if (Number.isInteger(metadata.toolCount)) {
+            fields.push(`toolCount=${metadata.toolCount}`);
+          }
+          if (Number.isInteger(metadata.toolLimit)) {
+            fields.push(`toolLimit=${metadata.toolLimit}`);
+          }
+          if (Number.isInteger(metadata.batchSize)) fields.push(`batchSize=${metadata.batchSize}`);
+          if (Number.isInteger(metadata.remainingToolBudget)) {
+            fields.push(`remainingToolBudget=${metadata.remainingToolBudget}`);
+          }
+          try {
+            agentLimitLogger(`[agent-limit] ${fields.join(" ")}`);
+          } catch (_) {
+            // Observability must not change the existing safety failure path.
+          }
+          throw loopError("agent_loop_limit");
+        };
 
         const checkDeadline = () => {
           const current = now();
@@ -458,12 +497,21 @@ function createAgentLoop(options = {}) {
           const step = readModelResult(modelResult);
           if (step.kind === "final") return Object.freeze({ answer: step.answer });
           if (finalizationOnly) {
-            throw loopError(toolCalls >= MAX_TOOL_CALLS
-              ? "agent_loop_limit"
-              : "agent_protocol_error");
+            if (toolCalls >= MAX_TOOL_CALLS) {
+              raiseAgentLimit({
+                reason: "max_tool_calls_after_finalization",
+                modelTurn: turn + 1
+              });
+            }
+            throw loopError("agent_protocol_error");
           }
           if (toolCalls + step.calls.length > MAX_TOOL_CALLS) {
-            throw loopError("agent_loop_limit");
+            raiseAgentLimit({
+              reason: "batch_would_exceed_max_tool_calls",
+              modelTurn: turn + 1,
+              batchSize: step.calls.length,
+              remainingToolBudget: MAX_TOOL_CALLS - toolCalls
+            });
           }
           if (step.calls.length > 1
             && step.calls.some((call) => call.toolName === "run_test")) {
@@ -479,12 +527,23 @@ function createAgentLoop(options = {}) {
             }
             const signature = `${call.toolName}:${canonicalJson(call.arguments)}`;
             if (callSignatures.has(signature) || batchSignatures.has(signature)) {
-              throw loopError("agent_loop_limit");
+              raiseAgentLimit({
+                reason: "duplicate_signature",
+                modelTurn: turn + 1,
+                toolName: call.toolName,
+                signatureHash: signatureHash(signature)
+              });
             }
             const pendingCount = batchToolCounts[call.toolName] || 0;
-            if ((toolCounts[call.toolName] || 0) + pendingCount
-              >= TOOL_REPEAT_LIMITS[call.toolName]) {
-              throw loopError("agent_loop_limit");
+            const toolCount = (toolCounts[call.toolName] || 0) + pendingCount;
+            if (toolCount >= TOOL_REPEAT_LIMITS[call.toolName]) {
+              raiseAgentLimit({
+                reason: "tool_repeat_limit",
+                modelTurn: turn + 1,
+                toolName: call.toolName,
+                toolCount,
+                toolLimit: TOOL_REPEAT_LIMITS[call.toolName]
+              });
             }
             batchCallIds.add(call.callId);
             batchSignatures.add(signature);
@@ -534,7 +593,10 @@ function createAgentLoop(options = {}) {
           toolOutputs = Object.freeze(batchOutputs);
           if (toolCalls >= MAX_TOOL_CALLS) finalizationOnly = true;
         }
-        throw loopError("agent_loop_limit");
+        raiseAgentLimit({
+          reason: "max_model_turns_exhausted",
+          modelTurn: MAX_MODEL_TURNS
+        });
       } catch (error) {
         if (isTrustedAgentLoopError(error)) throw error;
         if (isTrustedModelError(error)) throw error;
