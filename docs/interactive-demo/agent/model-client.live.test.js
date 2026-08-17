@@ -20,4 +20,3 @@ test("explicit Ark Agent Plan live smoke test", { skip: !liveEnabled }, async ()
   assert.equal(typeof answer, "string");
   assert.ok(answer.length > 0);
 });
-

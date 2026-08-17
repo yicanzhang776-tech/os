@@ -131,6 +131,32 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(health.protocol, "os-demo.event/v1");
   assert.equal(health.target, "riscv64gc-unknown-none-elf");
 
+  for (const asset of [
+    "workspace.css",
+    "theme-atlas.css",
+    "ui-shell-state.js",
+    "ui-shell.js",
+    "agent-chat-state.js",
+    "agent.html",
+    "agent-page.css",
+    "agent-page.js",
+    "agent-entry-state.js",
+    "agent-pet.js",
+    "assets/kernel-buddy.png"
+  ]) {
+    const assetResponse = await fetch(`${url}/${asset}`);
+    assert.equal(assetResponse.status, 200, `${asset} should be served by the local bridge`);
+    assert.ok((await assetResponse.arrayBuffer()).byteLength > 20, `${asset} should not be empty`);
+  }
+
+  const retiredSignalTheme = await fetch(`${url}/theme-signal.css`);
+  assert.equal(retiredSignalTheme.status, 404);
+
+  const mascotAsset = await fetch(`${url}/assets/kernel-buddy.png`);
+  assert.equal(mascotAsset.headers.get("content-type"), "image/png");
+  const unlistedMascot = await fetch(`${url}/assets/kernel-buddy-preview.png`);
+  assert.equal(unlistedMascot.status, 404);
+
   const getAgent = await fetch(`${url}/api/agent`);
   assert.equal(getAgent.status, 405);
   assert.equal(getAgent.headers.get("allow"), "POST");
@@ -206,6 +232,14 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   const contextBody = await contextResponse.json();
   assert.equal(contextBody.protocol, "os-demo.event/v1");
   assert.equal(contextBody.context.branch, "lab5-starter");
+  assert.deepEqual(contextBody.agent, {
+    contractVersion: "os-tutor.agent/v1",
+    configured: false,
+    provider: "volcengine-ark-agent-plan",
+    model: "ark-code-latest",
+    remoteStore: true
+  });
+  assert.doesNotMatch(JSON.stringify(contextBody), /ARK_API_KEY|authorization|Bearer/i);
 
   const rejectedRun = await fetch(`${url}/api/run`, {
     method: "POST",
@@ -234,6 +268,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /不计算成绩，也不进行排名/);
   assert.match(html, /确定性规则检查/);
   assert.match(html, /运行错误诊断/);
+  assert.match(html, /AI 教学助教/);
   assert.match(html, /诊断只使用本地构建结果、结构化事件和稳定输出/);
   assert.match(html, /id="diagnostics-summary"/);
   assert.match(html, /id="diagnostics-list"/);
@@ -252,7 +287,9 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.match(html, /只在当前浏览器处理，不上传文件，也不会切换 Git 分支/);
   assert.match(html, /starter \/ solution 对比/);
   assert.match(html, /教学评价与反馈/);
-  assert.match(html, /前往 GitLab 确认提交/);
+  assert.match(html, /提交教学评价/);
+  assert.match(html, /feedback-service-url/);
+  assert.doesNotMatch(html, /前往 GitLab 确认提交/);
   assert.doesNotMatch(html, /这套实验是否真的帮助了你/);
   assert.match(html, /当前实验教学评价五题/);
   assert.match(html, /补充反馈/);

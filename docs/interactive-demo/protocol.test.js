@@ -67,6 +67,28 @@ test("explicit OS_DEMO telemetry remains authoritative", () => {
   );
 });
 
+test("os-demo-event byte-compatible samples keep their normalized meaning", () => {
+  const cases = [
+    ["[OS_DEMO] lab=p0 step=kernel-main", "p0", "kernel-main", "running"],
+    ["[OS_DEMO] lab=lab1 step=console-available", "lab1", "console-available", "running"],
+    ["[OS_DEMO] lab=lab2 step=breakpoint-handled", "lab2", "breakpoint-handled", "running"],
+    ["[OS_DEMO] lab=lab4 step=satp-activated", "lab4", "satp-activated", "running"],
+    ["[OS_DEMO] lab=lab5 step=context-switched", "lab5", "context-switched", "running"],
+    ["[OS_DEMO] lab=lab7 step=file-close", "lab7", "file-close", "running"],
+    ["[OS_DEMO] lab=lab7 step=pass", "lab7", "pass", "pass"],
+    ["[OS_DEMO] lab=lab2 step=panic", "lab2", "panic", "fail"]
+  ];
+
+  for (const [line, lab, step, status] of cases) {
+    const parsed = parseKernelLine(line);
+    assert.equal(parsed.protocol, EVENT_PROTOCOL, line);
+    assert.equal(parsed.lab, lab, line);
+    assert.equal(parsed.step, step, line);
+    assert.equal(parsed.status, status, line);
+    assert.equal(parsed.source, "tagged", line);
+  }
+});
+
 test("stable console markers provide fallback telemetry", () => {
   const cases = [
     ["[P0] PASS", "p0", "pass", "pass"],

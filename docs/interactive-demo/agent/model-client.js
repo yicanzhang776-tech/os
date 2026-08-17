@@ -29,6 +29,12 @@ const SERVER_INSTRUCTIONS = [
   "Prefer OBSERVE, EXPLAIN, LOCATE, PREDICT, then VERIFY.",
   "Give focused teaching hints instead of writing the complete solution."
 ].join(" ");
+const AGENT_CAPABILITIES = Object.freeze({
+  contractVersion: "os-tutor.agent/v1",
+  provider: "volcengine-ark-agent-plan",
+  model: DEFAULT_ARK_MODEL,
+  remoteStore: true
+});
 
 const MODEL_ERROR_DEFINITIONS = Object.freeze({
   model_not_configured: "The model is not configured.",
@@ -591,6 +597,9 @@ function createArkModelClient(options = {}) {
   }
 
   return Object.freeze({
+    getCapabilities() {
+      return Object.freeze({ ...AGENT_CAPABILITIES, configured });
+    },
     async respond(input = {}) {
       const validated = validateRespondInput(input);
       const response = await request({
@@ -658,6 +667,7 @@ function createArkModelClient(options = {}) {
 }
 
 module.exports = {
+  AGENT_CAPABILITIES,
   ARK_RESPONSES_URL,
   DEFAULT_ARK_BASE_URL,
   DEFAULT_ARK_MODEL,

@@ -149,7 +149,14 @@ test("the API key provider is read exactly once during client initialization", a
     }
   });
   assert.equal(providerCalls, 1);
-  assert.deepEqual(Object.keys(client), ["respond", "step"]);
+  assert.deepEqual(Object.keys(client), ["getCapabilities", "respond", "step"]);
+  assert.deepEqual(client.getCapabilities(), {
+    contractVersion: "os-tutor.agent/v1",
+    configured: true,
+    provider: "volcengine-ark-agent-plan",
+    model: "ark-code-latest",
+    remoteStore: true
+  });
   assert.equal(await client.respond(REQUEST), "ok");
   assert.equal(await client.respond(REQUEST), "ok");
   assert.equal(providerCalls, 1);
