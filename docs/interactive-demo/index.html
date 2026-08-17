@@ -6,10 +6,36 @@
   <meta name="description" content="跟随 Git 分支和 QEMU 串口实时变化的 RISC-V 教学操作系统多维知识可视化。">
   <title>OS实验可视化展示</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="workspace.css">
+  <link rel="stylesheet" href="theme-atlas.css">
 </head>
 <body>
+  <!--
+    THESIS: 用可操作的课程图谱组织真实实验、运行证据与教学解释。
+    OWN-WORLD: Lab Atlas 使用 P0-Lab7 路径图、证据标记和讲解舞台表达实验递进关系。
+    STORY: 选择学习或演示模式，定位 Lab，运行并核对证据，再向助教提出可验证的问题。
+    FIRST VIEWPORT: 顶部控制带、当前实验状态、Lab 导航、主实验区与 AI 入口同时可见。
+    FORM: 面向桌面端高频实验与课堂讲解的 Operate 工作台。
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+  -->
   <a class="skip-link" href="#main-content">跳到主要内容</a>
   <main class="app-shell" id="main-content">
+    <header class="workspace-command-bar" aria-label="实验工作台控制">
+      <div class="workspace-brand">
+        <span class="workspace-brand-mark" aria-hidden="true">OS//LAB</span>
+        <span class="workspace-brand-copy"><strong>教学实验工作台</strong><small>RISC-V 64 · QEMU · Rust</small></span>
+      </div>
+      <nav class="workspace-segment" aria-label="使用模式">
+        <button id="workspace-mode-normal" type="button" aria-pressed="true">学习</button>
+        <button id="workspace-mode-presentation" type="button" aria-pressed="false">演示</button>
+      </nav>
+      <nav class="workspace-view-switch" aria-label="工作区视图">
+        <button type="button" data-workspace-view="experiment" aria-pressed="true">实验台</button>
+        <button type="button" data-workspace-view="evidence" aria-pressed="false">证据</button>
+        <button type="button" data-workspace-view="reflect" aria-pressed="false">复盘</button>
+      </nav>
+      <button class="workspace-agent-toggle" id="workspace-agent-toggle" type="button" aria-controls="workspace-agent-rail" aria-expanded="false">助教</button>
+    </header>
     <header class="hero-grid">
       <div class="hero">
         <p class="eyebrow">RISC-V 64 · QEMU · OpenSBI · Rust</p>
@@ -32,7 +58,10 @@
             <p class="eyebrow">Live workspace</p>
             <h2 id="runtime-card-title">当前实验现场</h2>
           </div>
-          <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+          <div class="runtime-card-tools">
+            <button class="text-button" id="workspace-prediction-toggle" type="button" aria-controls="prediction-form" aria-expanded="false">预测与运行</button>
+            <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+          </div>
         </div>
         <dl class="runtime-facts">
           <div><dt>Git 分支</dt><dd><code id="branch-name">离线页面</code></dd></div>
@@ -316,6 +345,45 @@
           <li class="empty-state">尚未完成或载入运行。</li>
         </ol>
       </article>
+      <article class="agent-panel card" id="agent-panel" aria-labelledby="agent-heading">
+        <div class="subpanel-heading">
+          <div><p class="agent-kicker">受限证据 · 单次独立回答</p><h3 id="agent-heading">AI 教学助教</h3></div>
+          <button class="text-button" id="agent-clear" type="button">清空会话</button>
+        </div>
+        <p class="agent-boundary">把当前实验中的困惑说清楚。回答只作学习提示，请回到代码和运行证据验证。</p>
+        <dl class="agent-facts">
+          <div><dt>当前分支 / Lab</dt><dd id="agent-context">正在读取上下文</dd></div>
+          <div><dt>模型状态</dt><dd id="agent-model-status">正在检查配置</dd></div>
+        </dl>
+        <details class="agent-consent-disclosure" open>
+          <summary>发送前先确认数据边界</summary>
+          <div class="agent-consent-box">
+            <p>模型服务为火山方舟 Agent Plan，默认模型 <code>ark-code-latest</code>。问题和模型按需读取的受限源码片段、代码差异、QEMU 结构化事件或运行结果可能发送到云端，并使用 <code>store: true</code> 续接工具调用。</p>
+            <p>不会发送 API Key、完整终端日志、环境变量、任意文件、教师答案文件或评分记录。</p>
+            <label><input id="agent-consent" type="checkbox"> 我已阅读并同意在当前浏览器会话中发送上述数据</label>
+          </div>
+        </details>
+        <div class="agent-quick-prompts" aria-label="教学快捷问题">
+          <button type="button" data-agent-prompt="为什么当前实验还没有触发下一步？">为什么还没触发下一步？</button>
+          <button type="button" data-agent-prompt="请帮我解释最近一条运行证据，以及它说明了什么。">帮我读运行证据</button>
+          <button type="button" data-agent-prompt="根据当前 Lab，我应该先检查哪个文件或函数？">先检查哪里？</button>
+          <button type="button" data-agent-prompt="请只给一个不泄露完整答案的调试提示。">给一个提示</button>
+        </div>
+        <div class="agent-answer" id="agent-answer" aria-label="教学助教消息">
+          <ol class="agent-thread" id="agent-thread" role="log" aria-live="polite" aria-relevant="additions"></ol>
+          <p class="agent-empty" id="agent-empty">还没有对话。选择一个快捷问题，或描述你卡住的位置。</p>
+        </div>
+        <form id="agent-form" class="agent-form">
+          <div class="agent-composer-label"><label for="agent-message">围绕当前实验提问</label><span id="agent-character-count">0 / 4000</span></div>
+          <textarea id="agent-message" maxlength="4000" rows="3" required placeholder="描述你观察到的现象、预期和已经检查过的证据。"></textarea>
+          <div class="agent-actions">
+            <button class="button button-primary" id="agent-submit" type="submit">发送问题</button>
+            <button class="button" id="agent-retry" type="button" disabled>重试</button>
+            <button class="button" id="agent-copy" type="button" disabled>复制回答</button>
+          </div>
+        </form>
+        <output class="agent-status" id="agent-status" aria-live="polite">尚未提问。</output>
+      </article>
       <article class="run-lab-panel card" id="run-lab-panel" aria-labelledby="run-lab-heading">
         <div class="subpanel-heading">
           <div>
@@ -431,6 +499,39 @@
             <ol class="comparison-list" id="comparison-list"></ol>
           </section>
         </div>
+
+        <section class="run-submission-panel" id="run-submission-panel" aria-labelledby="run-submission-heading">
+          <div class="subpanel-heading">
+            <div>
+              <p class="eyebrow">完全自愿 · 默认不发送</p>
+              <h4 id="run-submission-heading">向项目负责人提交一次脱敏运行记录</h4>
+            </div>
+            <p>选择本机保存的某一次运行，先核对发送和不发送的内容，再明确同意。取消选择、关闭页面或只进行回放都不会产生网络请求。</p>
+          </div>
+          <label for="run-submission-select">选择本机运行记录</label>
+          <select id="run-submission-select">
+            <option value="">不选择（不发送任何运行记录）</option>
+          </select>
+          <div class="run-submission-preview" id="run-submission-preview" hidden>
+            <dl id="run-submission-facts" class="run-submission-facts"></dl>
+            <div class="run-submission-boundary">
+              <section aria-labelledby="run-sent-fields-heading">
+                <h5 id="run-sent-fields-heading">将发送</h5>
+                <ul id="run-submission-sent-fields"></ul>
+              </section>
+              <section aria-labelledby="run-excluded-fields-heading">
+                <h5 id="run-excluded-fields-heading">不会发送</h5>
+                <ul id="run-submission-excluded-fields"></ul>
+              </section>
+            </div>
+            <label class="run-submission-consent">
+              <input id="run-submission-consent" type="checkbox">
+              <span>我已查看以上内容，并同意将这一次脱敏运行记录发送给项目负责人，用于教学改进。</span>
+            </label>
+            <button class="button button-primary" id="run-submission-submit" type="button" disabled>提交本次运行记录</button>
+          </div>
+          <output id="run-submission-status" class="run-submission-status" aria-live="polite">默认不发送。请先选择一次已保存运行并查看脱敏预览。</output>
+        </section>
       </article>
     </section>
 
@@ -565,14 +666,29 @@
             附带当前分支、实验、提交编号和运行状态（不包含代码与日志）
           </label>
 
+          <fieldset class="feedback-submit-settings">
+            <legend>异地提交设置</legend>
+            <div class="feedback-field-grid">
+              <label>
+                反馈服务地址
+                <input id="feedback-service-url" type="url" inputmode="url" maxlength="500" placeholder="https://xxxx.trycloudflare.com" autocomplete="url">
+              </label>
+              <label>
+                邀请码（可选）
+                <input id="feedback-invite-code" type="password" maxlength="128" placeholder="由项目负责人提供" autocomplete="off">
+              </label>
+            </div>
+            <small>地址和邀请码只保存在当前浏览器；邀请码仅作为课堂演示级保护，不会写入导出的评价记录。</small>
+          </fieldset>
+
           <div class="feedback-actions">
             <button class="button" id="feedback-save" type="button">保存本机草稿</button>
             <button class="button" id="feedback-export-md" type="button">导出 Markdown</button>
             <button class="button" id="feedback-export-json" type="button">导出 JSON</button>
-            <button class="button button-primary" id="feedback-submit" type="button">前往 GitLab 确认提交</button>
+            <button class="button button-primary" id="feedback-submit" type="button">提交教学评价</button>
             <button class="text-button feedback-clear" id="feedback-clear" type="button">清空</button>
           </div>
-          <output class="feedback-status" id="feedback-status" aria-live="polite">反馈只保存在当前浏览器，除非你主动导出或确认提交。</output>
+          <output class="feedback-status" id="feedback-status" aria-live="polite">草稿和服务设置保存在当前浏览器；只有点击“提交教学评价”才会发送评价记录。</output>
         </form>
 
         <aside class="feedback-context" aria-labelledby="feedback-context-heading">
@@ -586,14 +702,42 @@
           </dl>
           <ol class="feedback-route">
             <li>先在本机填写并检查内容</li>
-            <li>可导出文件离线提交</li>
-            <li>后续用自己的 GitLab 账号确认发布</li>
+            <li>填写项目负责人提供的服务地址</li>
+            <li>提交失败时保留草稿并稍后重试</li>
           </ol>
           <p class="feedback-privacy">请不要在文本中填写密码、访问令牌或不希望公开的个人信息。</p>
         </aside>
       </div>
     </section>
   </main>
+
+  <aside class="agent-pet" data-pet-state="idle" aria-label="小内核学习助教">
+    <section class="agent-mini-panel" id="agent-mini-panel" aria-labelledby="agent-mini-title" hidden>
+      <div class="agent-mini-heading">
+        <div>
+          <p class="agent-mini-kicker">Kernel Buddy</p>
+          <h2 id="agent-mini-title">问问小内核</h2>
+        </div>
+        <button class="agent-mini-close" id="agent-mini-close" type="button">收起</button>
+      </div>
+      <p class="agent-mini-copy">描述你卡住的位置，我会把问题带到完整助教页。</p>
+      <form id="agent-mini-form">
+        <label for="agent-mini-message">你的问题</label>
+        <textarea id="agent-mini-message" name="message" rows="3" maxlength="4000" placeholder="例如：为什么切换页表后必须刷新 TLB？"></textarea>
+        <div class="agent-mini-actions">
+          <button class="button button-primary" id="agent-mini-submit" type="submit">带着问题去问</button>
+          <a id="agent-full-page-link" href="agent.html">打开完整助教</a>
+        </div>
+        <output class="agent-mini-status" id="agent-mini-status" aria-live="polite"></output>
+      </form>
+      <p class="agent-mini-boundary">仅转交当前问题，不发送本页源码、终端日志或聊天历史。</p>
+    </section>
+    <button id="kernel-buddy" type="button" aria-controls="agent-mini-panel" aria-expanded="false" aria-label="打开小内核助教">
+      <img src="assets/kernel-buddy.png" alt="" width="88" height="88">
+      <span class="agent-pet-fallback" aria-hidden="true">OS</span>
+      <span class="agent-pet-state" aria-hidden="true">空闲</span>
+    </button>
+  </aside>
 
   <script src="feedback-questions.js"></script>
   <script src="feedback.js"></script>
@@ -603,6 +747,14 @@
   <script src="state-diff.js"></script>
   <script src="run-history.js"></script>
   <script src="run-transfer.js"></script>
+  <script src="run-submission.js"></script>
+  <script src="ui-shell-state.js"></script>
+  <script src="ui-shell.js"></script>
+  <script src="agent-client.js"></script>
+  <script src="agent-entry-state.js"></script>
+  <script src="agent-pet.js"></script>
+  <script src="agent-chat-state.js"></script>
+  <script src="agent-panel.js"></script>
   <script src="timeline-controller.js"></script>
   <script src="diagnostics.js"></script>
   <script src="presentation-mode.js"></script>

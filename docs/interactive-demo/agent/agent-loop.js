@@ -388,6 +388,7 @@ function createAgentLoop(options = {}) {
           await checkContext();
           const modelResult = await options.model.step(Object.freeze({
             requestId: initial.context.requestId,
+            modelTurn: turn + 1,
             message: turn === 0 ? initial.message : null,
             tools: TOOL_SCHEMAS,
             continuationState,

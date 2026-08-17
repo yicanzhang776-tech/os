@@ -4,7 +4,11 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { AgentApiError } = require("./api");
 const { createAgentLoop } = require("./agent-loop");
-const { ModelClientError, isTrustedModelClientError } = require("./model-client");
+const {
+  ModelClientError,
+  createArkModelClient,
+  isTrustedModelClientError
+} = require("./model-client");
 const { createProductionAgentHandler } = require("./model-handler");
 const { TOOL_SCHEMA_NAMES } = require("./tool-schemas");
 
@@ -79,6 +83,13 @@ function invoke(handler) {
   return handler({ message: "hello", invocationContext: INVOCATION_CONTEXT });
 }
 
+function jsonResponse(value) {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
 test("the production handler returns a final answer through the Agent Loop", async () => {
   const h = createHarness([{ kind: "final", answer: "safe answer", continuationState: null }]);
   assert.deepEqual(await invoke(h.handler), { answer: "safe answer" });
@@ -112,6 +123,80 @@ test("one fake tool call is dispatched and followed by a final answer", async ()
     expectedBranch: INVOCATION_CONTEXT.branch,
     expectedCommit: INVOCATION_CONTEXT.commit
   });
+});
+
+test("production client and Agent Loop complete get_context then read_code", async () => {
+  const bodies = [];
+  const responses = [
+    {
+      id: "resp-handler-1",
+      status: "completed",
+      output: [{
+        type: "function_call",
+        name: "get_context",
+        call_id: "call-handler-1",
+        arguments: "{}"
+      }]
+    },
+    {
+      id: "resp-handler-2",
+      status: "completed",
+      output: [{
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-handler-2",
+        arguments: "{\"path\":\"kernel/src/main.rs\",\"startLine\":1,\"endLine\":40}"
+      }]
+    },
+    {
+      id: "resp-handler-3",
+      status: "completed",
+      output: [{
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Observed the real tool sequence." }]
+      }]
+    }
+  ];
+  const model = createArkModelClient({
+    fetchImpl: async (_url, options) => {
+      bodies.push(JSON.parse(options.body));
+      return jsonResponse(responses.shift());
+    },
+    apiKeyProvider: () => "handler-chain-fake-key"
+  });
+  const toolCalls = [];
+  const toolDispatch = {};
+  for (const name of TOOL_SCHEMA_NAMES) {
+    toolDispatch[name] = async (args) => {
+      toolCalls.push({ name, args });
+      return toolResult(name, {
+        data: name === "read_code"
+          ? { path: args.path, content: "fn main() {}\n", startLine: 1, endLine: 1 }
+          : { branch: INVOCATION_CONTEXT.branch, commit: INVOCATION_CONTEXT.commit }
+      });
+    };
+  }
+  const agentLoop = createAgentLoop({
+    model,
+    toolDispatch,
+    readContext: async () => ({
+      branch: INVOCATION_CONTEXT.branch,
+      commit: INVOCATION_CONTEXT.commit
+    }),
+    now: () => 1_000,
+    isTrustedModelError: isTrustedModelClientError
+  });
+  const handler = createProductionAgentHandler({ agentLoop });
+
+  assert.deepEqual(await invoke(handler), { answer: "Observed the real tool sequence." });
+  assert.deepEqual(toolCalls.map((call) => call.name), ["get_context", "read_code"]);
+  assert.equal(bodies[1].previous_response_id, "resp-handler-1");
+  assert.equal(bodies[1].input[0].call_id, "call-handler-1");
+  assert.equal(bodies[2].previous_response_id, "resp-handler-2");
+  assert.equal(bodies[2].input[0].call_id, "call-handler-2");
+  assert.equal(JSON.parse(bodies[1].input[0].output).tool, "get_context");
+  assert.equal(JSON.parse(bodies[2].input[0].output).tool, "read_code");
 });
 
 test("a safe tool failure reaches the model and can produce a final answer", async () => {
