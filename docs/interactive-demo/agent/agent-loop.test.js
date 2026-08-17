@@ -208,30 +208,53 @@ test("logs max_tool_calls_after_finalization without changing the public error",
   assert.deepEqual(h.limitLogs, [
     `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
       + "reason=max_tool_calls_after_finalization modelTurn=9 "
-      + "toolCalls=8 maxToolCalls=8"
+      + "toolCalls=8 maxToolCalls=8 "
+      + "toolSequence=get_context,get_code_diff,get_run_result,get_qemu_events,"
+      + "read_code,read_code,read_code,run_test"
   ]);
 });
 
 test("logs batch_would_exceed_max_tool_calls without changing the public error", async () => {
-  const h = harness([batch([
-    toolCall("call-1", "read_code", { path: "kernel/src/file-1.rs" }),
-    toolCall("call-2", "read_code", { path: "kernel/src/file-2.rs" }),
-    toolCall("call-3", "read_code", { path: "kernel/src/file-3.rs" }),
-    toolCall("call-4", "read_code", { path: "kernel/src/file-4.rs" }),
-    toolCall("call-5", "get_context"),
-    toolCall("call-6", "get_code_diff", { lab: "lab4" }),
-    toolCall("call-7", "get_run_result", { runId: "run-1" }),
-    toolCall("call-8", "get_qemu_events", { runId: "run-1", limit: 20 }),
-    toolCall("call-9", "get_qemu_events", { runId: "run-2", limit: 20 })
-  ])]);
+  const privatePath = "kernel/src/PRIVATE_PENDING_PATH_TOKEN_SENTINEL.rs";
+  const h = harness([
+    call("call-1", "get_context"),
+    call("call-2", "get_run_result", { runId: "PRIVATE_RUN_TOKEN_SENTINEL" }),
+    call("call-3", "get_qemu_events", { runId: "PRIVATE_RUN_TOKEN_SENTINEL" }),
+    call("call-4", "get_code_diff", {
+      lab: "lab4",
+      paths: ["kernel/src/PRIVATE_DIFF_PATH_TOKEN_SENTINEL.rs"]
+    }),
+    call("call-5", "read_code", { path: "kernel/src/PRIVATE_SOURCE_ONE.rs" }),
+    call("call-6", "read_code", { path: "kernel/src/PRIVATE_SOURCE_TWO.rs" }),
+    batch([
+      toolCall("call-7", "read_code", { path: privatePath, startLine: 1 }),
+      toolCall("call-8", "read_code", { path: privatePath, startLine: 201 }),
+      toolCall("call-9", "read_code", { path: privatePath, startLine: 401 })
+    ])
+  ], {
+    overrides: {
+      get_run_result: toolResult("get_run_result", {
+        data: { summary: "TOOL_RESULT_SOURCE_SENTINEL Bearer PRIVATE_TOKEN_SENTINEL" }
+      }),
+      read_code: toolResult("read_code", {
+        data: { content: "fn private_source_sentinel() {}" }
+      })
+    }
+  });
 
-  await rejectsCode(run(h), "agent_loop_limit");
+  await rejectsCode(run(h, "USER_INPUT_SENTINEL PRIVATE_TOKEN_SENTINEL"), "agent_loop_limit");
   assert.deepEqual(h.limitLogs, [
     `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
-      + "reason=batch_would_exceed_max_tool_calls modelTurn=1 "
-      + "toolCalls=0 maxToolCalls=8 batchSize=9 remainingToolBudget=8"
+      + "reason=batch_would_exceed_max_tool_calls modelTurn=7 "
+      + "toolCalls=6 maxToolCalls=8 batchSize=3 remainingToolBudget=2 "
+      + "toolSequence=get_context,get_run_result,get_qemu_events,get_code_diff,"
+      + "read_code,read_code pendingTools=read_code,read_code,read_code"
   ]);
-  assert.equal(h.tools.calls.length, 0);
+  assert.equal(h.tools.calls.length, 6);
+  assert.doesNotMatch(
+    h.limitLogs[0],
+    /arguments|kernel\/src|PRIVATE|SENTINEL|Bearer|fn private|TOOL_RESULT|USER_INPUT|\{|\}/
+  );
 });
 
 test("logs duplicate_signature with only the tool name and signature hash", async () => {
@@ -246,7 +269,8 @@ test("logs duplicate_signature with only the tool name and signature hash", asyn
   await rejectsCode(run(h), "agent_loop_limit");
   assert.deepEqual(h.limitLogs, [
     `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} reason=duplicate_signature `
-      + `modelTurn=2 toolCalls=1 maxToolCalls=8 toolName=read_code signatureHash=${expectedHash}`
+      + `modelTurn=2 toolCalls=1 maxToolCalls=8 toolName=read_code signatureHash=${expectedHash} `
+      + "toolSequence=read_code"
   ]);
   assert.doesNotMatch(h.limitLogs[0], /PRIVATE_SOURCE_SENTINEL|arguments|\{|\}/);
 });
@@ -261,7 +285,7 @@ test("logs tool_repeat_limit with the bounded tool counters", async () => {
   assert.deepEqual(h.limitLogs, [
     `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} reason=tool_repeat_limit `
       + "modelTurn=2 toolCalls=1 maxToolCalls=8 toolName=get_run_result "
-      + "toolCount=1 toolLimit=1"
+      + "toolCount=1 toolLimit=1 toolSequence=get_run_result"
   ]);
 });
 
@@ -283,7 +307,8 @@ test("logs max_model_turns_exhausted at the terminal loop guard", async () => {
   });
   assert.deepEqual(h.limitLogs, [
     `[agent-limit] requestId=${INITIAL_CONTEXT.requestId} `
-      + "reason=max_model_turns_exhausted modelTurn=2 toolCalls=2 maxToolCalls=8"
+      + "reason=max_model_turns_exhausted modelTurn=2 toolCalls=2 maxToolCalls=8 "
+      + "toolSequence=read_code,read_code"
   ]);
 });
 

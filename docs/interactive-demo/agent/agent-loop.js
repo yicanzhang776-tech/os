@@ -492,6 +492,7 @@ function createAgentLoop(options = {}) {
         const callSignatures = new Set();
         const toolCounts = Object.create(null);
         const usedTools = [];
+        const toolSequence = [];
         let toolCalls = 0;
         let totalOutputBytes = 0;
         let continuationState = null;
@@ -518,6 +519,12 @@ function createAgentLoop(options = {}) {
           if (Number.isInteger(metadata.batchSize)) fields.push(`batchSize=${metadata.batchSize}`);
           if (Number.isInteger(metadata.remainingToolBudget)) {
             fields.push(`remainingToolBudget=${metadata.remainingToolBudget}`);
+          }
+          fields.push(`toolSequence=${toolSequence.join(",")}`);
+          if (Array.isArray(metadata.pendingTools)
+            && metadata.pendingTools.length > 0
+            && metadata.pendingTools.every((toolName) => TOOL_SCHEMA_NAMES.includes(toolName))) {
+            fields.push(`pendingTools=${metadata.pendingTools.join(",")}`);
           }
           try {
             agentLimitLogger(`[agent-limit] ${fields.join(" ")}`);
@@ -588,7 +595,8 @@ function createAgentLoop(options = {}) {
               reason: "batch_would_exceed_max_tool_calls",
               modelTurn: turn + 1,
               batchSize: step.calls.length,
-              remainingToolBudget: MAX_TOOL_CALLS - toolCalls
+              remainingToolBudget: MAX_TOOL_CALLS - toolCalls,
+              pendingTools: step.calls.map((call) => call.toolName)
             });
           }
           if (step.calls.length > 1
@@ -655,6 +663,7 @@ function createAgentLoop(options = {}) {
 
             totalOutputBytes += outputBytes;
             toolCalls += 1;
+            toolSequence.push(call.toolName);
             if (!Object.hasOwn(toolCounts, call.toolName)) usedTools.push(call.toolName);
             toolCounts[call.toolName] = (toolCounts[call.toolName] || 0) + 1;
             callIds.add(call.callId);
