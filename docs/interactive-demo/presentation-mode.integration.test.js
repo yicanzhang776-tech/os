@@ -8,6 +8,7 @@ const test = require("node:test");
 const directory = __dirname;
 const html = fs.readFileSync(path.join(directory, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(directory, "styles.css"), "utf8");
+const workspaceCss = fs.readFileSync(path.join(directory, "workspace.css"), "utf8");
 const app = fs.readFileSync(path.join(directory, "app.js"), "utf8");
 const server = fs.readFileSync(path.join(directory, "server.js"), "utf8");
 
@@ -43,6 +44,17 @@ test("presentation layout is isolated and responsive", () => {
   assert.match(css, /@media \(max-width: 1080px\)[\s\S]+html\[data-mode="presentation"\] \.run-lab-grid/);
   assert.match(css, /@media \(max-width: 760px\)[\s\S]+html\[data-mode="presentation"\] \.state-diff-grid/);
   assert.match(css, /html\[data-mode="presentation"\] \.button,[\s\S]+min-height:\s*44px/);
+});
+
+test("presentation navigation stays in document flow below the workspace command bar", () => {
+  assert.match(
+    workspaceCss,
+    /html\[data-mode="presentation"\] \.presentation-toolbar:not\(\[hidden\]\)\s*\{[^}]*position:\s*static;[^}]*top:\s*auto;/,
+  );
+  assert.match(
+    workspaceCss,
+    /html\[data-mode="presentation"\] \.workspace-layout \.workspace-lab-rail\s*\{[^}]*position:\s*static;[^}]*top:\s*auto;[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/,
+  );
 });
 
 test("mode switching restores only local view state and never runs or switches a branch", () => {
