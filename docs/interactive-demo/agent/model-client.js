@@ -6,6 +6,7 @@ const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3";
 const DEFAULT_ARK_MODEL = "ark-code-latest";
 const ARK_RESPONSES_URL = `${DEFAULT_ARK_BASE_URL}/responses`;
 const MODEL_TIMEOUT_MS = 45_000;
+const MODEL_NETWORK_RETRY_DELAY_MS = 350;
 const MAX_MODEL_RESPONSE_BYTES = 1024 * 1024;
 const MAX_MODEL_ANSWER_LENGTH = 12_000;
 const MAX_TOOL_ARGUMENT_BYTES = 16 * 1024;
@@ -28,6 +29,7 @@ const SERVER_INSTRUCTIONS = [
   "Prefer OBSERVE, EXPLAIN, LOCATE, PREDICT, then VERIFY.",
   "Give focused teaching hints instead of writing the complete solution."
 ].join(" ");
+const FINALIZATION_INSTRUCTIONS = `${SERVER_INSTRUCTIONS} The safe local tool budget is exhausted. Do not request another tool; answer from the returned evidence and state any remaining uncertainty.`;
 const AGENT_CAPABILITIES = Object.freeze({
   contractVersion: "os-tutor.agent/v1",
   provider: "volcengine-ark-agent-plan",
@@ -214,7 +216,8 @@ function validateStepInput(value, apiKey) {
       tools,
       message: validateMessage(value.message),
       continuationState: null,
-      toolOutput: null
+      toolOutput: null,
+      finalizationOnly: value.finalizationOnly
     };
   }
   if (value.message !== null) throw modelError("model_invalid_response");
@@ -224,7 +227,8 @@ function validateStepInput(value, apiKey) {
     tools,
     message: null,
     continuationState,
-    toolOutput: validateToolOutput(value.toolOutput, continuationState, apiKey)
+    toolOutput: validateToolOutput(value.toolOutput, continuationState, apiKey),
+    finalizationOnly: value.finalizationOnly
   };
 }
 
@@ -382,9 +386,11 @@ function createArkModelClient(options = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl is required.");
   const setTimer = options.setTimer || setTimeout;
   const clearTimer = options.clearTimer || clearTimeout;
+  const sleep = options.sleep || ((delay) => new Promise((resolve) => setTimeout(resolve, delay)));
   if (typeof setTimer !== "function" || typeof clearTimer !== "function") {
     throw new TypeError("Timer functions are required.");
   }
+  if (typeof sleep !== "function") throw new TypeError("sleep is required.");
 
   const apiKey = readApiKeyOnce(options.apiKeyProvider);
   const baseUrl = resolveExactSetting(options.baseUrl, DEFAULT_ARK_BASE_URL);
@@ -411,19 +417,31 @@ function createArkModelClient(options = {}) {
 
     try {
       let response;
-      try {
-        const fetchPromise = Promise.resolve().then(() => fetchImpl(ARK_RESPONSES_URL, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal
-        }));
-        response = await Promise.race([fetchPromise, timeoutPromise]);
-      } catch (_) {
-        throw modelError(timedOut ? "model_timeout" : "model_unavailable");
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const fetchPromise = Promise.resolve().then(() => fetchImpl(ARK_RESPONSES_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal
+          }));
+          response = await Promise.race([fetchPromise, timeoutPromise]);
+          break;
+        } catch (_) {
+          if (timedOut) throw modelError("model_timeout");
+          if (attempt === 1) throw modelError("model_unavailable");
+          try {
+            await Promise.race([
+              Promise.resolve().then(() => sleep(MODEL_NETWORK_RETRY_DELAY_MS)),
+              timeoutPromise
+            ]);
+          } catch (_) {
+            throw modelError(timedOut ? "model_timeout" : "model_internal_error");
+          }
+        }
       }
       if (timedOut) throw modelError("model_timeout");
       if (!response || !Number.isInteger(response.status)) {
@@ -469,6 +487,9 @@ function createArkModelClient(options = {}) {
       const validated = validateStepInput(input, apiKey);
       const body = {
         model: DEFAULT_ARK_MODEL,
+        instructions: validated.finalizationOnly
+          ? FINALIZATION_INSTRUCTIONS
+          : SERVER_INSTRUCTIONS,
         input: validated.message === null
           ? [{
             type: "function_call_output",
@@ -498,8 +519,10 @@ module.exports = {
   MAX_MODEL_ANSWER_LENGTH,
   MAX_MODEL_RESPONSE_BYTES,
   MAX_TOOL_ARGUMENT_BYTES,
+  MODEL_NETWORK_RETRY_DELAY_MS,
   MODEL_TIMEOUT_MS,
   ModelClientError,
+  FINALIZATION_INSTRUCTIONS,
   SERVER_INSTRUCTIONS,
   createArkModelClient,
   isTrustedModelClientError
