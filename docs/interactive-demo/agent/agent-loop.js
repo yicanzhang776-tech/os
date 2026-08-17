@@ -164,6 +164,81 @@ function signatureHash(signature) {
   return crypto.createHash("sha256").update(signature, "utf8").digest("hex");
 }
 
+function safeEvidenceString(value, maxLength, nullable = false) {
+  if (nullable && value === null) return null;
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && !FORBIDDEN_IDENTIFIER_CHARACTERS.test(value)
+    ? value
+    : undefined;
+}
+
+function trustedWorkspaceSnapshot(value) {
+  if (!isPlainObject(value)) return null;
+  const countFields = [
+    "stagedFiles", "modifiedFiles", "untrackedFiles", "conflictedFiles"
+  ];
+  if (typeof value.clean !== "boolean"
+    || countFields.some((field) => !Number.isSafeInteger(value[field]) || value[field] < 0)) {
+    return null;
+  }
+  const clean = countFields.every((field) => value[field] === 0);
+  if (value.clean !== clean) return null;
+  return Object.freeze({
+    clean,
+    stagedFiles: value.stagedFiles,
+    modifiedFiles: value.modifiedFiles,
+    untrackedFiles: value.untrackedFiles,
+    conflictedFiles: value.conflictedFiles
+  });
+}
+
+function trustedContextSnapshot(toolResult, initialContext) {
+  if (!toolResult.ok) return null;
+  const data = toolResult.data;
+  const returnedBranch = safeEvidenceString(data.branch, 200);
+  const returnedCommit = safeEvidenceString(data.commit, 200);
+  if ((Object.hasOwn(data, "branch") && returnedBranch === undefined)
+    || (Object.hasOwn(data, "commit") && returnedCommit === undefined)
+    || (returnedBranch !== undefined && returnedBranch !== initialContext.branch)
+    || (returnedCommit !== undefined && returnedCommit !== initialContext.commit)) {
+    throw loopError("agent_internal_error");
+  }
+  const returnedLab = safeEvidenceString(data.lab, 80, true);
+  const returnedVariant = safeEvidenceString(data.variant, 80, true);
+  const returnedWorkspace = Object.hasOwn(data, "workspace")
+    ? trustedWorkspaceSnapshot(data.workspace)
+    : null;
+  if ((Object.hasOwn(data, "lab") && returnedLab === undefined)
+    || (Object.hasOwn(data, "variant") && returnedVariant === undefined)
+    || (Object.hasOwn(data, "stageIndex")
+      && !(data.stageIndex === null
+        || (Number.isInteger(data.stageIndex) && data.stageIndex >= 0 && data.stageIndex <= 7)))
+    || (Object.hasOwn(data, "workspace") && returnedWorkspace === null)) {
+    throw loopError("agent_internal_error");
+  }
+  const stageIndex = data.stageIndex === null
+    || (Number.isInteger(data.stageIndex) && data.stageIndex >= 0 && data.stageIndex <= 7)
+    ? data.stageIndex
+    : null;
+  return Object.freeze({
+    branch: returnedBranch ?? initialContext.branch,
+    commit: returnedCommit ?? initialContext.commit,
+    lab: returnedLab === undefined ? initialContext.lab : returnedLab,
+    stageIndex,
+    variant: returnedVariant === undefined ? initialContext.variant : returnedVariant,
+    workspace: returnedWorkspace
+  });
+}
+
+function requestEvidenceSnapshot(trustedContext, usedTools) {
+  return Object.freeze({
+    trustedContext,
+    usedTools: Object.freeze([...usedTools])
+  });
+}
+
 function validateInitialInput(input) {
   if (!isPlainObject(input)) throw loopError("agent_internal_error");
   let descriptors;
@@ -416,11 +491,13 @@ function createAgentLoop(options = {}) {
         const callIds = new Set();
         const callSignatures = new Set();
         const toolCounts = Object.create(null);
+        const usedTools = [];
         let toolCalls = 0;
         let totalOutputBytes = 0;
         let continuationState = null;
         let toolOutputs = null;
         let finalizationOnly = false;
+        let trustedContext = null;
 
         const raiseAgentLimit = (metadata) => {
           const fields = [
@@ -489,7 +566,8 @@ function createAgentLoop(options = {}) {
             continuationState,
             toolOutputs,
             finalizationOnly,
-            courseKnowledge
+            courseKnowledge,
+            requestEvidence: requestEvidenceSnapshot(trustedContext, usedTools)
           }));
           checkDeadline();
           await checkContext();
@@ -577,9 +655,13 @@ function createAgentLoop(options = {}) {
 
             totalOutputBytes += outputBytes;
             toolCalls += 1;
+            if (!Object.hasOwn(toolCounts, call.toolName)) usedTools.push(call.toolName);
             toolCounts[call.toolName] = (toolCounts[call.toolName] || 0) + 1;
             callIds.add(call.callId);
             callSignatures.add(`${call.toolName}:${canonicalJson(call.arguments)}`);
+            if (call.toolName === "get_context") {
+              trustedContext = trustedContextSnapshot(toolResult, initial.context);
+            }
             batchOutputs.push(Object.freeze({
               callId: call.callId,
               toolName: call.toolName,

@@ -47,6 +47,24 @@ const TOOLS = Object.freeze([Object.freeze({
     additionalProperties: false
   })
 })]);
+const EMPTY_REQUEST_EVIDENCE = Object.freeze({
+  trustedContext: null,
+  usedTools: Object.freeze([])
+});
+const TRUSTED_CONTEXT = Object.freeze({
+  branch: "lab1-starter",
+  commit: "abc1234",
+  lab: "lab1",
+  stageIndex: 1,
+  variant: "starter",
+  workspace: Object.freeze({
+    clean: false,
+    stagedFiles: 0,
+    modifiedFiles: 1,
+    untrackedFiles: 0,
+    conflictedFiles: 0
+  })
+});
 
 function jsonResponse(value, options = {}) {
   const body = options.raw === true ? value : JSON.stringify(value);
@@ -75,6 +93,7 @@ function stepInput(overrides = {}) {
     toolOutputs: null,
     finalizationOnly: false,
     courseKnowledge: [],
+    requestEvidence: EMPTY_REQUEST_EVIDENCE,
     ...overrides
   };
 }
@@ -159,6 +178,11 @@ test("server instructions define natural-language routing, stopping, and evidenc
   assert.match(SERVER_INSTRUCTIONS, /Explicit developer requests naming one provided tool remain valid/);
   assert.match(SERVER_INSTRUCTIONS, /After a successful ToolResult provides enough evidence, stop/);
   assert.match(SERVER_INSTRUCTIONS, /Do not repeat a successful tool call/);
+  assert.match(SERVER_INSTRUCTIONS, /get_context may be called at most once/);
+  assert.match(SERVER_INSTRUCTIONS, /\[REQUEST EVIDENCE STATE\].*server-validated record/);
+  assert.match(SERVER_INSTRUCTIONS, /usedTools contains get_context, do not call get_context again/);
+  assert.match(SERVER_INSTRUCTIONS, /checkContext\(\).*context_changed or context_unavailable/);
+  assert.match(SERVER_INSTRUCTIONS, /do not spend remaining tool budget/);
   assert.match(SERVER_INSTRUCTIONS, /use get_context once first instead of guessing/);
   assert.match(SERVER_INSTRUCTIONS, /Call run_test alone in a later turn/);
   assert.match(SERVER_INSTRUCTIONS, /events empty and returnedCount and totalMatched equal to zero is valid evidence/);
@@ -402,6 +426,92 @@ test("step supports read_code as the only tool before a final answer", async () 
     answer: "The requested code was observed.",
     continuationState: null
   });
+});
+
+test("request evidence keeps an earlier trusted context visible after a later tool turn", async () => {
+  const bodies = [];
+  const readCodeTool = Object.freeze({
+    type: "function",
+    name: "read_code",
+    description: "Read bounded teaching code.",
+    parameters: Object.freeze({
+      type: "object",
+      properties: Object.freeze({ path: Object.freeze({ type: "string" }) }),
+      required: Object.freeze(["path"]),
+      additionalProperties: false
+    })
+  });
+  const tools = Object.freeze([...TOOLS, readCodeTool]);
+  const responses = [
+    functionCallResponse(),
+    {
+      id: "resp-read-after-context",
+      output: [{
+        type: "function_call",
+        name: "read_code",
+        call_id: "call-read-after-context",
+        arguments: "{\"path\":\"kernel/src/main.rs\"}"
+      }]
+    },
+    modelOutput("The retained context and code evidence are sufficient.")
+  ];
+  const client = clientWith(async (_url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return jsonResponse(responses.shift());
+  });
+  const contextOutput = JSON.stringify({
+    contractVersion: "os-tutor.tool/v1",
+    tool: "get_context",
+    ok: true,
+    data: TRUSTED_CONTEXT,
+    error: null,
+    meta: {}
+  });
+  const codeOutput = JSON.stringify({
+    contractVersion: "os-tutor.tool/v1",
+    tool: "read_code",
+    ok: true,
+    data: { path: "kernel/src/main.rs", content: "fn main() {}" },
+    error: null,
+    meta: {}
+  });
+
+  const first = await client.step(stepInput({ tools }));
+  const contextEvidence = Object.freeze({
+    trustedContext: TRUSTED_CONTEXT,
+    usedTools: Object.freeze(["get_context"])
+  });
+  const second = await client.step(stepInput({
+    tools,
+    message: null,
+    continuationState: first.continuationState,
+    toolOutputs: [{ callId: "call-test-1", toolName: "get_context", output: contextOutput }],
+    requestEvidence: contextEvidence
+  }));
+  const laterEvidence = Object.freeze({
+    trustedContext: TRUSTED_CONTEXT,
+    usedTools: Object.freeze(["get_context", "read_code"])
+  });
+  const third = await client.step(stepInput({
+    tools,
+    message: null,
+    continuationState: second.continuationState,
+    toolOutputs: [{
+      callId: "call-read-after-context",
+      toolName: "read_code",
+      output: codeOutput
+    }],
+    requestEvidence: laterEvidence
+  }));
+
+  assert.equal(third.kind, "final");
+  assert.equal(bodies[2].previous_response_id, "resp-read-after-context");
+  assert.match(bodies[2].input[0].output, /^\[RUNTIME EVIDENCE\]\n/);
+  assert.match(bodies[2].input[0].output, /\[REQUEST EVIDENCE STATE\]\n/);
+  const serializedState = bodies[2].input[0].output.split("[REQUEST EVIDENCE STATE]\n")[1];
+  assert.deepEqual(JSON.parse(serializedState), laterEvidence);
+  assert.equal(JSON.parse(serializedState).trustedContext.branch, "lab1-starter");
+  assert.equal(JSON.parse(serializedState).trustedContext.workspace.modifiedFiles, 1);
 });
 
 test("step parses the real Ark get_context and read_code batch into one continuation", async () => {

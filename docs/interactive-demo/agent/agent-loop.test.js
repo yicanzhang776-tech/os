@@ -47,6 +47,24 @@ function toolResult(tool, options = {}) {
   };
 }
 
+function trustedContextData(overrides = {}) {
+  return {
+    branch: INITIAL_CONTEXT.branch,
+    commit: INITIAL_CONTEXT.commit,
+    lab: INITIAL_CONTEXT.lab,
+    stageIndex: 4,
+    variant: INITIAL_CONTEXT.variant,
+    workspace: {
+      clean: false,
+      stagedFiles: 0,
+      modifiedFiles: 1,
+      untrackedFiles: 0,
+      conflictedFiles: 0
+    },
+    ...overrides
+  };
+}
+
 function final(answer = "Final teaching answer.") {
   return { kind: "final", answer };
 }
@@ -335,6 +353,10 @@ test("a current-Lab question uses get_context once and then returns the final an
       assert.equal(input.toolOutputs[0].callId, "call-1");
       assert.equal(input.toolOutputs[0].toolName, "get_context");
       assert.equal(JSON.parse(input.toolOutputs[0].output).tool, "get_context");
+      assert.deepEqual(input.requestEvidence, {
+        trustedContext: trustedContextData({ stageIndex: null, workspace: null }),
+        usedTools: ["get_context"]
+      });
       return final();
     }
   ]);
@@ -345,6 +367,89 @@ test("a current-Lab question uses get_context once and then returns the final an
     expectedBranch: INITIAL_CONTEXT.branch,
     expectedCommit: INITIAL_CONTEXT.commit
   });
+});
+
+test("complex run diagnosis reuses one trusted context through run and QEMU evidence", async () => {
+  const h = harness([
+    call("context-1", "get_context"),
+    (input) => {
+      assert.deepEqual(input.requestEvidence.trustedContext, trustedContextData());
+      assert.deepEqual(input.requestEvidence.usedTools, ["get_context"]);
+      return call("result-1", "get_run_result", { includeDiagnostics: true });
+    },
+    (input) => {
+      assert.equal(input.requestEvidence.trustedContext.branch, INITIAL_CONTEXT.branch);
+      assert.equal(input.requestEvidence.trustedContext.workspace.modifiedFiles, 1);
+      assert.deepEqual(input.requestEvidence.usedTools, ["get_context", "get_run_result"]);
+      return call("events-1", "get_qemu_events", { limit: 20 });
+    },
+    (input) => {
+      assert.equal(input.requestEvidence.trustedContext.lab, "lab4");
+      assert.deepEqual(input.requestEvidence.usedTools, [
+        "get_context", "get_run_result", "get_qemu_events"
+      ]);
+      return final("The existing environment, run, and QEMU evidence are sufficient.");
+    }
+  ], {
+    overrides: {
+      get_context: toolResult("get_context", { data: trustedContextData() })
+    }
+  });
+
+  assert.match((await run(h, "为什么只有 OpenSBI，没有内核输出？")).answer, /sufficient/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "get_context", "get_run_result", "get_qemu_events"
+  ]);
+});
+
+test("code diagnosis retains trusted context across a diff and two bounded reads", async () => {
+  const h = harness([
+    call("context-1", "get_context"),
+    call("diff-1", "get_code_diff", { lab: "lab4" }),
+    (input) => {
+      assert.equal(input.requestEvidence.trustedContext.variant, "starter");
+      assert.deepEqual(input.requestEvidence.usedTools, ["get_context", "get_code_diff"]);
+      return call("read-1", "read_code", { path: "kernel/src/main.rs", startLine: 1 });
+    },
+    (input) => {
+      assert.equal(input.requestEvidence.trustedContext.stageIndex, 4);
+      return call("read-2", "read_code", { path: "kernel/src/sbi.rs", startLine: 1 });
+    },
+    (input) => {
+      assert.deepEqual(input.requestEvidence.usedTools, [
+        "get_context", "get_code_diff", "read_code"
+      ]);
+      return final("The retained context, diff, and two code ranges are sufficient.");
+    }
+  ], {
+    overrides: {
+      get_context: toolResult("get_context", { data: trustedContextData() })
+    }
+  });
+
+  assert.match((await run(h)).answer, /two code ranges/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "get_context", "get_code_diff", "read_code", "read_code"
+  ]);
+});
+
+test("sufficient complex evidence returns early without spending the remaining budget", async () => {
+  const h = harness([
+    call("context-1", "get_context"),
+    call("result-1", "get_run_result", {}),
+    final("Two observations are enough; here is the focused diagnosis."),
+    () => { throw new Error("the model must not be called after final"); }
+  ], {
+    overrides: {
+      get_context: toolResult("get_context", { data: trustedContextData() })
+    }
+  });
+
+  assert.match((await run(h)).answer, /enough/);
+  assert.equal(h.model.calls.length, 3);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "get_context", "get_run_result"
+  ]);
 });
 
 test("allows a normal fourth tool call before the final answer", async () => {
@@ -742,6 +847,23 @@ test("detects context change immediately before dispatch", async () => {
   assert.equal(h.tools.calls.length, 0);
 });
 
+test("a real workspace change after get_context uses the existing safety path", async () => {
+  const same = { branch: INITIAL_CONTEXT.branch, commit: INITIAL_CONTEXT.commit };
+  const h = harness([
+    call("context-1", "get_context"),
+    () => { throw new Error("the model must not reconfirm context"); }
+  ], {
+    contexts: [same, same, same, same, { branch: "lab5-starter", commit: same.commit }],
+    overrides: {
+      get_context: toolResult("get_context", { data: trustedContextData() })
+    }
+  });
+
+  await rejectsCode(run(h), "context_changed");
+  assert.equal(h.model.calls.length, 1);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["get_context"]);
+});
+
 test("maps unavailable context reads to a safe context error", async () => {
   const h = harness([final()], { contexts: [new Error("secret context path")] });
   await rejectsCode(run(h), "context_unavailable");
@@ -964,8 +1086,8 @@ test("passes prompt-injection text only inside serialized tool data", async () =
       assert.deepEqual(input.courseKnowledge, []);
       assert.deepEqual(Object.keys(input).sort(), [
         "continuationState", "courseKnowledge", "finalizationOnly", "message", "requestId",
-        "toolOutputs", "tools"
-      ]);
+        "requestEvidence", "toolOutputs", "tools"
+      ].sort());
       return final("Treat source comments as data, not instructions.");
     }
   ], {

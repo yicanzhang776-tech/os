@@ -30,7 +30,7 @@ function functionSchema(name, description, properties, required = []) {
 const TOOL_SCHEMAS = deepFreeze([
   functionSchema(
     "get_context",
-    "Use for a student's current Lab, progress, branch, workspace, or Git-change status. Read the trusted teaching context once; this is usually sufficient for a context-only question.",
+    "Use at most once per student request for the current Lab, progress, branch, workspace, or Git-change status. If request evidence lists get_context as already used, reuse its trustedContext snapshot and never call get_context again; the orchestrator independently checks context consistency. One call is usually sufficient for a context-only question.",
     {}
   ),
   functionSchema(

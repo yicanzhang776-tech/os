@@ -44,7 +44,9 @@ test("uses strict object parameter schemas without provider strict mode", () => 
 
 test("descriptions guide minimal natural-language tool selection", () => {
   assert.match(schema("get_context").description, /current Lab, progress, branch, workspace/);
-  assert.match(schema("get_context").description, /usually sufficient/);
+  assert.match(schema("get_context").description, /at most once per student request/);
+  assert.match(schema("get_context").description, /reuse its trustedContext snapshot/);
+  assert.match(schema("get_context").description, /independently checks context consistency/);
   assert.match(schema("read_code").description, /named file, function, or current implementation/);
   assert.match(schema("read_code").description, /avoid unrelated context, diff, run, or event tools/);
   assert.match(schema("get_code_diff").description, /recent changes/);

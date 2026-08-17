@@ -43,7 +43,10 @@ function toolResult(tool, options = {}) {
 
 function parseRuntimeEvidence(output) {
   assert.match(output, /^\[RUNTIME EVIDENCE\]\n/);
-  return JSON.parse(output.slice("[RUNTIME EVIDENCE]\n".length));
+  const serialized = output
+    .slice("[RUNTIME EVIDENCE]\n".length)
+    .split("\n\n[REQUEST EVIDENCE STATE]\n", 1)[0];
+  return JSON.parse(serialized);
 }
 
 function createHarness(steps, overrides = {}) {
