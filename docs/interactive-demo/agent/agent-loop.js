@@ -399,7 +399,11 @@ function createAgentLoop(options = {}) {
 
           const step = readModelResult(modelResult);
           if (step.kind === "final") return Object.freeze({ answer: step.answer });
-          if (finalizationOnly) throw loopError("agent_protocol_error");
+          if (finalizationOnly) {
+            throw loopError(toolCalls >= MAX_TOOL_CALLS
+              ? "agent_loop_limit"
+              : "agent_protocol_error");
+          }
           if (callIds.has(step.callId)) throw loopError("agent_protocol_error");
           callIds.add(step.callId);
           if (toolCalls >= MAX_TOOL_CALLS) throw loopError("agent_loop_limit");
@@ -447,6 +451,7 @@ function createAgentLoop(options = {}) {
           finalizationOnly = step.toolName === "run_test"
             && toolResult.ok
             && toolResult.data.status === "started";
+          if (toolCalls >= MAX_TOOL_CALLS) finalizationOnly = true;
         }
         throw loopError("agent_loop_limit");
       } catch (error) {
