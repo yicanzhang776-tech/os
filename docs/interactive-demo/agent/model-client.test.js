@@ -8,8 +8,10 @@ const {
   ARK_RESPONSES_URL,
   DEFAULT_ARK_BASE_URL,
   DEFAULT_ARK_MODEL,
+  FINALIZATION_INSTRUCTIONS,
   MAX_MODEL_ANSWER_LENGTH,
   MAX_MODEL_RESPONSE_BYTES,
+  MODEL_NETWORK_RETRY_DELAY_MS,
   MODEL_TIMEOUT_MS,
   ModelClientError,
   SERVER_INSTRUCTIONS,
@@ -82,7 +84,8 @@ function clientWith(fetchImpl, options = {}) {
     ...(Object.hasOwn(options, "model") ? { model: options.model } : {}),
     ...(Object.hasOwn(options, "timeoutMs") ? { timeoutMs: options.timeoutMs } : {}),
     ...(options.setTimer ? { setTimer: options.setTimer } : {}),
-    ...(options.clearTimer ? { clearTimer: options.clearTimer } : {})
+    ...(options.clearTimer ? { clearTimer: options.clearTimer } : {}),
+    sleep: options.sleep || (async () => {})
   });
 }
 
@@ -188,7 +191,7 @@ test("step parses one function call and ignores intermediate assistant text", as
   assert.deepEqual(result.arguments, { observe: true });
   assert.equal(Object.isFrozen(result.continuationState), true);
   assert.deepEqual(Object.keys(captured).sort(), [
-    "input", "model", "parallel_tool_calls", "store", "stream", "tools"
+    "input", "instructions", "model", "parallel_tool_calls", "store", "stream", "tools"
   ]);
   assert.equal(captured.model, DEFAULT_ARK_MODEL);
   assert.equal(captured.input, REQUEST.message);
@@ -202,7 +205,7 @@ test("step parses one function call and ignores intermediate assistant text", as
   assert.equal(captured.tools[0].parameters.type, "object");
   assert.equal(captured.tools[0].parameters.additionalProperties, false);
   assert.equal(Object.hasOwn(captured.tools[0], "function"), false);
-  assert.equal(Object.hasOwn(captured, "instructions"), false);
+  assert.equal(captured.instructions, SERVER_INSTRUCTIONS);
   assert.equal(Object.hasOwn(captured, "previous_response_id"), false);
   assert.equal(Object.hasOwn(captured, "function_call_output"), false);
   assert.equal(Object.hasOwn(captured, "tool_choice"), false);
@@ -237,7 +240,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
   assert.equal(second.kind, "final");
   assert.equal(second.answer, "Context received.");
   assert.deepEqual(Object.keys(bodies[1]).sort(), [
-    "input", "model", "parallel_tool_calls", "previous_response_id", "store", "stream"
+    "input", "instructions", "model", "parallel_tool_calls", "previous_response_id", "store", "stream"
   ]);
   assert.equal(bodies[1].model, DEFAULT_ARK_MODEL);
   assert.equal(bodies[1].stream, false);
@@ -249,9 +252,22 @@ test("step uses previous_response_id and one matching function_call_output", asy
     call_id: "call-test-1",
     output
   }]);
-  assert.equal(Object.hasOwn(bodies[1], "instructions"), false);
+  assert.equal(bodies[1].instructions, SERVER_INSTRUCTIONS);
   assert.equal(Object.hasOwn(bodies[1], "tools"), false);
   assert.equal(Object.hasOwn(bodies[1], "tool_choice"), false);
+});
+
+test("step repeats server instructions and switches to finalization guidance", async () => {
+  let captured;
+  const client = clientWith(async (_url, options) => {
+    captured = JSON.parse(options.body);
+    return jsonResponse(modelOutput("Final answer from bounded evidence."));
+  });
+  const result = await client.step(stepInput({ finalizationOnly: true }));
+  assert.equal(result.kind, "final");
+  assert.equal(captured.instructions, FINALIZATION_INSTRUCTIONS);
+  assert.match(captured.instructions, /Do not request another tool/);
+  assert.match(captured.instructions, /Never modify student code/);
 });
 
 test("step rejects wrong call_id and untrusted continuation state before fetch", async () => {
@@ -467,11 +483,30 @@ test("HTTP statuses map to fixed safe errors with one fetch and no retry", async
   }
 });
 
-test("network rejection is sanitized as model_unavailable without retry", async () => {
+test("one network rejection is retried after a short delay", async () => {
   let calls = 0;
+  const delays = [];
+  const client = clientWith(async () => {
+    calls += 1;
+    if (calls === 1) throw new Error("temporary transport failure");
+    return jsonResponse(modelOutput("recovered answer"));
+  }, {
+    sleep: async (delay) => { delays.push(delay); }
+  });
+
+  assert.equal(await client.respond(REQUEST), "recovered answer");
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [MODEL_NETWORK_RETRY_DELAY_MS]);
+});
+
+test("repeated network rejection is sanitized as model_unavailable", async () => {
+  let calls = 0;
+  const delays = [];
   const client = clientWith(async () => {
     calls += 1;
     throw new Error(`Authorization: Bearer ${FAKE_KEY} C:\\private\\response`);
+  }, {
+    sleep: async (delay) => { delays.push(delay); }
   });
   let caught;
   try {
@@ -480,7 +515,8 @@ test("network rejection is sanitized as model_unavailable without retry", async 
     caught = error;
   }
   assert.equal(caught.code, "model_unavailable");
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [MODEL_NETWORK_RETRY_DELAY_MS]);
   assert.doesNotMatch(`${JSON.stringify(caught)}\n${caught.stack}`, /fake-test-key|Authorization|private|response/);
 });
 
@@ -550,10 +586,15 @@ test("the local timeout also bounds a response body that never completes", async
 test("an AbortError without the local timer is model_unavailable, not a timeout", async () => {
   const error = new Error("not a local timeout");
   error.name = "AbortError";
+  let calls = 0;
   await expectModelError(
-    clientWith(async () => { throw error; }).respond(REQUEST),
+    clientWith(async () => {
+      calls += 1;
+      throw error;
+    }).respond(REQUEST),
     "model_unavailable"
   );
+  assert.equal(calls, 2);
 });
 
 test("ModelClientError trust uses a private brand, not shape or prototype", () => {
