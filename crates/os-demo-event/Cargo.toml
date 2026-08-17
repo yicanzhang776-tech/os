@@ -1,0 +1,10 @@
+[package]
+name = "os-demo-event"
+version = "0.1.0"
+edition = "2021"
+description = "No-std encoder and validation for the OS teaching demo event protocol."
+license = "MIT"
+repository = "https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774"
+readme = "README.md"
+
+[dependencies]

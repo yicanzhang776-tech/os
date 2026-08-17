@@ -10,6 +10,7 @@ const directory = __dirname;
 const html = fs.readFileSync(path.join(directory, "index.html"), "utf8");
 const source = fs.readFileSync(path.join(directory, "agent-pet.js"), "utf8");
 const mascotPath = path.join(directory, "assets", "kernel-buddy.png");
+const spritePath = path.join(directory, "assets", "kernel-buddy-sprites.png");
 
 class FakeTarget {
   constructor(id, document) {
@@ -22,6 +23,8 @@ class FakeTarget {
     this.attributes = new Map();
     this.listeners = new Map();
     this.children = [];
+    this.style = {};
+    this.classList = { add() {}, remove() {} };
   }
 
   addEventListener(type, listener) {
@@ -49,6 +52,10 @@ class FakeTarget {
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   querySelector(selector) { return selector === ".agent-pet-state" ? this.stateLabel : null; }
+  querySelectorAll() { return []; }
+  getBoundingClientRect() {
+    return { left: Number.parseFloat(this.style.left) || 0, top: Number.parseFloat(this.style.top) || 0 };
+  }
 }
 
 class FakeDocument extends FakeTarget {
@@ -57,6 +64,7 @@ class FakeDocument extends FakeTarget {
     this.ownerDocument = this;
     this.activeElement = null;
     this.elements = new Map();
+    this.documentElement = { dataset: {} };
   }
 
   register(id) {
@@ -82,6 +90,7 @@ function createHarness(options = {}) {
   const statusChip = document.register("status-chip");
   const stateLabel = document.register("pet-state-label");
   const outside = document.register("outside");
+  const reset = document.register("agent-pet-reset");
   document.pet = pet;
   pet.stateLabel = stateLabel;
   pet.append(panel, trigger);
@@ -95,7 +104,16 @@ function createHarness(options = {}) {
 
   const order = [];
   const navigation = [];
-  const storage = {};
+  const values = new Map();
+  const storage = {
+    getItem(key) { return values.get(key) || null; },
+    setItem(key, value) { values.set(key, value); },
+    removeItem(key) { values.delete(key); }
+  };
+  const windowObject = new FakeTarget("window", document);
+  windowObject.innerWidth = 1000;
+  windowObject.innerHeight = 700;
+  const timers = [];
   const entryState = {
     savePendingPrompt(_storage, prompt) {
       order.push(`save:${prompt}`);
@@ -122,19 +140,24 @@ function createHarness(options = {}) {
     entryState,
     client,
     sessionStore: () => storage,
+    localStore: () => storage,
     location: { assign(url) { order.push(`navigate:${url}`); navigation.push(url); } },
+    windowObject,
+    setTimer(callback) { timers.push(callback); return timers.length; },
+    clearTimer() {},
     requestAnimationFrame: (callback) => callback(),
     MutationObserver: FakeMutationObserver
   });
 
-  return { controller, document, pet, panel, trigger, close, form, message, status, connection, statusChip, outside, order, navigation, observer };
+  return { controller, document, pet, panel, trigger, close, reset, form, message, status, connection, statusChip, outside, order, navigation, observer, storage, timers, windowObject };
 }
 
 test("experiment page exposes an accessible Kernel Buddy entry", () => {
   assert.match(html, /id="kernel-buddy"[^>]+aria-controls="agent-mini-panel"/);
   assert.match(html, /id="agent-mini-message"[^>]+maxlength="4000"/);
   assert.match(html, /id="agent-full-page-link"[^>]+href="agent\.html"/);
-  assert.match(html, /assets\/kernel-buddy\.png/);
+  assert.match(html, /agent-pet-sprite[^>]+data-pose="idle"/);
+  assert.match(html, /agent-pet-motion\.js/);
 });
 
 test("trigger toggles the panel, aria state, focus, and open visual state", () => {
@@ -189,6 +212,32 @@ test("successful handoff saves before navigation", () => {
   assert.deepEqual(harness.order, ["save:为什么需要刷新 TLB？", "navigate:agent.html"]);
 });
 
+test("dragging beyond six pixels snaps, persists, and does not open the panel", () => {
+  const harness = createHarness();
+  harness.trigger.dispatch("pointerdown", { pointerId: 3, button: 0, clientX: 900, clientY: 500 });
+  harness.windowObject.dispatch("pointermove", { pointerId: 3, clientX: 904, clientY: 503 });
+  assert.equal(harness.pet.dataset.dragging, undefined);
+  harness.windowObject.dispatch("pointermove", { pointerId: 3, clientX: 700, clientY: 300 });
+  assert.equal(harness.pet.dataset.dragging, "true");
+  harness.windowObject.dispatch("pointerup", { pointerId: 3, clientX: 700, clientY: 300 });
+  harness.trigger.dispatch("click");
+  assert.equal(harness.panel.hidden, true);
+  const saved = JSON.parse(harness.storage.getItem("os-demo.kernel-buddy-position.v1"));
+  assert.equal(saved.version, 1);
+  assert.equal(saved.side, "right");
+  assert.ok(saved.yRatio >= 0 && saved.yRatio <= 1);
+});
+
+test("reset clears the saved preference and restores the default edge", () => {
+  const harness = createHarness();
+  harness.controller.snapAndSave({ x: 14, y: 30 });
+  assert.equal(JSON.parse(harness.storage.getItem("os-demo.kernel-buddy-position.v1")).side, "left");
+  harness.reset.dispatch("click");
+  assert.equal(harness.storage.getItem("os-demo.kernel-buddy-position.v1"), null);
+  assert.equal(harness.pet.dataset.petSide, "right");
+  assert.match(harness.status.textContent, /默认位置/);
+});
+
 test("Ctrl or Meta Enter submits outside IME composition", () => {
   const harness = createHarness();
   harness.message.value = "解释页表切换";
@@ -239,4 +288,14 @@ test("mascot is a transparent PNG sized for a crisp compact entry", () => {
   assert.ok(png.readUInt32BE(16) >= 256);
   assert.ok(png.readUInt32BE(20) >= 256);
   assert.ok([4, 6].includes(png[25]), "PNG must include an alpha channel");
+});
+
+test("seven-pose sprite sheet has real alpha and a four-by-two grid", () => {
+  const png = fs.readFileSync(spritePath);
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  assert.equal(width, height * 2);
+  assert.equal(png[25], 6, "sprite PNG must use RGBA instead of a baked checkerboard");
+  assert.ok(png.length > 500_000);
 });

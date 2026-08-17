@@ -17,9 +17,9 @@ const {
   parseKernelLine
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
-const { createAgentLoop } = require("./agent/agent-loop");
-const { createArkModelClient, isTrustedModelClientError } = require("./agent/model-client");
-const { createProductionAgentHandler } = require("./agent/model-handler");
+const { createAgentConfigApi } = require("./agent/config-api");
+const { createAgentHandoffApi, createAgentHandoffStore } = require("./agent/handoff-api");
+const { createAgentRuntime } = require("./agent/runtime");
 const {
   createGetCodeDiffTool,
   createGetContextTool,
@@ -72,6 +72,8 @@ const staticAssetNames = [
   "agent-client.js",
   "agent-chat-state.js",
   "agent-entry-state.js",
+  "agent-handoff-state.js",
+  "agent-pet-motion.js",
   "agent-pet.js",
   "agent.html",
   "agent-page.css",
@@ -81,7 +83,8 @@ const staticAssetNames = [
   "diagnostics.js",
   "presentation-mode.js",
   "app.js",
-  "assets/kernel-buddy.png"
+  "assets/kernel-buddy.png",
+  "assets/kernel-buddy-sprites.png"
 ];
 let sequence = 0;
 let currentChild = null;
@@ -128,23 +131,28 @@ const agentToolDispatch = Object.freeze({
   get_code_diff: getCodeDiffTool,
   run_test: runTestTool
 });
-const arkModelClient = createArkModelClient({
+const agentRuntime = createAgentRuntime({
   fetchImpl: globalThis.fetch,
-  apiKeyProvider: () => process.env.ARK_API_KEY,
+  environmentApiKey: process.env.ARK_API_KEY,
   baseUrl: process.env.ARK_BASE_URL,
-  model: process.env.ARK_MODEL
-});
-const agentLoop = createAgentLoop({
-  model: arkModelClient,
+  model: process.env.ARK_MODEL,
   toolDispatch: agentToolDispatch,
-  readContext: readWorkspaceContext,
-  isTrustedModelError: isTrustedModelClientError
+  readContext: readWorkspaceContext
 });
-const handleAgentRequest = createProductionAgentHandler({ agentLoop });
 const agentApi = createAgentApi({
   expectedOrigin: `http://${host}:${port}`,
   readWorkspaceContext,
-  handleAgentRequest
+  handleAgentRequest: agentRuntime.handleAgentRequest
+});
+const agentConfigApi = createAgentConfigApi({
+  expectedOrigin: `http://${host}:${port}`,
+  getCapabilities: agentRuntime.getCapabilities,
+  configureSessionApiKey: agentRuntime.configureSessionApiKey,
+  clearSessionApiKey: agentRuntime.clearSessionApiKey
+});
+const agentHandoffApi = createAgentHandoffApi({
+  expectedOrigin: `http://${host}:${port}`,
+  store: createAgentHandoffStore()
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -688,6 +696,27 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (requestPath === "/api/agent/config") {
+    const result = await agentConfigApi.handleHttpRequest({
+      method: request.method,
+      headers: request.headers,
+      body: request
+    });
+    writeJson(response, result.statusCode, result.body, result.headers);
+    return;
+  }
+
+  if (requestPath === "/api/agent/handoff" || requestPath === "/api/agent/handoff/consume") {
+    const result = await agentHandoffApi.handleHttpRequest({
+      method: request.method,
+      headers: request.headers,
+      body: request,
+      operation: requestPath.endsWith("/consume") ? "consume" : "create"
+    });
+    writeJson(response, result.statusCode, result.body, result.headers);
+    return;
+  }
+
   if (requestPath === "/api/context" && request.method === "GET") {
     const toolResult = agentToolDispatch.get_context({});
     if (toolResult.ok) {
@@ -709,7 +738,7 @@ const server = http.createServer(async (request, response) => {
       workspace: toolResult.ok ? toolResult.data.workspace : null,
       task: toolResult.ok ? toolResult.data.task : readCurrentTaskSnapshot(),
       contextError: toolResult.ok ? null : toolResult.error,
-      agent: arkModelClient.getCapabilities()
+      agent: agentRuntime.getCapabilities()
     });
     return;
   }

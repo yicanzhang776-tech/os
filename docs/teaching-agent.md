@@ -17,6 +17,8 @@ sequenceDiagram
     participant L as 受限 Agent 循环
     participant A as 火山方舟 Agent Plan
     participant T as 六个白名单工具
+    S->>B: POST /api/agent/config {apiKey}
+    B-->>S: 仅返回 configured / source / model
     S->>B: POST {message} + 会话级同意
     B->>L: 固定教学引导 + 服务端上下文
     L->>A: 首轮消息 + 工具定义，store: true
@@ -33,9 +35,10 @@ sequenceDiagram
 
 - `POST /api/agent` 只接受 `{ "message": string }`，最大 4000 字符。
 - 响应协议为 `os-tutor.agent/v1`，工具结果协议为 `os-tutor.tool/v1`。
-- `/api/context` 只返回模型是否已配置、提供方、模型名、协议版本和 `remoteStore`，绝不返回 API Key、请求头或密钥长度。
+- `GET /api/agent/config` 与 `/api/context` 只返回模型是否已配置、凭据来源、提供方、模型名、协议版本和 `remoteStore`，绝不返回 API Key、请求头、密钥长度或指纹。
+- `POST /api/agent/config` 只接受本地同源页面提交的 `{ "apiKey": string }`，`DELETE /api/agent/config` 只清除页面设置的进程内 Key；两者拒绝浏览器自带的 `Authorization` 和非本地 Origin。
 - 默认提供方为火山方舟 Agent Plan，模型为 `ark-code-latest`。
-- 首轮发送服务端教学引导和六个工具定义；续轮只使用 `previous_response_id` 与匹配的 `function_call_output`。
+- 首轮发送服务端教学引导和六个工具定义；续轮使用 `previous_response_id` 与匹配的 `function_call_output`，并按方舟协议重新发送不会由上一响应继承的服务端教学引导。
 - 循环最多 4 个模型轮次、3 次工具调用，总时限 90 秒；模型单次请求时限 45 秒。
 
 ## 六个白名单工具
@@ -57,7 +60,7 @@ sequenceDiagram
 
 - 学生问题及模型按需调用工具得到的受限源码片段、代码差异、QEMU 结构化事件或运行结果可能发送到火山方舟。
 - `store: true` 用于以 `previous_response_id` 续接工具调用；云端保留行为由方舟服务和账号配置决定。
-- API Key 只存在于本地桥接器进程的 `ARK_API_KEY` 环境变量中。
+- API Key 只存在于本地桥接器进程：可以来自启动时的 `ARK_API_KEY`，也可以由同源助教页激活到当前进程内存；页面输入值不进入 Web Storage 或文件。
 - 系统不会发送 API Key、完整终端日志、环境变量、任意文件、教师答案文件或评分记录。
 - 同意只记录在当前浏览器会话的 `sessionStorage`，键名为 `os-teaching-agent-consent-v1`。
 
@@ -67,26 +70,36 @@ sequenceDiagram
 |---|---|
 | 确定性诊断、预测、回放、分支比较 | 浏览器与本地桥接器处理，不调用模型 |
 | 教学反馈与运行记录提交 | 使用者主动预览并同意后，发送到负责人配置的服务；接收端写入本机 JSONL |
-| AI 教学助教 | 问题和模型主动调用工具取得的受限证据发送到火山方舟；密钥仅在服务端环境变量中 |
+| AI 教学助教 | 问题和模型主动调用工具取得的受限证据发送到火山方舟；密钥仅在本地 Node 进程中 |
 | 教师评分 | 本地页面管理，不自动上传成绩，不因智能体回答或运行证据自动加分 |
 
 ## 配置、启动与关闭
 
-Windows PowerShell：
+推荐先不设置 Key，直接启动 bridge：
+
+```bash
+node docs/interactive-demo/server.js --port 8888
+```
+
+打开 <http://127.0.0.1:8888/agent.html>，在“模型服务”区域输入临时测试 Key 并点击“激活本地模型”。输入成功后字段立即清空；点击“清除本次 Key”或按 `Ctrl+C` 停止服务后，进程内 Key 消失。环境变量方式仍可用于固定的本机测试终端。
+
+Windows PowerShell 环境变量方式：
 
 ```powershell
 $env:ARK_API_KEY = "在当前终端安全设置的方舟密钥"
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
 ```
 
-Ubuntu/Linux：
+Ubuntu/Linux 环境变量方式：
 
 ```bash
 export ARK_API_KEY='在当前 shell 安全设置的方舟密钥'
 sh scripts/run-interactive-demo.sh
 ```
 
-不要把密钥写入仓库、命令历史、截图或日志。关闭桥接器进程即可停止教学智能体入口；不配置 `ARK_API_KEY` 时，页面仍可完整使用本地预测、运行、规则诊断、回放和分支比较，提问会返回固定的“模型未配置”说明。
+不要把密钥写入仓库、命令历史、截图或日志。关闭桥接器进程即可停止教学智能体入口并清空页面激活的 Key；未配置模型时，页面仍可完整使用本地预测、运行、规则诊断、回放和分支比较，独立助教页会锁定发送按钮并提示先激活模型。
+
+网页教学助教与终端 Agent 不是同一运行时。终端工具可能包含 shell、MCP、网络或任意仓库读取；网页只允许本文件列出的六个白名单工具，因此回答不要求逐字一致，也不能在网页中请求未登记的终端工具。验收应检查网页是否真实取得受限仓库证据，以及失败时是否返回固定安全错误码。
 
 ## 验收边界
 

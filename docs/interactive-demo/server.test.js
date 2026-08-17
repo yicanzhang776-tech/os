@@ -57,13 +57,11 @@ function waitForMessage(socket, predicate) {
 test("server wires interactive and agent runs through one shared lifecycle boundary", () => {
   const source = fs.readFileSync(serverPath, "utf8");
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
-  assert.match(source, /const \{ createAgentLoop \} = require\("\.\/agent\/agent-loop"\)/);
-  assert.match(source, /const \{ createArkModelClient, isTrustedModelClientError \} = require\("\.\/agent\/model-client"\)/);
-  assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
-  assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
-  assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
-  assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ agentLoop \}\)/);
-  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
+  assert.match(source, /const \{ createAgentConfigApi \} = require\("\.\/agent\/config-api"\)/);
+  assert.match(source, /const \{ createAgentRuntime \} = require\("\.\/agent\/runtime"\)/);
+  assert.match(source, /const agentRuntime = createAgentRuntime\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?environmentApiKey: process\.env\.ARK_API_KEY,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext/);
+  assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest: agentRuntime\.handleAgentRequest/);
+  assert.match(source, /const agentConfigApi = createAgentConfigApi\(\{[\s\S]*?configureSessionApiKey: agentRuntime\.configureSessionApiKey,[\s\S]*?clearSessionApiKey: agentRuntime\.clearSessionApiKey/);
   assert.match(source, /const taskLock = new SharedTaskLock\(\)/);
   assert.match(source, /const runLifecycle = new RunLifecycleManager\(\{[\s\S]*?taskLock,/);
   assert.match(source, /const runTestTool = createRunTestTool\(\{[\s\S]*?readPreflight: readLinuxPreflight,[\s\S]*?startApprovedRun: startAgentApprovedRun/);
@@ -76,6 +74,7 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   const contextRouteStart = source.indexOf('if (requestPath === "/api/context"', agentRouteStart);
   const agentRoute = source.slice(agentRouteStart, contextRouteStart);
   assert.ok(agentRouteStart >= 0 && contextRouteStart > agentRouteStart);
+  assert.match(source, /requestPath === "\/api\/agent\/config"[\s\S]*?agentConfigApi\.handleHttpRequest/);
   assert.match(agentRoute, /agentApi\.handleHttpRequest\(\{[\s\S]*?method: request\.method,[\s\S]*?headers: request\.headers,[\s\S]*?body: request/);
   assert.match(agentRoute, /writeJson\(response, result\.statusCode, result\.body, result\.headers\)/);
   assert.doesNotMatch(agentRoute, /taskLock|runLifecycle|startKernelRun|spawn|exec|agentToolDispatch/);
@@ -138,8 +137,11 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
     "agent-page.css",
     "agent-page.js",
     "agent-entry-state.js",
+    "agent-handoff-state.js",
+    "agent-pet-motion.js",
     "agent-pet.js",
-    "assets/kernel-buddy.png"
+    "assets/kernel-buddy.png",
+    "assets/kernel-buddy-sprites.png"
   ]) {
     const assetResponse = await fetch(`${url}/${asset}`);
     assert.equal(assetResponse.status, 200, `${asset} should be served by the local bridge`);
@@ -153,6 +155,40 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(mascotAsset.headers.get("content-type"), "image/png");
   const unlistedMascot = await fetch(`${url}/assets/kernel-buddy-preview.png`);
   assert.equal(unlistedMascot.status, 404);
+
+  const handoffCreated = await fetch(`${url}/api/agent/handoff`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ message: "为什么切换页表后要刷新 TLB？" })
+  });
+  assert.equal(handoffCreated.status, 200);
+  const handoffCreatedBody = await handoffCreated.json();
+  assert.equal(handoffCreatedBody.contractVersion, "os-tutor.agent-handoff/v1");
+  assert.match(handoffCreatedBody.data.token, /^[A-Za-z0-9_-]{22}$/);
+  assert.doesNotMatch(JSON.stringify(handoffCreatedBody), /刷新 TLB/u);
+
+  const handoffConsumed = await fetch(`${url}/api/agent/handoff/consume`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ token: handoffCreatedBody.data.token })
+  });
+  assert.equal(handoffConsumed.status, 200);
+  assert.equal((await handoffConsumed.json()).data.message, "为什么切换页表后要刷新 TLB？");
+  const handoffRepeated = await fetch(`${url}/api/agent/handoff/consume`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ token: handoffCreatedBody.data.token })
+  });
+  assert.equal(handoffRepeated.status, 404);
+  assert.equal((await handoffRepeated.json()).error.code, "handoff_unavailable");
+
+  const rejectedHandoff = await fetch(`${url}/api/agent/handoff`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://localhost:8888" },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(rejectedHandoff.status, 403);
+  assert.equal((await rejectedHandoff.json()).error.code, "origin_not_allowed");
 
   const getAgent = await fetch(`${url}/api/agent`);
   assert.equal(getAgent.status, 405);
@@ -232,6 +268,7 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.deepEqual(contextBody.agent, {
     contractVersion: "os-tutor.agent/v1",
     configured: false,
+    credentialSource: "none",
     provider: "volcengine-ark-agent-plan",
     model: "ark-code-latest",
     remoteStore: true

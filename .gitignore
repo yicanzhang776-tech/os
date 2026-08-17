@@ -1,5 +1,8 @@
 # Rust build artifacts
 /target/
+/desktop/kernel-buddy/node_modules/
+/desktop/kernel-buddy/out/
+/desktop/kernel-buddy/dist/
 
 # QEMU and test temporary output
 *.log

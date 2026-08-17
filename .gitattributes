@@ -1,5 +1,7 @@
 # Keep the visualization and teaching feedback files stable across Windows and Linux.
 .gitattributes text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=crlf
 docs/interactive-demo/*.md text eol=lf
 docs/interactive-demo/*.html text eol=lf
 docs/interactive-demo/*.css text eol=lf
@@ -13,3 +15,8 @@ docs/defense-outline-2026-08.md text eol=lf
 scripts/*.js text eol=lf
 scripts/run-interactive-demo.sh text eol=lf
 scripts/run-interactive-demo.ps1 text eol=crlf
+desktop/kernel-buddy/*.js text eol=lf
+desktop/kernel-buddy/*.json text eol=lf
+desktop/kernel-buddy/renderer/*.html text eol=lf
+desktop/kernel-buddy/renderer/*.css text eol=lf
+desktop/kernel-buddy/renderer/*.js text eol=lf

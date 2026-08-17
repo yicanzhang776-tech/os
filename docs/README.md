@@ -6,7 +6,7 @@
 
 - 学生：从 [实验路线](labs/README.md) 和 [交互可视化](interactive-demo/README.md) 开始；需要云端教学提示时先阅读 [AI 教学助教与数据边界](teaching-agent.md)。
 - 教师与助教：使用 [教师评分工具](teacher-grading/README.md) 人工复核，项目负责人通过 [反馈管理](feedback-admin/README.md) 接收自愿提交；智能体回答不参与自动计分。
-- 评委与答辩成员：阅读 [最终报告](final-report.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
+- 评委与答辩成员：先从 [提交材料导航](../00-提交材料导航.md) 进入，阅读 [30% 五个基础实验总结与证据](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/docs/reference-labs/tg-rcore-five-basic-experiments.md)、[最终报告](final-report.md)、[系统架构](architecture.md)、[最终验收](final-acceptance-report.md)、[项目评审指南](project-review-guide.md) 和 [现场演示脚本](demo-script.md)。
 
 预测/回放/规则诊断、主动远程反馈、方舟教学智能体和本地教师评分是四条边界不同的链路，不能再统一描述为“完全本地”。
 
@@ -32,6 +32,9 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 
 ### 评委与项目维护者
 
+- [提交材料导航](../00-提交材料导航.md)
+- [赛题 30% 五个基础实验 PDF](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/00-tg-rCore-%E4%BA%94%E4%B8%AA%E5%9F%BA%E7%A1%80%E5%AE%9E%E9%AA%8C%E6%80%BB%E7%BB%93%E6%8A%A5%E5%91%8A.pdf)
+- [赛题 30% 五个基础实验 Markdown 与证据包](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/tree/tg-rcore-five-lab-report/docs/reference-labs)
 - [设计方案](../DESIGN.md)
 - [赛题要求映射](requirements.md)
 - [系统架构](architecture.md)
@@ -40,6 +43,8 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 
 ## 主题索引
 
+- [提交材料导航](../00-提交材料导航.md)
+- [赛题 30% 五个基础实验总结与证据](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/docs/reference-labs/tg-rcore-five-basic-experiments.md)
 - [赛题要求映射](requirements.md)
 - [系统架构](architecture.md)
 - [开发计划与当前进度](development-plan.md)
@@ -54,6 +59,8 @@ Lab1 到 Lab7 是面向学生的正式教学实验，围绕操作系统核心概
 - [演示视频与答辩讲解脚本](demo-script.md)
 
 ## 当前分支组织
+
+当前正式交付范围的 21 个既有 GitLab 远端分支分为 17 个教学上下文和 4 个辅助分支。教学上下文包括 `main`、`interactive-demo-learning-map`、P0 与下列 14 个 Lab starter/solution；辅助分支为 `agent-mvp`、`lab-atlas-ai-tutor`、`teacher-grading-tools`、`tg-rcore-five-lab-report`。合并前的临时文档发布分支不计入产品分支统计。
 
 ```text
 p0-minimal-qemu-baseline

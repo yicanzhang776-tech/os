@@ -49,6 +49,26 @@ sh scripts/run-interactive-demo.sh --no-browser
 sh scripts/run-interactive-demo.sh --run
 ```
 
+### 可选桌面桌宠
+
+网页内“小内核”支持拖动、6px 点击/拖动阈值、左右吸边、位置复位和 60–120 秒安静随机动作。它只在 `localStorage` 的 `os-demo.kernel-buddy-position.v1` 中保存吸附边和归一化纵向位置，不保存问题、Key、日志或实验内容；演示模式继续隐藏网页桌宠。
+
+浏览器最小化后仍需桌宠时，可在图形桌面会话中显式启用 Electron 伴侣：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly -DesktopPet
+```
+
+```sh
+sh scripts/run-interactive-demo.sh --desktop-pet
+```
+
+普通启动行为完全不变。首次启用需要 Node.js 22.12 以上、npm 和网络，启动器只在依赖缺失时按 `desktop/kernel-buddy/package-lock.json` 执行 `npm ci`。Electron 二进制下载失败时会给出代理/网络提示；`node_modules`、安装包和构建产物不进入 Git。
+
+桌面角色窗透明、无边框并默认置顶；拖动身体可移动，点击中央终端屏幕打开独立迷你提问窗。托盘菜单提供打开助教、暂停动作、切换置顶、复位、隐藏和退出。提交问题后，bridge 创建 128 位一次性令牌，最多保留 8 条、120 秒过期且成功消费后立即删除；问题经浏览器助教页消费，桌面窗不直接调用模型。桌面配置只保存坐标、显示器 ID、置顶和动作暂停状态。
+
+Windows 与 Ubuntu X11/XWayland 支持位置恢复。Ubuntu 检测到 Wayland 且同时存在 XWayland 时会启动 X11 模式；纯 Wayland 下仍允许用户拖动，但窗口管理器可能限制程序化定位，因此不承诺跨会话坐标恢复。
+
 也可以使用原始 Node 命令：
 
 Windows PowerShell：
@@ -267,13 +287,17 @@ AI 助教默认收拢，通过顶部“助教”按钮展开，也可点击右�
 
 ## AI 教学助教配置与使用
 
-Windows PowerShell 在启动可视化前于当前终端安全设置 `ARK_API_KEY`；Ubuntu/Linux 使用 `export ARK_API_KEY=...`。不要把密钥写入仓库、脚本、截图或日志。默认模型固定为 `ark-code-latest`，自定义 `ARK_BASE_URL`、`ARK_MODEL` 或超时必须与受支持的精确值一致，否则客户端关闭配置并返回固定错误。
+推荐直接启动本地 bridge，再在独立助教页的“模型服务”区域输入测试 Key。页面通过同源 `POST /api/agent/config` 把 Key 交给监听 `127.0.0.1` 的 Node 进程；Key 不进入 `localStorage`、`sessionStorage`、文件、日志或 Git，输入成功后密码框立即清空，点击“清除本次 Key”或停止 Node 服务都会移除这份进程内配置。原有环境变量方式继续兼容：Windows PowerShell 可在启动前设置 `ARK_API_KEY`，Ubuntu/Linux 可使用 `export ARK_API_KEY=...`。
 
-启动本地桥接器后，可以直接打开 `http://127.0.0.1:<port>/agent.html` 进入独立 Focus Console。默认端口示例为 <http://127.0.0.1:8888/agent.html>。实验台右下角的“小内核”桌宠会先打开迷你提问框；只有点击“带着问题去问”或使用 `Ctrl+Enter` / `Command+Enter` 明确发送后，当前这一条问题才会通过 `sessionStorage` 一次性交给独立页并开始回答。桌宠自身不调用 `/api/agent`。
+不要把密钥写入仓库、启动脚本、截图或日志。默认模型固定为 `ark-code-latest`，自定义 `ARK_BASE_URL`、`ARK_MODEL` 或超时必须与受支持的精确值一致，否则客户端关闭配置并返回固定错误。网页输入 Key 只能激活已经运行的本地 bridge，不能代替 Node 服务本身的启动。
+
+启动本地桥接器后，可以直接打开 `http://127.0.0.1:<port>/agent.html` 进入独立 Focus Console。默认端口示例为 <http://127.0.0.1:8888/agent.html>。实验台右下角的网页桌宠会先打开迷你提问框；只有点击“带着问题去问”或使用 `Ctrl+Enter` / `Command+Enter` 明确发送后，当前这一条问题才会通过 `sessionStorage` 一次性交给独立页。可选桌面伴侣改用 120 秒一次性进程内令牌转交，并在助教页立即清除 URL fragment；两种桌宠自身都不调用 `/api/agent`。
 
 独立页左侧的“本次会话”只是当前浏览器 session 的本地显示历史，用于回看、复制、重试和清空。每次 `/api/agent` 请求仍只有当前问题，模型不会收到之前几轮消息，因此连续显示的气泡不代表真正的多轮模型上下文。回答继续使用纯文本渲染；清空后，在途旧响应也不能重新写回页面。
 
-页面显示当前分支、Lab 和模型配置状态。问题最长 4000 字符，每次提问独立处理，答案按纯文本显示。六个工具为 `get_context`、`read_code`、`get_qemu_events`、`get_run_result`、`get_code_diff`、`run_test`；循环最多 4 轮、3 次工具调用、90 秒。`run_test` 只允许登记的 Lab1–Lab7 starter/solution 测试，P0、演示分支、自定义分支和教师工具分支均不支持。
+页面显示当前分支、Lab 和模型配置状态。问题最长 4000 字符，每次提问独立处理，答案按纯文本显示。六个工具为 `get_context`、`read_code`、`get_qemu_events`、`get_run_result`、`get_code_diff`、`run_test`；循环最多 4 轮、3 次工具调用、90 秒。每一轮（包括 `previous_response_id` 续接）都会重新附带服务端教学约束；达到工具预算后只允许基于已有证据收束回答。`run_test` 只允许登记的 Lab1–Lab7 starter/solution 测试，P0、演示分支、自定义分支和教师工具分支均不支持。
+
+终端中的 Codex、Claude Code 或其他 Agent 拥有它们各自的 shell、MCP、网络和配置能力；网页教学助教不是终端 Agent 的镜像，也不会继承终端工具。两边回答的措辞和可用证据可能不同。网页只承诺调用上述六个仓库白名单工具，并在协议错误、工具次数上限、证据过大或超时时显示对应的安全中文错误，不把上游响应、绝对路径或工具原始输出暴露给浏览器。
 
 首次同意说明问题和受限证据可能发送到方舟，`store: true` 用于 `previous_response_id` 工具续接；不会发送 API Key、完整终端日志、环境变量、任意文件、教师答案文件或评分记录。未配置、认证失败、限流、超时、上下文变化和任务繁忙均只显示固定中文说明，不展示上游响应或本机绝对路径。演示模式保留面板但不会自动提问。
 

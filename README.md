@@ -6,13 +6,17 @@
 
 ## 最新集成能力与数据边界
 
-当前集成基线将七个实验、结构化遥测可视化、自愿远程反馈、教师本地评分和 AI 教学助教组成一条可验证的教学闭环。教学助教通过本地 `POST /api/agent` 调用火山方舟 Agent Plan，默认模型为 `ark-code-latest`；服务端只开放六个受限工具，学生首次发送前必须阅读数据告知并在当前浏览器会话中明确同意。
+当前集成基线将七个实验、结构化遥测可视化、自愿远程反馈、教师本地评分和 AI 教学助教组成一条可验证的教学闭环。教学助教通过本地 `POST /api/agent` 调用火山方舟 Agent Plan，默认模型为 `ark-code-latest`；服务端只开放六个受限工具，学生首次发送前必须阅读数据告知并在当前浏览器会话中明确同意。独立助教页可把使用者输入的 Key 激活到当前 Node 进程，Key 不写入浏览器存储、文件或 Git，服务停止后自动消失。
 
 数据并非笼统的“完全本地”：预测、回放、分支比较和确定性规则诊断继续在浏览器与本地桥接器处理；教学反馈和脱敏运行记录仅在使用者预览并主动同意后发送到负责人配置的 HTTPS 服务；教学助教会把问题及按需取得的受限证据发送到火山方舟；教师评分页面仍在本地运行，不自动上传成绩，也不因智能体回答自动加分。详见 [AI 教学助教与数据边界](docs/teaching-agent.md)。
 
 ## 提交文档入口
 
+- 一页式提交材料导航：[00-提交材料导航.md](00-提交材料导航.md)
+- 赛题 30% 五个基础实验 PDF：[tg-rCore 五个基础实验练习总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/00-tg-rCore-%E4%BA%94%E4%B8%AA%E5%9F%BA%E7%A1%80%E5%AE%9E%E9%AA%8C%E6%80%BB%E7%BB%93%E6%8A%A5%E5%91%8A.pdf)
+- 赛题 30% Markdown 与证据包：[总结报告](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/blob/tg-rcore-five-lab-report/docs/reference-labs/tg-rcore-five-basic-experiments.md) / [截图、日志、补丁与 manifest](https://gitlab.eduxiji.net/T2026105749911072/project3136859-388774/-/tree/tg-rcore-five-lab-report/docs/reference-labs)
 - 设计方案与开发文档：[DESIGN.md](DESIGN.md)
+- Ubuntu/Linux 本地复现与测试：[docs/testing.md](docs/testing.md)
 - 答辩汇报 PPT：[docs/slides/AI-OS-Teaching-Defense-Final.pptx](docs/slides/AI-OS-Teaching-Defense-Final.pptx)
 - 同步备份位置：[docs/final-report.md](docs/final-report.md)
 - 提交检查清单：[docs/submission-checklist.md](docs/submission-checklist.md)
@@ -33,6 +37,8 @@
 | `labN-starter` | 第 N 个实验的学生起点 | 能构建和启动，使用 `-ExpectIncomplete` 验证未泄露答案 |
 | `labN-solution` | 第 N 个实验的教师参考实现 | 对应 `scripts/test-labN.ps1` 输出 `[LabN] PASS` |
 | `lab7-solution` | 当前完整成果分支 | Lab1-Lab7 全部通过 QEMU 验收 |
+
+截至 2026-08-16，正式交付范围包含 21 个既有远端分支。`main`、`interactive-demo-learning-map`、P0 和 14 个 Lab starter/solution 组成 17 个教学上下文；`agent-mvp`、`lab-atlas-ai-tutor`、`teacher-grading-tools`、`tg-rcore-five-lab-report` 是 4 个辅助功能与报告分支。合并前的临时文档发布分支不计入这套产品分支统计。
 
 `main` 是评委和教师的完整成果入口：汇总 P0-Lab7 的教学说明、参考实现说明、教师指南与评分工具。学生应切换到对应 `labN-starter` 分支完成练习；需要按分支历史查看某个实验的完整参考代码时，可切换到对应 `labN-solution` 分支。包含可视化遥测和最新展示材料的集成版本同样位于 `main`。
 
@@ -88,9 +94,11 @@ flowchart LR
 - 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
 - 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
 
-实验台右下角提供“小内核”桌宠入口。点击后先打开迷你提问框，只有明确点击“带着问题去问”才会把当前这一条问题一次性写入浏览器会话并跳转到独立助教页。也可以直接打开 <http://127.0.0.1:8888/agent.html> 使用专注聊天界面，或从该页面返回实验台。
+实验台右下角提供“小内核”桌宠入口。它可以拖动并在释放后吸附左右边缘，点击会打开迷你提问框；每隔 60–120 秒会安静地眨眼、挥手或敲终端，运行与错误状态会优先覆盖空闲动作。只有明确点击“带着问题去问”才会把当前这一条问题一次性交给独立助教页。也可以直接打开 <http://127.0.0.1:8888/agent.html> 使用专注聊天界面，或从该页面返回实验台。
 
-独立助教页会在当前浏览器会话中显示问题与回答历史，便于回看和定位，但每次 `/api/agent` 请求仍只发送当前问题，不会把前几轮消息交给模型。关闭浏览器会话后这份显示历史不会作为账号数据保留；未配置模型或网络不可用时，实验、诊断、回放与比较功能仍可继续使用。
+需要在浏览器最小化后继续显示桌宠时，可选启用 Electron 桌面伴侣。Windows 使用 `-DesktopPet`，Ubuntu 使用 `--desktop-pet`；首次启用会按 lockfile 执行 `npm ci`，需要 Node.js 22.12 以上、npm 和网络，普通网页模式仍无 Electron 依赖。桌面坐标和“置顶/暂停动作”偏好只保存在 Electron 用户数据目录，不保存问题、Key、日志或实验数据。
+
+独立助教页会在当前浏览器会话中显示问题与回答历史，便于回看和定位，但每次 `/api/agent` 请求仍只发送当前问题，不会把前几轮消息交给模型。启动本地 bridge 后可直接在页面输入测试 Key；Key 只保存在 bridge 的当前进程内。关闭浏览器会话后显示历史不会作为账号数据保留；未配置模型或网络不可用时，实验、诊断、回放与比较功能仍可继续使用。
 
 运行前，学生需要先预测当前分支可能出现的结果并写下判断依据，再由页面启动真实构建与 QEMU。一次运行的结构化事件可以保存在当前浏览器中逐步回放；分别保存同一 Lab 的 starter 与 solution 运行后，还可以比较两者的共同事件和分支独有事件。Linux 运行链路、事件协议、分支映射和具体操作见 [docs/interactive-demo/README.md](docs/interactive-demo/README.md)。
 
@@ -135,12 +143,20 @@ Windows PowerShell：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
 ```
 
+同时启动可选桌面桌宠：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly -DesktopPet
+```
+
 Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
 node docs/interactive-demo/server.js --port 8888
 ```
+
+Ubuntu 图形会话中也可运行 `sh scripts/run-interactive-demo.sh --desktop-pet`。Wayland 且存在 XWayland 时会使用 X11 模式保证窗口定位；纯 Wayland 仍支持拖动，但不承诺跨会话坐标恢复。
 
 Windows PowerShell 脚本属于兼容入口，不影响 Ubuntu/Linux 下的实验构建和可视化运行。
 
@@ -166,6 +182,8 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ```text
 .
 ├── .cargo/                 # Rust 目标配置
+├── crates/
+│   └── os-demo-event/      # no_std 事件协议校验与编码 Crate
 ├── docs/                   # 需求、架构、测试、AI协作和实验文档
 ├── kernel/                 # RISC-V 教学内核 crate
 │   ├── linker.ld
@@ -184,6 +202,23 @@ Lab1 到 Lab7 是面向学生的正式教学实验，每个实验都有 starter 
 ├── Makefile
 └── README.md
 ```
+
+## 独立事件协议 Crate
+
+`crates/os-demo-event/` 提供小型、独立且可复用的 `os-demo-event` Crate。它集中定义 `os-demo.event/v1` 协议版本、Lab 标识、事件状态，以及 `lab + step` 字段的校验和无堆编码接口。该 Crate 不实现任何 Lab 逻辑，不包含学生答案或教师评分内容。
+
+`kernel/src/telemetry.rs` 已实际依赖这个 Crate，并通过 `core::fmt::Write` 将编码结果直接写入现有控制台。串口格式仍为 `[OS_DEMO] lab=<lab> step=<step>`，因此浏览器端 `protocol.js`、事件目录稳定键和已有 PASS/TODO 判定保持兼容。Crate 使用 `#![no_std]`，不依赖 `alloc`、文件系统、网络、进程或第三方库。
+
+在装有 Rust 工具链的 Ubuntu/Linux 环境中可以独立验证：
+
+```sh
+HOST_TARGET=$(rustc -vV | sed -n 's/^host: //p')
+cargo test -p os-demo-event --target "$HOST_TARGET"
+cargo doc -p os-demo-event --no-deps
+cargo package -p os-demo-event
+```
+
+`cargo package` 只检查打包条件；本项目不会在验收流程中自动执行 `cargo publish`。
 
 ## 环境依赖
 
