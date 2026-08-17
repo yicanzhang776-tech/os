@@ -13,7 +13,18 @@
   const history = document.getElementById("agent-page-history");
   const lab = document.getElementById("agent-page-lab");
   const status = document.getElementById("agent-page-status");
-  if (!api || !chat || !entry || !form || !message || !submit || !clear || !newQuestion || !thread || !history || !lab || !status) return;
+  const service = document.querySelector(".agent-page-service");
+  const serviceStatus = document.getElementById("agent-service-status");
+  const configForm = document.getElementById("agent-config-form");
+  const apiKey = document.getElementById("agent-api-key");
+  const configSubmit = document.getElementById("agent-config-submit");
+  const configChange = document.getElementById("agent-config-change");
+  const configClear = document.getElementById("agent-config-clear");
+  const keyVisibility = document.getElementById("agent-key-visibility");
+  if (!api || !chat || !entry || !form || !message || !submit || !clear
+    || !newQuestion || !thread || !history || !lab || !status || !service
+    || !serviceStatus || !configForm || !apiKey || !configSubmit
+    || !configChange || !configClear || !keyVisibility) return;
 
   function sessionStore() {
     try { return window.sessionStorage; } catch (_) { return null; }
@@ -26,6 +37,8 @@
   const requestGate = chat.createRequestGate();
   let transcript = chat.loadTranscript(sessionStore());
   let busy = false;
+  let configBusy = true;
+  let agentConfig = Object.freeze({ configured: false, credentialSource: "none" });
   let pendingConsentPrompt = null;
 
   const composerActions = form.querySelector(".agent-page-composer-actions");
@@ -177,12 +190,93 @@
 
   function setBusy(nextBusy) {
     busy = nextBusy === true;
-    message.disabled = busy;
-    submit.disabled = busy;
+    message.disabled = busy || configBusy || !agentConfig.configured;
+    submit.disabled = busy || configBusy || !agentConfig.configured;
     consentButton.disabled = busy;
     clear.disabled = false;
     retry.disabled = busy || !chat.lastRetryablePrompt(transcript);
     copyLatest.disabled = busy || !latestAssistant();
+  }
+
+  function renderAgentConfig(options = {}) {
+    const configured = agentConfig.configured === true;
+    const source = agentConfig.credentialSource;
+    service.dataset.configured = String(configured);
+    configForm.hidden = configured && options.showForm !== true;
+    configChange.hidden = !configured || !configForm.hidden;
+    configClear.hidden = source !== "session";
+    configSubmit.disabled = configBusy;
+    configChange.disabled = configBusy;
+    configClear.disabled = configBusy;
+    apiKey.disabled = configBusy;
+    keyVisibility.disabled = configBusy;
+    if (configBusy) serviceStatus.textContent = options.status || "正在检查本地配置…";
+    else if (options.status) serviceStatus.textContent = options.status;
+    else if (configured) {
+      const sourceLabel = source === "session" ? "本次服务进程" : "启动环境变量";
+      serviceStatus.textContent = `${agentConfig.model} · ${sourceLabel}已激活`;
+    } else {
+      serviceStatus.textContent = "尚未激活 · 输入 Key 后即可提问";
+    }
+    setBusy(busy);
+  }
+
+  async function loadAgentConfig() {
+    configBusy = true;
+    renderAgentConfig();
+    try {
+      agentConfig = await api.getAgentConfig();
+      configBusy = false;
+      renderAgentConfig();
+    } catch (error) {
+      agentConfig = Object.freeze({ configured: false, credentialSource: "none" });
+      configBusy = false;
+      renderAgentConfig({ status: api.agentErrorMessage(error?.code) });
+      setPageState("error", api.agentErrorMessage(error?.code));
+    }
+  }
+
+  async function configureAgent(event) {
+    event.preventDefault();
+    if (configBusy) return;
+    configBusy = true;
+    renderAgentConfig({ showForm: true, status: "正在激活当前 Node 服务进程…" });
+    try {
+      agentConfig = await api.configureAgentKey(apiKey.value);
+      apiKey.value = "";
+      apiKey.type = "password";
+      keyVisibility.textContent = "显示";
+      keyVisibility.setAttribute("aria-label", "显示 Key");
+      configBusy = false;
+      renderAgentConfig({ status: `${agentConfig.model} · 已在当前服务进程中激活` });
+      setPageState("idle", "模型服务已激活，可以发送问题。Key 不会写入本地文件。");
+      message.focus();
+    } catch (error) {
+      configBusy = false;
+      renderAgentConfig({ showForm: true, status: api.agentErrorMessage(error?.code) });
+      setPageState("error", api.agentErrorMessage(error?.code));
+      apiKey.focus();
+    }
+  }
+
+  async function clearConfiguredKey() {
+    if (configBusy) return;
+    configBusy = true;
+    renderAgentConfig({ status: "正在清除本次服务进程中的 Key…" });
+    try {
+      agentConfig = await api.clearAgentKey();
+      configBusy = false;
+      renderAgentConfig({ status: agentConfig.configured
+        ? `${agentConfig.model} · 已恢复启动环境变量配置`
+        : "本次 Key 已清除 · 停止服务后不会留下凭据" });
+      setPageState("idle", agentConfig.configured
+        ? "已恢复使用启动环境变量中的模型配置。"
+        : "已清除本次 Key，模型请求已停用。");
+    } catch (error) {
+      configBusy = false;
+      renderAgentConfig({ status: api.agentErrorMessage(error?.code) });
+      setPageState("error", api.agentErrorMessage(error?.code));
+    }
   }
 
   function requestConsent(prompt) {
@@ -211,6 +305,10 @@
       prompt = api.validateAgentMessage(rawPrompt);
     } catch (error) {
       setPageState("error", api.agentErrorMessage(error?.code));
+      if (error?.code === "model_auth_failed" || error?.code === "model_not_configured") {
+        agentConfig = Object.freeze({ ...agentConfig, configured: false });
+        renderAgentConfig({ showForm: true, status: api.agentErrorMessage(error.code) });
+      }
       message.focus();
       return;
     }
@@ -307,15 +405,35 @@
     message.focus();
     form.scrollIntoView({ block: "end" });
   });
+  configForm.addEventListener("submit", configureAgent);
+  configChange.addEventListener("click", () => {
+    renderAgentConfig({ showForm: true, status: "输入新的 Key 将替换当前进程内凭据。" });
+    apiKey.focus();
+  });
+  configClear.addEventListener("click", clearConfiguredKey);
+  keyVisibility.addEventListener("click", () => {
+    const reveal = apiKey.type === "password";
+    apiKey.type = reveal ? "text" : "password";
+    keyVisibility.textContent = reveal ? "隐藏" : "显示";
+    keyVisibility.setAttribute("aria-label", reveal ? "隐藏 Key" : "显示 Key");
+    apiKey.focus();
+  });
 
   document.documentElement.setAttribute("data-agent-state", "idle");
   renderTranscript();
   updateCharacterCount();
   loadContext();
-
-  const pendingPrompt = entry.consumePendingPrompt(sessionStore());
-  if (pendingPrompt) {
-    api.saveAgentConsent(sessionStore());
-    sendPrompt(pendingPrompt, { consentGranted: true });
-  }
+  loadAgentConfig().then(() => {
+    const pendingPrompt = entry.consumePendingPrompt(sessionStore());
+    if (!pendingPrompt) return;
+    if (agentConfig.configured) {
+      api.saveAgentConsent(sessionStore());
+      sendPrompt(pendingPrompt, { consentGranted: true });
+      return;
+    }
+    message.value = pendingPrompt;
+    updateCharacterCount();
+    setPageState("error", "问题已带到助教页，请先激活本地模型服务。");
+    apiKey.focus();
+  });
 })();
