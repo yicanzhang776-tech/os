@@ -18,6 +18,7 @@ const {
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
 const { createAgentConfigApi } = require("./agent/config-api");
+const { createAgentHandoffApi, createAgentHandoffStore } = require("./agent/handoff-api");
 const { createAgentRuntime } = require("./agent/runtime");
 const {
   createGetCodeDiffTool,
@@ -71,6 +72,8 @@ const staticAssetNames = [
   "agent-client.js",
   "agent-chat-state.js",
   "agent-entry-state.js",
+  "agent-handoff-state.js",
+  "agent-pet-motion.js",
   "agent-pet.js",
   "agent.html",
   "agent-page.css",
@@ -80,7 +83,8 @@ const staticAssetNames = [
   "diagnostics.js",
   "presentation-mode.js",
   "app.js",
-  "assets/kernel-buddy.png"
+  "assets/kernel-buddy.png",
+  "assets/kernel-buddy-sprites.png"
 ];
 let sequence = 0;
 let currentChild = null;
@@ -145,6 +149,10 @@ const agentConfigApi = createAgentConfigApi({
   getCapabilities: agentRuntime.getCapabilities,
   configureSessionApiKey: agentRuntime.configureSessionApiKey,
   clearSessionApiKey: agentRuntime.clearSessionApiKey
+});
+const agentHandoffApi = createAgentHandoffApi({
+  expectedOrigin: `http://${host}:${port}`,
+  store: createAgentHandoffStore()
 });
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -693,6 +701,17 @@ const server = http.createServer(async (request, response) => {
       method: request.method,
       headers: request.headers,
       body: request
+    });
+    writeJson(response, result.statusCode, result.body, result.headers);
+    return;
+  }
+
+  if (requestPath === "/api/agent/handoff" || requestPath === "/api/agent/handoff/consume") {
+    const result = await agentHandoffApi.handleHttpRequest({
+      method: request.method,
+      headers: request.headers,
+      body: request,
+      operation: requestPath.endsWith("/consume") ? "consume" : "create"
     });
     writeJson(response, result.statusCode, result.body, result.headers);
     return;

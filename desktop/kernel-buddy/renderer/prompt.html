@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>问问小内核</title>
+  <link rel="stylesheet" href="buddy://app/prompt.css">
+</head>
+<body>
+  <header class="prompt-titlebar">
+    <div><span class="prompt-mark" aria-hidden="true"></span><strong>问问小内核</strong></div>
+    <button id="prompt-close" type="button" aria-label="关闭">×</button>
+  </header>
+  <main>
+    <p id="prompt-context">正在连接当前实验…</p>
+    <form id="prompt-form">
+      <label for="prompt-message">你的问题</label>
+      <textarea id="prompt-message" maxlength="4000" rows="6" placeholder="例如：为什么切换页表后必须刷新 TLB？"></textarea>
+      <div class="prompt-meta"><output id="prompt-status" aria-live="polite"></output><span id="prompt-count">0 / 4000</span></div>
+      <div class="prompt-actions">
+        <button id="prompt-full" type="button">完整助教</button>
+        <button id="prompt-submit" type="submit">带着问题去问</button>
+      </div>
+    </form>
+  </main>
+  <script src="buddy://app/prompt.js"></script>
+</body>
+</html>

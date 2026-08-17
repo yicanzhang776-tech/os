@@ -7,6 +7,7 @@
   "use strict";
   const AGENT_CONTRACT_VERSION = "os-tutor.agent/v1";
   const AGENT_CONFIG_CONTRACT_VERSION = "os-tutor.agent-config/v1";
+  const AGENT_HANDOFF_CONTRACT_VERSION = "os-tutor.agent-handoff/v1";
   const AGENT_CONSENT_KEY = "os-teaching-agent-consent-v1";
   const MAX_AGENT_MESSAGE_LENGTH = 4000;
   const ERROR_MESSAGES = Object.freeze({
@@ -27,6 +28,9 @@
     agent_tool_output_too_large: "本次教学证据过多，请缩小文件或问题范围。",
     invalid_api_key: "Key 格式无效，请检查后重新输入。",
     config_unavailable: "暂时无法更新本地模型配置，请确认 Node 服务仍在运行。",
+    handoff_unavailable: "桌宠带来的问题已过期或已被读取，请重新提交。",
+    handoff_invalid: "桌宠转交的问题无效，请重新提交。",
+    handoff_capacity: "待处理的问题较多，请稍后重新提交。",
     run_busy: "已有构建或 QEMU 任务运行中，请等待完成后重试。",
     consent_required: "请先阅读数据告知并明确同意。",
     invalid_agent_response: "教学助教返回了无法识别的结果，请稍后重试。",
@@ -116,5 +120,29 @@
     }
     return Object.freeze({ answer: body.data.answer, meta: body.meta && typeof body.meta === "object" ? { ...body.meta } : {} });
   }
-  return Object.freeze({ AGENT_CONFIG_CONTRACT_VERSION, AGENT_CONSENT_KEY, AGENT_CONTRACT_VERSION, AgentClientError, MAX_AGENT_MESSAGE_LENGTH, agentErrorMessage, clearAgentKey, configureAgentKey, getAgentConfig, hasAgentConsent, requestAgent, saveAgentConsent, validateAgentMessage });
+  async function consumeAgentHandoff(token, options = {}) {
+    if (typeof token !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(token)) {
+      throw new AgentClientError("handoff_invalid");
+    }
+    const fetchImpl = options.fetchImpl || globalThis.fetch;
+    if (typeof fetchImpl !== "function") throw new AgentClientError("handoff_unavailable");
+    let response;
+    try {
+      response = await fetchImpl("/api/agent/handoff/consume", {
+        method: "POST",
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ token })
+      });
+    } catch (_) { throw new AgentClientError("handoff_unavailable"); }
+    let body;
+    try { body = await response.json(); } catch (_) { throw new AgentClientError("handoff_unavailable"); }
+    if (!response.ok || body?.ok !== true) {
+      throw new AgentClientError(typeof body?.error?.code === "string" ? body.error.code : "handoff_unavailable");
+    }
+    if (body.contractVersion !== AGENT_HANDOFF_CONTRACT_VERSION || typeof body.data?.message !== "string") {
+      throw new AgentClientError("handoff_invalid");
+    }
+    return validateAgentMessage(body.data.message);
+  }
+  return Object.freeze({ AGENT_CONFIG_CONTRACT_VERSION, AGENT_CONSENT_KEY, AGENT_CONTRACT_VERSION, AGENT_HANDOFF_CONTRACT_VERSION, AgentClientError, MAX_AGENT_MESSAGE_LENGTH, agentErrorMessage, clearAgentKey, configureAgentKey, consumeAgentHandoff, getAgentConfig, hasAgentConsent, requestAgent, saveAgentConsent, validateAgentMessage });
 });

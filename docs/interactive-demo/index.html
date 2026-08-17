@@ -718,7 +718,10 @@
           <p class="agent-mini-kicker">Kernel Buddy</p>
           <h2 id="agent-mini-title">问问小内核</h2>
         </div>
-        <button class="agent-mini-close" id="agent-mini-close" type="button">收起</button>
+        <div class="agent-mini-heading-actions">
+          <button id="agent-pet-reset" type="button">复位位置</button>
+          <button class="agent-mini-close" id="agent-mini-close" type="button">收起</button>
+        </div>
       </div>
       <p class="agent-mini-copy">描述你卡住的位置，我会把问题带到完整助教页。</p>
       <form id="agent-mini-form">
@@ -732,8 +735,14 @@
       </form>
       <p class="agent-mini-boundary">仅转交当前问题，不发送本页源码、终端日志或聊天历史。</p>
     </section>
-    <button id="kernel-buddy" type="button" aria-controls="agent-mini-panel" aria-expanded="false" aria-label="打开小内核助教">
-      <img src="assets/kernel-buddy.png" alt="" width="88" height="88">
+    <button id="kernel-buddy" type="button" aria-controls="agent-mini-panel" aria-expanded="false" aria-label="打开或拖动小内核助教">
+      <span class="agent-pet-visual" aria-hidden="true">
+        <span class="agent-pet-sprite is-active" data-pose="idle"></span>
+        <span class="agent-pet-sprite" data-pose="idle"></span>
+        <span class="agent-pet-cursor"></span>
+        <span class="agent-pet-ear-light agent-pet-ear-light-left"></span>
+        <span class="agent-pet-ear-light agent-pet-ear-light-right"></span>
+      </span>
       <span class="agent-pet-fallback" aria-hidden="true">OS</span>
       <span class="agent-pet-state" aria-hidden="true">空闲</span>
     </button>
@@ -752,6 +761,7 @@
   <script src="ui-shell.js"></script>
   <script src="agent-client.js"></script>
   <script src="agent-entry-state.js"></script>
+  <script src="agent-pet-motion.js"></script>
   <script src="agent-pet.js"></script>
   <script src="agent-chat-state.js"></script>
   <script src="agent-panel.js"></script>

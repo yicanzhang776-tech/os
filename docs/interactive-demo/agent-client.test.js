@@ -9,6 +9,7 @@ const {
   agentErrorMessage,
   clearAgentKey,
   configureAgentKey,
+  consumeAgentHandoff,
   getAgentConfig,
   hasAgentConsent,
   requestAgent,
@@ -57,6 +58,24 @@ test("agent request sends exactly one message and validates the response contrac
   assert.equal(captured.url, "/api/agent");
   assert.deepEqual(JSON.parse(captured.options.body), { message: "为什么没有出现任务切换？" });
   assert.equal(result.answer, "先检查结构化事件。");
+});
+
+test("handoff consumes one opaque token and validates the returned prompt", async () => {
+  let captured;
+  const prompt = await consumeAgentHandoff("AAAAAAAAAAAAAAAAAAAAAA", {
+    fetchImpl: async (url, options) => {
+      captured = { url, options };
+      return new Response(JSON.stringify({
+        contractVersion: "os-tutor.agent-handoff/v1",
+        ok: true,
+        data: { message: "为什么要保存 sepc？" },
+        error: null
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  assert.equal(prompt, "为什么要保存 sepc？");
+  assert.equal(captured.url, "/api/agent/handoff/consume");
+  assert.deepEqual(JSON.parse(captured.options.body), { token: "AAAAAAAAAAAAAAAAAAAAAA" });
 });
 
 test("dangerous HTML remains ordinary answer text", async () => {

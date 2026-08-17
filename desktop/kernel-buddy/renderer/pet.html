@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>小内核桌宠</title>
+  <link rel="stylesheet" href="buddy://app/pet.css">
+</head>
+<body>
+  <main class="pet-shell" data-state="idle" data-pose="idle">
+    <div class="pet-drag-region" aria-hidden="true"></div>
+    <div class="pet-visual" aria-hidden="true">
+      <span class="pet-sprite is-active" data-pose="idle"></span>
+      <span class="pet-sprite" data-pose="idle"></span>
+      <span class="pet-ear-light pet-ear-light-left"></span>
+      <span class="pet-ear-light pet-ear-light-right"></span>
+    </div>
+    <button id="pet-screen" type="button" aria-label="打开小内核提问框">
+      <span class="pet-cursor"></span>
+    </button>
+    <output id="pet-status" aria-live="polite">空闲</output>
+  </main>
+  <script src="buddy://app/shared/agent-pet-motion.js"></script>
+  <script src="buddy://app/pet.js"></script>
+</body>
+</html>

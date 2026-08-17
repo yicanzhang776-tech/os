@@ -137,8 +137,11 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
     "agent-page.css",
     "agent-page.js",
     "agent-entry-state.js",
+    "agent-handoff-state.js",
+    "agent-pet-motion.js",
     "agent-pet.js",
-    "assets/kernel-buddy.png"
+    "assets/kernel-buddy.png",
+    "assets/kernel-buddy-sprites.png"
   ]) {
     const assetResponse = await fetch(`${url}/${asset}`);
     assert.equal(assetResponse.status, 200, `${asset} should be served by the local bridge`);
@@ -152,6 +155,40 @@ test("bridge serves the learning map and turns serial evidence into WebSocket ev
   assert.equal(mascotAsset.headers.get("content-type"), "image/png");
   const unlistedMascot = await fetch(`${url}/assets/kernel-buddy-preview.png`);
   assert.equal(unlistedMascot.status, 404);
+
+  const handoffCreated = await fetch(`${url}/api/agent/handoff`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ message: "为什么切换页表后要刷新 TLB？" })
+  });
+  assert.equal(handoffCreated.status, 200);
+  const handoffCreatedBody = await handoffCreated.json();
+  assert.equal(handoffCreatedBody.contractVersion, "os-tutor.agent-handoff/v1");
+  assert.match(handoffCreatedBody.data.token, /^[A-Za-z0-9_-]{22}$/);
+  assert.doesNotMatch(JSON.stringify(handoffCreatedBody), /刷新 TLB/u);
+
+  const handoffConsumed = await fetch(`${url}/api/agent/handoff/consume`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ token: handoffCreatedBody.data.token })
+  });
+  assert.equal(handoffConsumed.status, 200);
+  assert.equal((await handoffConsumed.json()).data.message, "为什么切换页表后要刷新 TLB？");
+  const handoffRepeated = await fetch(`${url}/api/agent/handoff/consume`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8", origin: url },
+    body: JSON.stringify({ token: handoffCreatedBody.data.token })
+  });
+  assert.equal(handoffRepeated.status, 404);
+  assert.equal((await handoffRepeated.json()).error.code, "handoff_unavailable");
+
+  const rejectedHandoff = await fetch(`${url}/api/agent/handoff`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "http://localhost:8888" },
+    body: JSON.stringify({ message: "hello" })
+  });
+  assert.equal(rejectedHandoff.status, 403);
+  assert.equal((await rejectedHandoff.json()).error.code, "origin_not_allowed");
 
   const getAgent = await fetch(`${url}/api/agent`);
   assert.equal(getAgent.status, 405);

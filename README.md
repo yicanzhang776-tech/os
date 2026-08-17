@@ -94,7 +94,9 @@ flowchart LR
 - 区分 starter 的 TODO、构建失败和 solution 的完成标志，未完成内容不会被误判为通过。
 - 同时支持离线讲解和实时实验模式；实时模式下切换实验分支后，页面会自动跟踪新的分支上下文。
 
-实验台右下角提供“小内核”桌宠入口。点击后先打开迷你提问框，只有明确点击“带着问题去问”才会把当前这一条问题一次性写入浏览器会话并跳转到独立助教页。也可以直接打开 <http://127.0.0.1:8888/agent.html> 使用专注聊天界面，或从该页面返回实验台。
+实验台右下角提供“小内核”桌宠入口。它可以拖动并在释放后吸附左右边缘，点击会打开迷你提问框；每隔 60–120 秒会安静地眨眼、挥手或敲终端，运行与错误状态会优先覆盖空闲动作。只有明确点击“带着问题去问”才会把当前这一条问题一次性交给独立助教页。也可以直接打开 <http://127.0.0.1:8888/agent.html> 使用专注聊天界面，或从该页面返回实验台。
+
+需要在浏览器最小化后继续显示桌宠时，可选启用 Electron 桌面伴侣。Windows 使用 `-DesktopPet`，Ubuntu 使用 `--desktop-pet`；首次启用会按 lockfile 执行 `npm ci`，需要 Node.js 22.12 以上、npm 和网络，普通网页模式仍无 Electron 依赖。桌面坐标和“置顶/暂停动作”偏好只保存在 Electron 用户数据目录，不保存问题、Key、日志或实验数据。
 
 独立助教页会在当前浏览器会话中显示问题与回答历史，便于回看和定位，但每次 `/api/agent` 请求仍只发送当前问题，不会把前几轮消息交给模型。启动本地 bridge 后可直接在页面输入测试 Key；Key 只保存在 bridge 的当前进程内。关闭浏览器会话后显示历史不会作为账号数据保留；未配置模型或网络不可用时，实验、诊断、回放与比较功能仍可继续使用。
 
@@ -141,12 +143,20 @@ Windows PowerShell：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly
 ```
 
+同时启动可选桌面桌宠：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-interactive-demo.ps1 -ServeOnly -DesktopPet
+```
+
 Ubuntu：
 
 ```sh
 sh scripts/check-env.sh
 node docs/interactive-demo/server.js --port 8888
 ```
+
+Ubuntu 图形会话中也可运行 `sh scripts/run-interactive-demo.sh --desktop-pet`。Wayland 且存在 XWayland 时会使用 X11 模式保证窗口定位；纯 Wayland 仍支持拖动，但不承诺跨会话坐标恢复。
 
 Windows PowerShell 脚本属于兼容入口，不影响 Ubuntu/Linux 下的实验构建和可视化运行。
 

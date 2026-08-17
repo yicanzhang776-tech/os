@@ -4,6 +4,7 @@
   const api = window.OsTeachingAgentClient;
   const chat = window.OsTeachingAgentChatState;
   const entry = window.OsTeachingAgentEntryState;
+  const handoff = window.OsTeachingAgentHandoffState;
   const form = document.getElementById("agent-page-form");
   const message = document.getElementById("agent-page-message");
   const submit = document.getElementById("agent-page-submit");
@@ -21,7 +22,7 @@
   const configChange = document.getElementById("agent-config-change");
   const configClear = document.getElementById("agent-config-clear");
   const keyVisibility = document.getElementById("agent-key-visibility");
-  if (!api || !chat || !entry || !form || !message || !submit || !clear
+  if (!api || !chat || !entry || !handoff || !form || !message || !submit || !clear
     || !newQuestion || !thread || !history || !lab || !status || !service
     || !serviceStatus || !configForm || !apiKey || !configSubmit
     || !configChange || !configClear || !keyVisibility) return;
@@ -423,8 +424,22 @@
   renderTranscript();
   updateCharacterCount();
   loadContext();
-  loadAgentConfig().then(() => {
-    const pendingPrompt = entry.consumePendingPrompt(sessionStore());
+  async function loadPendingPrompt() {
+    let pendingPrompt = null;
+    try {
+      pendingPrompt = await handoff.consumeLocationHandoff({
+        location: window.location,
+        history: window.history,
+        client: api
+      });
+    } catch (error) {
+      setPageState("error", api.agentErrorMessage(error?.code));
+    }
+    return pendingPrompt || entry.consumePendingPrompt(sessionStore());
+  }
+
+  loadAgentConfig().then(async () => {
+    const pendingPrompt = await loadPendingPrompt();
     if (!pendingPrompt) return;
     if (agentConfig.configured) {
       api.saveAgentConsent(sessionStore());
