@@ -34,19 +34,22 @@ const TOOL_SCHEMAS = deepFreeze([
     {}
   ),
   functionSchema(
-    "read_code",
-    "Use when a student asks what a named file, function, or current implementation does. Read only the necessary bounded range from an allowed teaching source file; avoid unrelated context, diff, run, or event tools when this source is sufficient.",
+    "get_run_result",
+    "Use first after trusted context to inspect how the latest or specified run finished, especially for runtime symptoms such as boot failure, no output, stuck execution, panic, exception, QEMU or OpenSBI behavior, or where execution stopped. Read one bounded run summary before event, diff, or source evidence; do not reread it.",
     {
-      path: { type: "string", minLength: 1, maxLength: 1000 },
-      startLine: { type: "integer", minimum: 1 },
-      endLine: { type: "integer", minimum: 1 },
-      maxBytes: { type: "integer", minimum: 1, maximum: 64 * 1024 }
-    },
-    ["path"]
+      runId: {
+        type: "string",
+        minLength: 1,
+        maxLength: 80,
+        pattern: "^[A-Za-z0-9._:-]+$"
+      },
+      lab: { type: "string", enum: RUN_LABS },
+      includeDiagnostics: { type: "boolean" }
+    }
   ),
   functionSchema(
     "get_qemu_events",
-    "Use for where execution stopped, the last observed stage, or real panic, trap, and QEMU event evidence. Read bounded events from an existing run. An empty successful event list is a valid result: do not repeat the call just because no events matched.",
+    "Use after get_run_result for runtime symptoms to inspect where execution stopped, the last observed stage, or real panic, trap, QEMU, OpenSBI, and handoff evidence before reading diffs or source. Read bounded events from one run. An empty successful event list is valid evidence and must not be queried again.",
     {
       runId: {
         type: "string",
@@ -63,22 +66,8 @@ const TOOL_SCHEMAS = deepFreeze([
     }
   ),
   functionSchema(
-    "get_run_result",
-    "Use first when a student asks how the latest or specified run finished or why it failed. Read one bounded run summary, including build and QEMU status; do not reread it without a concrete reason.",
-    {
-      runId: {
-        type: "string",
-        minLength: 1,
-        maxLength: 80,
-        pattern: "^[A-Za-z0-9._:-]+$"
-      },
-      lab: { type: "string", enum: RUN_LABS },
-      includeDiagnostics: { type: "boolean" }
-    }
-  ),
-  functionSchema(
     "get_code_diff",
-    "Use when a student asks about recent changes or why changed code no longer works. Inspect only the necessary bounded teaching-code difference from the approved starter baseline.",
+    "Use when a student asks about recent changes or why changed code no longer works. For runtime symptoms, use it only after run and QEMU event evidence remain insufficient. Inspect only the necessary bounded teaching-code difference from the approved starter baseline.",
     {
       lab: { type: "string", enum: LABS },
       paths: {
@@ -90,6 +79,17 @@ const TOOL_SCHEMAS = deepFreeze([
       contextLines: { type: "integer", minimum: 0, maximum: 5 },
       maxLines: { type: "integer", minimum: 1, maximum: 800 }
     }
+  ),
+  functionSchema(
+    "read_code",
+    "Use for a named file, function, or current implementation. For runtime symptoms, use only after run, QEMU event, and relevant diff evidence remain insufficient. Read one most relevant bounded location first, reassess after every result, and do not batch speculative reads; four calls is a safety ceiling, not a target.",
+    {
+      path: { type: "string", minLength: 1, maxLength: 1000 },
+      startLine: { type: "integer", minimum: 1 },
+      endLine: { type: "integer", minimum: 1 },
+      maxBytes: { type: "integer", minimum: 1, maximum: 64 * 1024 }
+    },
+    ["path"]
   ),
   functionSchema(
     "run_test",

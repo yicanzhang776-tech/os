@@ -142,10 +142,15 @@ test("a startup knowledge snapshot survives a student workspace branch switch", 
   }
 
   assert.equal(requestBodies.length, 3);
-  assert.equal(requestBodies[0].input, "你好，请简单回复一句话，不调用工具。");
+  assert.match(requestBodies[0].input, /^\[STUDENT QUESTION\]\n"你好，请简单回复一句话，不调用工具。"/);
+  assert.match(requestBodies[0].input, /\[REQUEST EVIDENCE STATE\]/);
+  assert.match(requestBodies[0].input, /"toolBudget":\{"used":0,"max":8,"remaining":8\}/);
+  assert.doesNotMatch(requestBodies[0].input, /\[COURSE KNOWLEDGE\]/);
   assert.match(requestBodies[1].input, /\[COURSE KNOWLEDGE\]/);
   assert.match(requestBodies[1].input, /lab1-concept-opensbi/);
-  assert.equal(requestBodies[2].input, "我现在在哪个Lab？");
+  assert.match(requestBodies[2].input, /^\[STUDENT QUESTION\]\n"我现在在哪个Lab？"/);
+  assert.match(requestBodies[2].input, /\[REQUEST EVIDENCE STATE\]/);
+  assert.doesNotMatch(requestBodies[2].input, /\[COURSE KNOWLEDGE\]/);
 });
 
 test("runtime startup fails closed when bundled knowledge is missing or invalid", () => {

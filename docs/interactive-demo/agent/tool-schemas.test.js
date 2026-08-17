@@ -7,10 +7,10 @@ const { TOOL_SCHEMAS, TOOL_SCHEMA_NAMES } = require("./tool-schemas");
 
 const EXPECTED_NAMES = [
   "get_context",
-  "read_code",
-  "get_qemu_events",
   "get_run_result",
+  "get_qemu_events",
   "get_code_diff",
+  "read_code",
   "run_test"
 ];
 
@@ -48,12 +48,19 @@ test("descriptions guide minimal natural-language tool selection", () => {
   assert.match(schema("get_context").description, /reuse its trustedContext snapshot/);
   assert.match(schema("get_context").description, /independently checks context consistency/);
   assert.match(schema("read_code").description, /named file, function, or current implementation/);
-  assert.match(schema("read_code").description, /avoid unrelated context, diff, run, or event tools/);
+  assert.match(schema("read_code").description, /only after run, QEMU event, and relevant diff evidence/);
+  assert.match(schema("read_code").description, /one most relevant bounded location first/);
+  assert.match(schema("read_code").description, /do not batch speculative reads/);
+  assert.match(schema("read_code").description, /safety ceiling, not a target/);
   assert.match(schema("get_code_diff").description, /recent changes/);
+  assert.match(schema("get_code_diff").description, /after run and QEMU event evidence/);
   assert.match(schema("get_run_result").description, /latest or specified run/);
+  assert.match(schema("get_run_result").description, /before event, diff, or source evidence/);
   assert.match(schema("get_run_result").description, /do not reread it/);
   assert.match(schema("get_qemu_events").description, /where execution stopped/);
-  assert.match(schema("get_qemu_events").description, /empty successful event list is a valid result/);
+  assert.match(schema("get_qemu_events").description, /after get_run_result/);
+  assert.match(schema("get_qemu_events").description, /before reading diffs or source/);
+  assert.match(schema("get_qemu_events").description, /empty successful event list is valid evidence/);
   assert.match(schema("run_test").description, /exactly once/);
   assert.match(schema("run_test").description, /trusted Lab and variant with get_context first/);
   assert.match(schema("run_test").description, /Never batch this action with read tools/);

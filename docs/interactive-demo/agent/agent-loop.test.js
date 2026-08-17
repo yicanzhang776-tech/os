@@ -65,6 +65,28 @@ function trustedContextData(overrides = {}) {
   };
 }
 
+function expectedRequestEvidence(options = {}) {
+  const counts = options.counts || {};
+  const toolUsage = {};
+  let used = 0;
+  for (const toolName of TOOL_SCHEMA_NAMES) {
+    const toolUsed = counts[toolName] || 0;
+    const limit = TOOL_REPEAT_LIMITS[toolName];
+    used += toolUsed;
+    toolUsage[toolName] = {
+      used: toolUsed,
+      limit,
+      remaining: limit - toolUsed
+    };
+  }
+  return {
+    trustedContext: options.trustedContext ?? null,
+    usedTools: options.usedTools || [],
+    toolBudget: { used, max: MAX_TOOL_CALLS, remaining: MAX_TOOL_CALLS - used },
+    toolUsage
+  };
+}
+
 function final(answer = "Final teaching answer.") {
   return { kind: "final", answer };
 }
@@ -378,10 +400,11 @@ test("a current-Lab question uses get_context once and then returns the final an
       assert.equal(input.toolOutputs[0].callId, "call-1");
       assert.equal(input.toolOutputs[0].toolName, "get_context");
       assert.equal(JSON.parse(input.toolOutputs[0].output).tool, "get_context");
-      assert.deepEqual(input.requestEvidence, {
+      assert.deepEqual(input.requestEvidence, expectedRequestEvidence({
         trustedContext: trustedContextData({ stageIndex: null, workspace: null }),
-        usedTools: ["get_context"]
-      });
+        usedTools: ["get_context"],
+        counts: { get_context: 1 }
+      }));
       return final();
     }
   ]);
@@ -400,12 +423,15 @@ test("complex run diagnosis reuses one trusted context through run and QEMU evid
     (input) => {
       assert.deepEqual(input.requestEvidence.trustedContext, trustedContextData());
       assert.deepEqual(input.requestEvidence.usedTools, ["get_context"]);
+      assert.deepEqual(input.requestEvidence.toolBudget, { used: 1, max: 8, remaining: 7 });
       return call("result-1", "get_run_result", { includeDiagnostics: true });
     },
     (input) => {
       assert.equal(input.requestEvidence.trustedContext.branch, INITIAL_CONTEXT.branch);
       assert.equal(input.requestEvidence.trustedContext.workspace.modifiedFiles, 1);
       assert.deepEqual(input.requestEvidence.usedTools, ["get_context", "get_run_result"]);
+      assert.equal(input.requestEvidence.toolUsage.get_run_result.remaining, 0);
+      assert.equal(input.requestEvidence.toolUsage.get_qemu_events.remaining, 1);
       return call("events-1", "get_qemu_events", { limit: 20 });
     },
     (input) => {
@@ -425,6 +451,141 @@ test("complex run diagnosis reuses one trusted context through run and QEMU evid
   assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
     "get_context", "get_run_result", "get_qemu_events"
   ]);
+});
+
+test("a seven-of-eight request exposes one remaining total call before planning", async () => {
+  const h = harness([
+    call("context-1", "get_context"),
+    call("result-1", "get_run_result", {}),
+    call("events-1", "get_qemu_events", { limit: 20 }),
+    call("diff-1", "get_code_diff", { lab: "lab4" }),
+    call("read-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("read-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("read-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    (input) => {
+      assert.deepEqual(input.requestEvidence.toolBudget, {
+        used: 7,
+        max: 8,
+        remaining: 1
+      });
+      assert.deepEqual(input.requestEvidence.toolUsage.read_code, {
+        used: 3,
+        limit: 4,
+        remaining: 1
+      });
+      return final("The remaining budget is not needed for a bounded answer.");
+    }
+  ]);
+
+  assert.match((await run(h)).answer, /bounded answer/);
+  assert.equal(h.tools.calls.length, 7);
+  assert.equal(h.model.calls.length, 8);
+});
+
+test("four read_code calls expose zero remaining reads and lead to final", async () => {
+  const h = harness([
+    call("read-1", "read_code", { path: "kernel/src/file-1.rs" }),
+    call("read-2", "read_code", { path: "kernel/src/file-2.rs" }),
+    call("read-3", "read_code", { path: "kernel/src/file-3.rs" }),
+    call("read-4", "read_code", { path: "kernel/src/file-4.rs" }),
+    (input) => {
+      assert.deepEqual(input.requestEvidence.toolUsage.read_code, {
+        used: 4,
+        limit: 4,
+        remaining: 0
+      });
+      assert.deepEqual(input.requestEvidence.toolBudget, {
+        used: 4,
+        max: 8,
+        remaining: 4
+      });
+      return final("Existing code evidence is enough; no fifth read is requested.");
+    }
+  ]);
+
+  assert.match((await run(h)).answer, /no fifth read/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "read_code", "read_code", "read_code", "read_code"
+  ]);
+});
+
+test("observed OpenSBI handoff events need only one focused code read before final", async () => {
+  const qemuEvents = [
+    { step: "qemu-started" },
+    { step: "opensbi-started" },
+    { step: "s-mode-handoff-observed" },
+    { step: "qemu-timeout" }
+  ];
+  const h = harness([
+    call("context-1", "get_context"),
+    call("result-1", "get_run_result", {}),
+    call("events-1", "get_qemu_events", { limit: 20 }),
+    (input) => {
+      assert.equal(input.requestEvidence.toolUsage.get_qemu_events.used, 1);
+      const observed = JSON.parse(input.toolOutputs[0].output);
+      assert.deepEqual(observed.data.events.map((event) => event.step), [
+        "qemu-started",
+        "opensbi-started",
+        "s-mode-handoff-observed",
+        "qemu-timeout"
+      ]);
+      return call("read-1", "read_code", { path: "kernel/src/main.rs", startLine: 1 });
+    },
+    (input) => {
+      assert.deepEqual(input.requestEvidence.toolUsage.read_code, {
+        used: 1,
+        limit: 4,
+        remaining: 3
+      });
+      return final("The evidence narrows the next teaching check to the early kernel entry path.");
+    }
+  ], {
+    overrides: {
+      get_qemu_events: toolResult("get_qemu_events", {
+        data: { events: qemuEvents, returnedCount: 4, totalMatched: 4 }
+      })
+    }
+  });
+
+  assert.match((await run(h, "只看到 OpenSBI，后面没有内核输出")).answer, /early kernel/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), [
+    "get_context", "get_run_result", "get_qemu_events", "read_code"
+  ]);
+});
+
+test("one sufficient read_code result finalizes without spending spare reads", async () => {
+  const h = harness([
+    call("read-1", "read_code", { path: "kernel/src/main.rs", startLine: 1 }),
+    (input) => {
+      assert.equal(input.requestEvidence.toolUsage.read_code.remaining, 3);
+      return final("The first focused range is enough for the first teaching hint.");
+    },
+    () => { throw new Error("the model must not read another location after final"); }
+  ]);
+
+  assert.match((await run(h, "请检查这个启动入口")).answer, /first teaching hint/);
+  assert.deepEqual(h.tools.calls.map((entry) => entry.name), ["read_code"]);
+  assert.equal(h.model.calls.length, 2);
+});
+
+test("request budget state stays internal to answers and public loop errors", async () => {
+  const success = harness([
+    call("read-1", "read_code", { path: "kernel/src/main.rs" }),
+    final("A bounded student-facing hint.")
+  ]);
+  const result = await run(success);
+  assert.deepEqual(result, { answer: "A bounded student-facing hint." });
+  assert.doesNotMatch(JSON.stringify(result), /toolBudget|toolUsage|remainingToolBudget/);
+
+  const failure = harness([batch(Array.from({ length: 9 }, (_, index) => (
+    toolCall(`call-${index}`, "read_code", { path: `kernel/src/file-${index}.rs` })
+  )))]);
+  await assert.rejects(run(failure), (error) => {
+    assert.equal(error.code, "agent_loop_limit");
+    assert.deepEqual(error.details, {});
+    assert.doesNotMatch(JSON.stringify(error), /toolBudget|toolUsage|remainingToolBudget/);
+    return true;
+  });
 });
 
 test("code diagnosis retains trusted context across a diff and two bounded reads", async () => {

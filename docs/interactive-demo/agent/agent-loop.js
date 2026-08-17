@@ -232,10 +232,26 @@ function trustedContextSnapshot(toolResult, initialContext) {
   });
 }
 
-function requestEvidenceSnapshot(trustedContext, usedTools) {
+function requestEvidenceSnapshot(trustedContext, usedTools, toolCalls, toolCounts) {
+  const toolUsage = {};
+  for (const toolName of TOOL_SCHEMA_NAMES) {
+    const used = toolCounts[toolName] || 0;
+    const limit = TOOL_REPEAT_LIMITS[toolName];
+    toolUsage[toolName] = Object.freeze({
+      used,
+      limit,
+      remaining: limit - used
+    });
+  }
   return Object.freeze({
     trustedContext,
-    usedTools: Object.freeze([...usedTools])
+    usedTools: Object.freeze([...usedTools]),
+    toolBudget: Object.freeze({
+      used: toolCalls,
+      max: MAX_TOOL_CALLS,
+      remaining: MAX_TOOL_CALLS - toolCalls
+    }),
+    toolUsage: Object.freeze(toolUsage)
   });
 }
 
@@ -574,7 +590,12 @@ function createAgentLoop(options = {}) {
             toolOutputs,
             finalizationOnly,
             courseKnowledge,
-            requestEvidence: requestEvidenceSnapshot(trustedContext, usedTools)
+            requestEvidence: requestEvidenceSnapshot(
+              trustedContext,
+              usedTools,
+              toolCalls,
+              toolCounts
+            )
           }));
           checkDeadline();
           await checkContext();

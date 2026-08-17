@@ -47,10 +47,51 @@ const TOOLS = Object.freeze([Object.freeze({
     additionalProperties: false
   })
 })]);
-const EMPTY_REQUEST_EVIDENCE = Object.freeze({
-  trustedContext: null,
-  usedTools: Object.freeze([])
+const READ_CODE_TOOL = Object.freeze({
+  type: "function",
+  name: "read_code",
+  description: "Read bounded teaching code.",
+  parameters: Object.freeze({
+    type: "object",
+    properties: Object.freeze({ path: Object.freeze({ type: "string" }) }),
+    required: Object.freeze(["path"]),
+    additionalProperties: false
+  })
 });
+const CONTEXT_AND_READ_TOOLS = Object.freeze([...TOOLS, READ_CODE_TOOL]);
+const TEST_TOOL_LIMITS = Object.freeze({
+  get_context: 1,
+  read_code: 4,
+  get_code_diff: 1,
+  run_test: 1,
+  get_run_result: 1,
+  get_qemu_events: 1
+});
+
+function requestEvidenceFor(toolNames, options = {}) {
+  const counts = options.counts || {};
+  const usedTools = options.usedTools || toolNames.filter((toolName) => (counts[toolName] || 0) > 0);
+  const toolUsage = {};
+  let used = 0;
+  for (const toolName of toolNames) {
+    const toolUsed = counts[toolName] || 0;
+    const limit = TEST_TOOL_LIMITS[toolName];
+    used += toolUsed;
+    toolUsage[toolName] = Object.freeze({
+      used: toolUsed,
+      limit,
+      remaining: limit - toolUsed
+    });
+  }
+  return Object.freeze({
+    trustedContext: options.trustedContext ?? null,
+    usedTools: Object.freeze([...usedTools]),
+    toolBudget: Object.freeze({ used, max: 8, remaining: 8 - used }),
+    toolUsage: Object.freeze(toolUsage)
+  });
+}
+
+const EMPTY_REQUEST_EVIDENCE = requestEvidenceFor(["get_context"]);
 const TRUSTED_CONTEXT = Object.freeze({
   branch: "lab1-starter",
   commit: "abc1234",
@@ -100,6 +141,11 @@ function stepInput(overrides = {}) {
 
 function runtimeEvidence(output) {
   return `[RUNTIME EVIDENCE]\n${output}`;
+}
+
+function providerEvidence(output, requestEvidence = EMPTY_REQUEST_EVIDENCE) {
+  return `${runtimeEvidence(output)}\n\n[REQUEST EVIDENCE STATE]\n`
+    + JSON.stringify(requestEvidence);
 }
 
 function functionCallResponse(overrides = {}) {
@@ -180,9 +226,17 @@ test("server instructions define natural-language routing, stopping, and evidenc
   assert.match(SERVER_INSTRUCTIONS, /Do not repeat a successful tool call/);
   assert.match(SERVER_INSTRUCTIONS, /get_context may be called at most once/);
   assert.match(SERVER_INSTRUCTIONS, /\[REQUEST EVIDENCE STATE\].*server-validated record/);
+  assert.match(SERVER_INSTRUCTIONS, /toolBudget and toolUsage values give the current total and per-tool/);
+  assert.match(SERVER_INSTRUCTIONS, /Never request a batch larger than toolBudget\.remaining/);
+  assert.match(SERVER_INSTRUCTIONS, /never request a tool whose remaining value is zero/);
+  assert.match(SERVER_INSTRUCTIONS, /remaining budget cannot complete.*give a bounded teaching answer/);
   assert.match(SERVER_INSTRUCTIONS, /usedTools contains get_context, do not call get_context again/);
   assert.match(SERVER_INSTRUCTIONS, /checkContext\(\).*context_changed or context_unavailable/);
   assert.match(SERVER_INSTRUCTIONS, /do not spend remaining tool budget/);
+  assert.match(SERVER_INSTRUCTIONS, /runtime symptoms, follow this evidence priority.*get_run_result.*get_qemu_events.*get_code_diff.*read_code/);
+  assert.match(SERVER_INSTRUCTIONS, /read_code limit of four is a safety ceiling, not a reading target/);
+  assert.match(SERVER_INSTRUCTIONS, /request one relevant location at a time/);
+  assert.match(SERVER_INSTRUCTIONS, /Do not batch multiple speculative read_code calls/);
   assert.match(SERVER_INSTRUCTIONS, /use get_context once first instead of guessing/);
   assert.match(SERVER_INSTRUCTIONS, /Call run_test alone in a later turn/);
   assert.match(SERVER_INSTRUCTIONS, /events empty and returnedCount and totalMatched equal to zero is valid evidence/);
@@ -194,6 +248,7 @@ test("server instructions define natural-language routing, stopping, and evidenc
   assert.match(SERVER_INSTRUCTIONS, /\[COURSE KNOWLEDGE\].*stable teaching material/);
   assert.match(SERVER_INSTRUCTIONS, /course knowledge and runtime evidence differ.*preserve the runtime facts/);
   assert.match(SERVER_INSTRUCTIONS, /Never expose the internal context labels/);
+  assert.match(SERVER_INSTRUCTIONS, /Never expose.*toolBudget.*toolUsage.*remaining counts/);
   assert.match(FINALIZATION_INSTRUCTIONS, /Tool calling must stop for this request/);
   assert.match(FINALIZATION_INSTRUCTIONS, /Do not request another tool/);
 });
@@ -251,6 +306,8 @@ test("step sends only retrieved course knowledge under an explicit non-runtime l
     courseKnowledge: COURSE_KNOWLEDGE
   }));
   assert.match(captured.input, /^\[STUDENT QUESTION\]\n/);
+  assert.match(captured.input, /\n\n\[REQUEST EVIDENCE STATE\]\n/);
+  assert.match(captured.input, /"toolBudget":\{"used":0,"max":8,"remaining":8\}/);
   assert.match(captured.input, /\n\n\[COURSE KNOWLEDGE\]\n/);
   assert.match(captured.input, /lab1-concept-opensbi/);
   assert.match(captured.input, /does not prove kernel_main ran/);
@@ -287,6 +344,44 @@ test("step rejects unsafe or oversized course knowledge before provider fetch", 
   }
 });
 
+test("step rejects forged or inconsistent request budgets before provider fetch", async (t) => {
+  const cases = [
+    ["changed total limit", {
+      ...EMPTY_REQUEST_EVIDENCE,
+      toolBudget: { used: 0, max: 9, remaining: 9 }
+    }],
+    ["inconsistent total remaining", {
+      ...EMPTY_REQUEST_EVIDENCE,
+      toolBudget: { used: 0, max: 8, remaining: 7 }
+    }],
+    ["changed per-tool limit", {
+      ...EMPTY_REQUEST_EVIDENCE,
+      toolUsage: {
+        get_context: { used: 0, limit: 2, remaining: 2 }
+      }
+    }],
+    ["used tool without matching count", {
+      ...EMPTY_REQUEST_EVIDENCE,
+      usedTools: ["get_context"]
+    }]
+  ];
+
+  for (const [name, requestEvidence] of cases) {
+    await t.test(name, async () => {
+      let fetchCalls = 0;
+      const client = clientWith(async () => {
+        fetchCalls += 1;
+        return jsonResponse(modelOutput("unexpected"));
+      });
+      await expectModelError(
+        client.step(stepInput({ requestEvidence })),
+        "model_internal_error"
+      );
+      assert.equal(fetchCalls, 0);
+    });
+  }
+});
+
 test("step parses one function call and ignores intermediate assistant text", async () => {
   let captured;
   const client = clientWith(async (_url, options) => {
@@ -316,7 +411,9 @@ test("step parses one function call and ignores intermediate assistant text", as
     "input", "instructions", "model", "parallel_tool_calls", "store", "stream", "tools"
   ]);
   assert.equal(captured.model, DEFAULT_ARK_MODEL);
-  assert.equal(captured.input, REQUEST.message);
+  assert.match(captured.input, /^\[STUDENT QUESTION\]\n/);
+  assert.match(captured.input, /\[REQUEST EVIDENCE STATE\]/);
+  assert.match(captured.input, /"remaining":8/);
   assert.equal(captured.stream, false);
   assert.equal(captured.store, true);
   assert.equal(captured.parallel_tool_calls, false);
@@ -355,10 +452,15 @@ test("step uses previous_response_id and one matching function_call_output", asy
     error: null,
     meta: {}
   });
+  const contextEvidence = requestEvidenceFor(["get_context"], {
+    counts: { get_context: 1 },
+    usedTools: ["get_context"]
+  });
   const second = await client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output }]
+    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output }],
+    requestEvidence: contextEvidence
   }));
   assert.equal(second.kind, "final");
   assert.equal(second.answer, "Context received.");
@@ -373,7 +475,7 @@ test("step uses previous_response_id and one matching function_call_output", asy
   assert.deepEqual(bodies[1].input, [{
     type: "function_call_output",
     call_id: "call-test-1",
-    output: runtimeEvidence(output)
+    output: providerEvidence(output, contextEvidence)
   }]);
   assert.equal(bodies[1].instructions, SERVER_INSTRUCTIONS);
   assert.equal(Object.hasOwn(bodies[1], "tools"), false);
@@ -388,6 +490,12 @@ test("step supports read_code as the only tool before a final answer", async () 
     data: { path: "kernel/src/lib.rs", content: "pub fn demo() {}" },
     error: null,
     meta: {}
+  });
+  const readTools = Object.freeze([READ_CODE_TOOL]);
+  const initialEvidence = requestEvidenceFor(["read_code"]);
+  const readEvidence = requestEvidenceFor(["read_code"], {
+    counts: { read_code: 1 },
+    usedTools: ["read_code"]
   });
   const responses = [
     {
@@ -405,7 +513,7 @@ test("step supports read_code as the only tool before a final answer", async () 
         {
           type: "function_call_output",
           call_id: "call-read-1",
-          output: runtimeEvidence(codeOutput)
+          output: providerEvidence(codeOutput, readEvidence)
         },
         ...modelOutput("The requested code was observed.").output
       ]
@@ -413,13 +521,18 @@ test("step supports read_code as the only tool before a final answer", async () 
   ];
   const client = clientWith(async () => jsonResponse(responses.shift()));
 
-  const first = await client.step(stepInput());
+  const first = await client.step(stepInput({
+    tools: readTools,
+    requestEvidence: initialEvidence
+  }));
   const firstCall = first.calls[0];
   assert.equal(firstCall.toolName, "read_code");
   const second = await client.step(stepInput({
     message: null,
     continuationState: first.continuationState,
-    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output: codeOutput }]
+    tools: readTools,
+    toolOutputs: [{ callId: firstCall.callId, toolName: firstCall.toolName, output: codeOutput }],
+    requestEvidence: readEvidence
   }));
   assert.deepEqual(second, {
     kind: "final",
@@ -430,18 +543,7 @@ test("step supports read_code as the only tool before a final answer", async () 
 
 test("request evidence keeps an earlier trusted context visible after a later tool turn", async () => {
   const bodies = [];
-  const readCodeTool = Object.freeze({
-    type: "function",
-    name: "read_code",
-    description: "Read bounded teaching code.",
-    parameters: Object.freeze({
-      type: "object",
-      properties: Object.freeze({ path: Object.freeze({ type: "string" }) }),
-      required: Object.freeze(["path"]),
-      additionalProperties: false
-    })
-  });
-  const tools = Object.freeze([...TOOLS, readCodeTool]);
+  const tools = CONTEXT_AND_READ_TOOLS;
   const responses = [
     functionCallResponse(),
     {
@@ -476,10 +578,15 @@ test("request evidence keeps an earlier trusted context visible after a later to
     meta: {}
   });
 
-  const first = await client.step(stepInput({ tools }));
-  const contextEvidence = Object.freeze({
+  const toolNames = ["get_context", "read_code"];
+  const first = await client.step(stepInput({
+    tools,
+    requestEvidence: requestEvidenceFor(toolNames)
+  }));
+  const contextEvidence = requestEvidenceFor(toolNames, {
     trustedContext: TRUSTED_CONTEXT,
-    usedTools: Object.freeze(["get_context"])
+    usedTools: ["get_context"],
+    counts: { get_context: 1 }
   });
   const second = await client.step(stepInput({
     tools,
@@ -488,9 +595,10 @@ test("request evidence keeps an earlier trusted context visible after a later to
     toolOutputs: [{ callId: "call-test-1", toolName: "get_context", output: contextOutput }],
     requestEvidence: contextEvidence
   }));
-  const laterEvidence = Object.freeze({
+  const laterEvidence = requestEvidenceFor(toolNames, {
     trustedContext: TRUSTED_CONTEXT,
-    usedTools: Object.freeze(["get_context", "read_code"])
+    usedTools: ["get_context", "read_code"],
+    counts: { get_context: 1, read_code: 1 }
   });
   const third = await client.step(stepInput({
     tools,
@@ -557,7 +665,11 @@ test("step parses the real Ark get_context and read_code batch into one continua
     return jsonResponse(responses.shift());
   });
 
-  const first = await client.step(stepInput());
+  const toolNames = ["get_context", "read_code"];
+  const first = await client.step(stepInput({
+    tools: CONTEXT_AND_READ_TOOLS,
+    requestEvidence: requestEvidenceFor(toolNames)
+  }));
   assert.equal(first.kind, "tool_calls");
   assert.deepEqual(first.calls, [
     { callId: "call-1", toolName: "get_context", arguments: {} },
@@ -568,13 +680,19 @@ test("step parses the real Ark get_context and read_code batch into one continua
     }
   ]);
 
+  const batchEvidence = requestEvidenceFor(toolNames, {
+    counts: { get_context: 1, read_code: 1 },
+    usedTools: ["get_context", "read_code"]
+  });
   const second = await client.step(stepInput({
+    tools: CONTEXT_AND_READ_TOOLS,
     message: null,
     continuationState: first.continuationState,
     toolOutputs: [
       { callId: "call-1", toolName: "get_context", output: contextOutput },
       { callId: "call-2", toolName: "read_code", output: codeOutput }
-    ]
+    ],
+    requestEvidence: batchEvidence
   }));
   assert.equal(second.kind, "final");
   assert.equal(second.answer, "Use both observations as evidence.");
@@ -590,7 +708,7 @@ test("step parses the real Ark get_context and read_code batch into one continua
     {
       type: "function_call_output",
       call_id: "call-2",
-      output: runtimeEvidence(codeOutput)
+      output: providerEvidence(codeOutput, batchEvidence)
     }
   ]);
 });
@@ -660,16 +778,16 @@ test("step rejects mismatched or duplicate function_call_output echoes", async (
   const output = JSON.stringify({ ok: true });
   const cases = [
     ["wrong call id", [{
-      type: "function_call_output", call_id: "wrong", output: runtimeEvidence(output)
+      type: "function_call_output", call_id: "wrong", output: providerEvidence(output)
     }]],
     ["changed output", [{
       type: "function_call_output",
       call_id: "call-test-1",
-      output: runtimeEvidence("{\"ok\":false}")
+      output: providerEvidence("{\"ok\":false}")
     }]],
     ["duplicate echo", [
-      { type: "function_call_output", call_id: "call-test-1", output: runtimeEvidence(output) },
-      { type: "function_call_output", call_id: "call-test-1", output: runtimeEvidence(output) }
+      { type: "function_call_output", call_id: "call-test-1", output: providerEvidence(output) },
+      { type: "function_call_output", call_id: "call-test-1", output: providerEvidence(output) }
     ]]
   ];
 
@@ -844,7 +962,14 @@ test("malformed, empty, oversized, and control-character answers are rejected", 
     ["wrong role", { output: [{ type: "message", role: "user", content: [] }] }],
     ["wrong content", { output: [{ type: "message", role: "assistant", content: [{ type: "input_text", text: "x" }] }] }],
     ["too long", modelOutput("x".repeat(MAX_MODEL_ANSWER_LENGTH + 1))],
-    ["control", modelOutput("bad\u0000answer")]
+    ["control", modelOutput("bad\u0000answer")],
+    ["request evidence label", modelOutput("[REQUEST EVIDENCE STATE] must stay internal")],
+    ["budget field", modelOutput("toolBudget remaining=1")],
+    ["English remaining call", modelOutput("I have 1 tool call remaining.")],
+    ["English used calls", modelOutput("I used 7 of the 8 allowed calls.")],
+    ["Chinese budget wording", modelOutput("剩余工具调用预算为 1")],
+    ["Chinese callable count", modelOutput("还可以再调用一次工具。")],
+    ["Chinese tool quota", modelOutput("工具额度还剩 1 次。")]
   ];
   for (const [name, body] of cases) {
     await t.test(name, () => expectModelError(
