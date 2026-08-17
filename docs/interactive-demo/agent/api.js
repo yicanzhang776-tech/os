@@ -166,6 +166,26 @@ const ERROR_DEFINITIONS = Object.freeze({
     message: "The agent is currently busy.",
     retryable: true
   }),
+  agent_protocol_error: Object.freeze({
+    statusCode: 502,
+    message: "The model did not follow the teaching tool protocol.",
+    retryable: false
+  }),
+  agent_loop_limit: Object.freeze({
+    statusCode: 422,
+    message: "The teaching tool request reached its safe limit.",
+    retryable: false
+  }),
+  agent_deadline_exceeded: Object.freeze({
+    statusCode: 504,
+    message: "The teaching tool request exceeded its time limit.",
+    retryable: true
+  }),
+  agent_tool_output_too_large: Object.freeze({
+    statusCode: 422,
+    message: "The teaching evidence exceeded its safe size limit.",
+    retryable: false
+  }),
   agent_internal_error: Object.freeze({
     statusCode: 500,
     message: "The agent request could not be completed.",

@@ -379,7 +379,11 @@ test("trusted model errors use the fixed Agent API status and retry taxonomy", a
     ["model_upstream_error", 502, true],
     ["model_unavailable", 503, true],
     ["model_invalid_response", 502, false],
-    ["model_internal_error", 500, false]
+    ["model_internal_error", 500, false],
+    ["agent_protocol_error", 502, false],
+    ["agent_loop_limit", 422, false],
+    ["agent_deadline_exceeded", 504, true],
+    ["agent_tool_output_too_large", 422, false]
   ];
   for (const [code, statusCode, retryable] of cases) {
     const result = await harness({
