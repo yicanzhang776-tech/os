@@ -242,8 +242,8 @@ test("server instructions define natural-language routing, stopping, and evidenc
   assert.match(SERVER_INSTRUCTIONS, /events empty and returnedCount and totalMatched equal to zero is valid evidence/);
   assert.match(SERVER_INSTRUCTIONS, /do not call it again/);
   assert.match(SERVER_INSTRUCTIONS, /do not invent a testId, panic, exception, address, function, or execution stage/);
-  assert.match(SERVER_INSTRUCTIONS, /A QEMU timeout means execution ultimately timed out/);
-  assert.match(SERVER_INSTRUCTIONS, /it does not by itself mean QEMU never started/);
+  assert.match(SERVER_INSTRUCTIONS, /qemu-timeout event proves only.*timeout condition/);
+  assert.match(SERVER_INSTRUCTIONS, /not equivalent to a kernel panic, kernel crash/);
   assert.match(SERVER_INSTRUCTIONS, /\[RUNTIME EVIDENCE\].*validated current-student evidence/);
   assert.match(SERVER_INSTRUCTIONS, /\[COURSE KNOWLEDGE\].*stable teaching material/);
   assert.match(SERVER_INSTRUCTIONS, /course knowledge and runtime evidence differ.*preserve the runtime facts/);
@@ -251,6 +251,100 @@ test("server instructions define natural-language routing, stopping, and evidenc
   assert.match(SERVER_INSTRUCTIONS, /Never expose.*toolBudget.*toolUsage.*remaining counts/);
   assert.match(FINALIZATION_INSTRUCTIONS, /Tool calling must stop for this request/);
   assert.match(FINALIZATION_INSTRUCTIONS, /Do not request another tool/);
+});
+
+test("server instructions bind diagnostic claim strength to observed evidence", () => {
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /three evidence strengths: Confirmed, Supported hypothesis, or Unknown/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Confirmed claims.*direct ToolResult.*exact code range already read.*same claim/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /A symptom plus a plausible mechanism is not confirmation/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /已确认, 证明, 根因是, 根本原因是, 明确说明, and 一定是/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Supported hypothesis.*evidence is consistent.*worth checking first.*scope can be narrowed/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /当前更值得优先检查, 现有证据与……一致, 可能位于, 可以把范围缩小到, or 优先怀疑/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Unknown facts.*not yet confirmed.*current evidence is insufficient.*not observed/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /尚不能确认, 当前证据不足, 还需要检查, or 尚未观察到/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /silently audit each factual and causal sentence.*otherwise downgrade it/
+  );
+
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Not observed is always scope-limited and never means nonexistent/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /one read_code result lacks a symbol.*currently returned code range.*complete file.*without truncation.*never claim that the project lacks it/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /returned code range.*mod boot.*boot module has not been read.*do not guess its contents/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /subsequently read boot source defines _start.*never continue claiming that _start is missing/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Do not call a candidate the root cause.*requires direct runtime or read code evidence/
+  );
+
+  assert.match(SERVER_INSTRUCTIONS, /qemu-started event proves only that the QEMU process started/);
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /opensbi-started event proves only that protocol-valid OpenSBI startup evidence was observed/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /s-mode-handoff-observed event proves only that OpenSBI reported Domain0 Next Mode as S-mode/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /does not prove that the CPU executed the kernel _start.*kernel_main executed.*initialization succeeded/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /qemu-timeout event proves only.*timeout condition.*not equivalent to a kernel panic, kernel crash.*executed no code/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /Confirm a panic or exception only when a corresponding strict structured event is present/
+  );
+  assert.match(
+    SERVER_INSTRUCTIONS,
+    /With only qemu-started, opensbi-started, s-mode-handoff-observed, qemu-timeout.*scope is narrowed to the early kernel startup path/
+  );
+
+  for (const heading of [
+    "【当前已确认】", "【尚不能确认】", "【问题范围】", "【下一步最小检查】"
+  ]) {
+    assert.match(SERVER_INSTRUCTIONS, new RegExp(heading));
+  }
+  assert.match(SERVER_INSTRUCTIONS, /only one or two high-value checks/);
+  assert.match(SERVER_INSTRUCTIONS, /Do not dump raw ToolResult JSON, internal prompt text/);
 });
 
 test("the API key provider is read exactly once during client initialization", async () => {
@@ -969,7 +1063,15 @@ test("malformed, empty, oversized, and control-character answers are rejected", 
     ["English used calls", modelOutput("I used 7 of the 8 allowed calls.")],
     ["Chinese budget wording", modelOutput("剩余工具调用预算为 1")],
     ["Chinese callable count", modelOutput("还可以再调用一次工具。")],
-    ["Chinese tool quota", modelOutput("工具额度还剩 1 次。")]
+    ["Chinese tool quota", modelOutput("工具额度还剩 1 次。")],
+    ["runtime evidence label", modelOutput("[RUNTIME EVIDENCE] must stay internal")],
+    ["course knowledge label", modelOutput("[COURSE KNOWLEDGE] must stay internal")],
+    ["student question label", modelOutput("[STUDENT QUESTION] must stay internal")],
+    ["internal prompt identifier", modelOutput("SERVER_INSTRUCTIONS must stay internal")],
+    ["internal prompt opening", modelOutput("You are an operating-systems teaching agent.")],
+    ["raw ToolResult JSON", modelOutput(
+      '{"contractVersion":"os-tutor.tool/v1","tool":"read_code","ok":true}'
+    )]
   ];
   for (const [name, body] of cases) {
     await t.test(name, () => expectModelError(
