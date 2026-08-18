@@ -18,6 +18,7 @@ const {
 } = require("./protocol");
 const { createAgentApi } = require("./agent/api");
 const { createAgentLoop } = require("./agent/agent-loop");
+const { createKnowledgeRetriever } = require("./agent/knowledge-retriever");
 const { createArkModelClient, isTrustedModelClientError } = require("./agent/model-client");
 const { createProductionAgentHandler } = require("./agent/model-handler");
 const {
@@ -137,10 +138,12 @@ const arkModelClient = createArkModelClient({
     ? writeAgentModelDiagnostic
     : null
 });
+const knowledgeRetriever = createKnowledgeRetriever();
 const agentLoop = createAgentLoop({
   model: arkModelClient,
   toolDispatch: agentToolDispatch,
   readContext: readWorkspaceContext,
+  retrieveKnowledge: knowledgeRetriever.retrieveKnowledge,
   isTrustedModelError: isTrustedModelClientError
 });
 const handleAgentRequest = createProductionAgentHandler({ agentLoop });

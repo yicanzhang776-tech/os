@@ -195,8 +195,11 @@ test("production client and Agent Loop complete get_context then read_code", asy
   assert.equal(bodies[1].input[0].call_id, "call-handler-1");
   assert.equal(bodies[2].previous_response_id, "resp-handler-2");
   assert.equal(bodies[2].input[0].call_id, "call-handler-2");
-  assert.equal(JSON.parse(bodies[1].input[0].output).tool, "get_context");
-  assert.equal(JSON.parse(bodies[2].input[0].output).tool, "read_code");
+  const runtimePrefix = "[RUNTIME EVIDENCE]\n";
+  assert.equal(JSON.parse(bodies[1].input[0].output.slice(runtimePrefix.length)).tool,
+    "get_context");
+  assert.equal(JSON.parse(bodies[2].input[0].output.slice(runtimePrefix.length)).tool,
+    "read_code");
 });
 
 test("a safe tool failure reaches the model and can produce a final answer", async () => {

@@ -13,6 +13,7 @@ const FORBIDDEN_ANSWER_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u00
 const FORBIDDEN_IDENTIFIER_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const SAFE_REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,80}$/;
 const DANGEROUS_JSON_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const EMPTY_COURSE_KNOWLEDGE = Object.freeze([]);
 
 const TOOL_REPEAT_LIMITS = Object.freeze({
   get_context: 1,
@@ -332,6 +333,10 @@ function createAgentLoop(options = {}) {
   if (typeof isTrustedModelError !== "function") {
     throw new TypeError("isTrustedModelError must be a function.");
   }
+  const retrieveKnowledge = options.retrieveKnowledge || (() => EMPTY_COURSE_KNOWLEDGE);
+  if (typeof retrieveKnowledge !== "function") {
+    throw new TypeError("retrieveKnowledge must be a function.");
+  }
 
   return Object.freeze({
     async run(input) {
@@ -383,6 +388,17 @@ function createAgentLoop(options = {}) {
           }
         };
 
+        let courseKnowledge;
+        try {
+          courseKnowledge = safeJsonCopy(await retrieveKnowledge(Object.freeze({
+            query: initial.message,
+            lab: initial.context.lab
+          })));
+        } catch (_) {
+          throw loopError("agent_internal_error");
+        }
+        if (!Array.isArray(courseKnowledge)) throw loopError("agent_internal_error");
+
         for (let turn = 0; turn < MAX_MODEL_TURNS; turn += 1) {
           checkDeadline();
           await checkContext();
@@ -390,6 +406,8 @@ function createAgentLoop(options = {}) {
             requestId: initial.context.requestId,
             modelTurn: turn + 1,
             message: turn === 0 ? initial.message : null,
+            lab: initial.context.lab,
+            courseKnowledge: turn === 0 ? courseKnowledge : EMPTY_COURSE_KNOWLEDGE,
             tools: TOOL_SCHEMAS,
             continuationState,
             toolOutput,

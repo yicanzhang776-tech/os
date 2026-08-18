@@ -58,12 +58,14 @@ test("server wires interactive and agent runs through one shared lifecycle bound
   const source = fs.readFileSync(serverPath, "utf8");
   assert.match(source, /const \{ createAgentApi \} = require\("\.\/agent\/api"\)/);
   assert.match(source, /const \{ createAgentLoop \} = require\("\.\/agent\/agent-loop"\)/);
+  assert.match(source, /const \{ createKnowledgeRetriever \} = require\("\.\/agent\/knowledge-retriever"\)/);
   assert.match(source, /const \{ createArkModelClient, isTrustedModelClientError \} = require\("\.\/agent\/model-client"\)/);
   assert.match(source, /const \{ createProductionAgentHandler \} = require\("\.\/agent\/model-handler"\)/);
   assert.match(source, /const arkModelClient = createArkModelClient\(\{[\s\S]*?fetchImpl: globalThis\.fetch,[\s\S]*?apiKeyProvider: \(\) => process\.env\.ARK_API_KEY,[\s\S]*?baseUrl: process\.env\.ARK_BASE_URL,[\s\S]*?model: process\.env\.ARK_MODEL/);
   assert.match(source, /diagnosticSink: process\.env\.OS_TUTOR_DEBUG_AGENT === "1"[\s\S]*?\? writeAgentModelDiagnostic[\s\S]*?: null/);
   assert.match(source, /function writeAgentModelDiagnostic\(event\) \{[\s\S]*?JSON\.stringify\(event\)/);
-  assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
+  assert.match(source, /const knowledgeRetriever = createKnowledgeRetriever\(\)/);
+  assert.match(source, /const agentLoop = createAgentLoop\(\{[\s\S]*?model: arkModelClient,[\s\S]*?toolDispatch: agentToolDispatch,[\s\S]*?readContext: readWorkspaceContext,[\s\S]*?retrieveKnowledge: knowledgeRetriever\.retrieveKnowledge,[\s\S]*?isTrustedModelError: isTrustedModelClientError/);
   assert.match(source, /const handleAgentRequest = createProductionAgentHandler\(\{ agentLoop \}\)/);
   assert.match(source, /const agentApi = createAgentApi\(\{[\s\S]*?expectedOrigin: `http:\/\/\$\{host\}:\$\{port\}`,[\s\S]*?readWorkspaceContext,[\s\S]*?handleAgentRequest/);
   assert.match(source, /const taskLock = new SharedTaskLock\(\)/);

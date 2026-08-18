@@ -104,6 +104,7 @@ function harness(steps, options = {}) {
     model,
     toolDispatch: tools.dispatch,
     readContext: context.read.bind(context),
+    ...(options.retrieveKnowledge ? { retrieveKnowledge: options.retrieveKnowledge } : {}),
     now: options.now || (() => 1_000)
   });
   return { loop, model, tools, context };
@@ -141,6 +142,51 @@ test("returns a direct valid final answer without dispatching", async () => {
   const h = harness([final("  Observe the current evidence.  ")]);
   assert.deepEqual(await run(h), { answer: "Observe the current evidence." });
   assert.equal(h.tools.calls.length, 0);
+});
+
+test("retrieves the current Lab knowledge exactly once and only sends it on the first turn", async () => {
+  const calls = [];
+  const knowledge = [{ id: "lab4-vpn-index-order", lab: "lab4" }];
+  const h = harness([
+    (input) => {
+      assert.equal(input.lab, "lab4");
+      assert.equal(JSON.stringify(input.courseKnowledge), JSON.stringify(knowledge));
+      return call("call-1", "get_context", {}, Object.freeze({ opaque: "state" }));
+    },
+    (input) => {
+      assert.equal(input.lab, "lab4");
+      assert.deepEqual(input.courseKnowledge, []);
+      return final("Use the observed evidence.");
+    }
+  ], {
+    async retrieveKnowledge(input) {
+      calls.push(input);
+      return knowledge;
+    }
+  });
+  assert.deepEqual(await run(h, "Why is my VPN order reversed?"), {
+    answer: "Use the observed evidence."
+  });
+  assert.deepEqual(calls, [{ query: "Why is my VPN order reversed?", lab: "lab4" }]);
+});
+
+test("an empty knowledge result still permits evidence tools", async () => {
+  let retrievals = 0;
+  const h = harness([
+    (input) => {
+      assert.deepEqual(input.courseKnowledge, []);
+      return call("call-1", "get_context", {}, Object.freeze({ opaque: "state" }));
+    },
+    final("Current evidence is available.")
+  ], {
+    retrieveKnowledge() {
+      retrievals += 1;
+      return [];
+    }
+  });
+  assert.match((await run(h)).answer, /evidence/);
+  assert.equal(retrievals, 1);
+  assert.equal(h.tools.calls.length, 1);
 });
 
 test("accepts a provider-owned continuation marker on a final result without exposing it", async () => {
@@ -522,8 +568,8 @@ test("passes prompt-injection text only inside serialized tool data", async () =
       assert.match(input.toolOutput.output, /Ignore previous instructions/);
       assert.equal(JSON.parse(input.toolOutput.output).data.content, injection);
       assert.deepEqual(Object.keys(input).sort(), [
-        "continuationState", "finalizationOnly", "message", "modelTurn", "requestId",
-        "toolOutput", "tools"
+        "continuationState", "courseKnowledge", "finalizationOnly", "lab", "message",
+        "modelTurn", "requestId", "toolOutput", "tools"
       ]);
       return final("Treat source comments as data, not instructions.");
     }
