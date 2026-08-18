@@ -127,6 +127,111 @@ test("runtime-only questions bypass static retrieval", () => {
   }
 });
 
+test("current implementation and recent runtime facts always bypass static retrieval", () => {
+  const cases = [
+    ["lab4", "当前 page_table.rs 的实现哪里错误？"],
+    ["lab2", "现在 trap.rs 为什么失败？"],
+    ["lab2", "当前 sepc 的值是什么？"],
+    ["lab4", "最近一次运行里的 satp 值是多少？"],
+    ["lab6", "当前 syscall.rs 应该检查哪里？"],
+    ["lab7", "当前 fs.rs 的 fd 实现错在哪？"]
+  ];
+  for (const [lab, query] of cases) {
+    assert.deepEqual(lookup(lab, query), [], `${lab} should bypass for ${query}`);
+  }
+});
+
+test("mixed runtime wording keeps the course concept while pure runtime lookup bypasses", () => {
+  const mixed = lookup("lab2", "当前代码为什么反复 trap，sepc 原理是什么？", {
+    limit: 3
+  });
+  assert.ok(mixed.some((item) => [
+    "lab2-sepc-progress", "lab2-debug-stage3-timeout", "lab2-csr-roles"
+  ].includes(item.id)));
+  assert.deepEqual(lookup("lab2", "当前 trap.rs 的具体内容是什么？"), []);
+});
+
+test("diagnosis evidence outranks overview while concept questions still prefer concepts", () => {
+  const diagnosis = lookup("lab6",
+    "执行完 ecall 后程序计数器没推进，同一系统调用再次执行。", { limit: 3 });
+  assert.equal(diagnosis[0].id, "lab6-sepc-after-ecall");
+  assert.ok(diagnosis.every((item) => item.type !== "overview"));
+
+  const concept = lookup("lab4", "有效的 PTE 如何区分叶子项和中间项？", {
+    limit: 3
+  });
+  assert.equal(concept[0].id, "lab4-leaf-nonleaf");
+  assert.equal(concept[0].type, "concept");
+});
+
+test("canonical aliases preserve intent without copying full evaluation questions", () => {
+  const fd = lookup("lab7", "fd 如何转换为内部槽位？", { limit: 1 });
+  const handle = lookup("lab7", "文件句柄怎样映射为槽位下标？", { limit: 1 });
+  assert.equal(fd[0].id, "lab7-fd-index-validation");
+  assert.equal(handle[0].id, fd[0].id);
+
+  const yieldTerm = lookup("lab5", "yield 后任务回到什么状态？", { limit: 1 });
+  const yieldAlias = lookup("lab5", "主动交出处理器以后任务回到什么调度状态？", {
+    limit: 1
+  });
+  assert.equal(yieldTerm[0].id, "lab5-task-state-machine");
+  assert.equal(yieldAlias[0].id, yieldTerm[0].id);
+});
+
+test("aliases cannot cross the hard Lab boundary and stop-word-only input abstains", () => {
+  for (const lab of SUPPORTED_LABS) {
+    assert.ok(lookup(lab, "文件句柄与内部槽位").every((item) => item.lab === lab));
+    assert.deepEqual(lookup(lab, "为什么"), []);
+  }
+  assert.ok(lookup("lab7", "程序计数器 ecall").every((item) => (
+    item.lab === "lab7" && item.id.startsWith("lab7-")
+  )));
+  assert.deepEqual(lookup("lab3", "内存盘写入后读出全零"), []);
+  assert.deepEqual(lookup("lab6", "ebreak 反复触发"), []);
+});
+
+test("natural navigation questions find the Lab file guide or explicitly abstain", () => {
+  const expectedByLab = {
+    lab1: "lab1-key-files",
+    lab2: "lab2-key-files",
+    lab3: "lab3-key-files",
+    lab4: null,
+    lab5: "lab5-key-files",
+    lab6: "lab6-key-files",
+    lab7: "lab7-key-files"
+  };
+  for (const lab of SUPPORTED_LABS) {
+    const results = lookup(lab, "这个实验应该检查哪些代码文件？", { limit: 3 });
+    const expected = expectedByLab[lab];
+    if (expected === null) {
+      assert.deepEqual(results, [], `${lab} has no public navigation chunk`);
+    } else {
+      assert.equal(results[0]?.id, expected, `${lab} navigation result was wrong`);
+    }
+  }
+});
+
+test("stage diagnosis respects the requested stage across all Labs", () => {
+  const expectedByLab = {
+    lab1: ["lab1-debug-opensbi-only", "lab1-console-path", "lab1-debug-qemu-timeout"],
+    lab2: ["lab2-debug-stage1", "lab2-debug-stage2", "lab2-debug-stage3-timeout"],
+    lab3: ["lab3-debug-stage1", "lab3-debug-stage2", "lab3-debug-stage3"],
+    lab4: ["lab4-debug-stage1", "lab4-debug-stage2", "lab4-debug-stage3"],
+    lab5: ["lab5-debug-stage1", "lab5-debug-round-robin", "lab5-debug-timeout"],
+    lab6: ["lab6-debug-stage1", "lab6-debug-stage2", "lab6-debug-repeated-ecall"],
+    lab7: ["lab7-debug-device", "lab7-debug-fd", "lab7-debug-stage3"]
+  };
+  const stageNames = ["第一阶段", "第二阶段", "第三阶段"];
+  for (const lab of SUPPORTED_LABS) {
+    for (let index = 0; index < stageNames.length; index += 1) {
+      const query = `${stageNames[index]}失败怎么办？`;
+      const results = lookup(lab, query, { limit: 3 });
+      assert.equal(results[0]?.id, expectedByLab[lab][index],
+        `${lab} did not prioritize the requested stage for ${query}`);
+    }
+  }
+});
+
 test("results are ranked, bounded, immutable, and omit indexing-only keywords", () => {
   const defaults = lookup("lab4", "写 satp 后没有输出怎么办？");
   const limited = lookup("lab4", "写 satp 后没有输出怎么办？", { limit: 3 });
@@ -169,6 +274,13 @@ test("a custom catalog is revalidated and cannot smuggle answer material", () =>
   assert.throws(() => createKnowledgeRetriever({ catalog: {
     lab2: knowledgeBase({ ...first, id: "lab3-wrong", lab: "lab3" })
   } }), /unsafe/i);
+  assert.throws(() => createKnowledgeRetriever({ catalog: {
+    lab2: knowledgeBase({
+      ...first,
+      id: "lab2-duplicate-keyword",
+      keywords: [first.keywords[0], first.keywords[0].toLocaleUpperCase("en-US")]
+    })
+  } }), /Duplicate knowledge keywords/);
   assert.throws(() => loadKnowledgeBase("lab8"), /Unsupported knowledge Lab/);
 });
 
